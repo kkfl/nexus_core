@@ -1,0 +1,45 @@
+{
+    "format_version": 0,
+    "result": {
+        "query_time": 1716327000,
+        "cgi_revision": "4.4.6",
+        "type_code": 0,
+        "type_text": "Success",
+        "message": ""
+    },
+    "data": {
+        "hostlist": {
+            "web-server-01": {
+                "status": 2,
+                "plugin_output": "PING OK - Packet loss = 0%",
+                "last_check": 1716327000
+            },
+            "db-server-01": {
+                "status": 4,
+                "plugin_output": "CRITICAL - Host Unreachable",
+                "last_check": 1716327000
+            }
+        },
+        "servicelist": {
+            "web-server-01": {
+                "HTTP": {
+                    "status": 2,
+                    "plugin_output": "HTTP OK: HTTP/1.1 200 OK",
+                    "last_check": 1716327000
+                },
+                "Disk Space": {
+                    "status": 4,
+                    "plugin_output": "WARNING - Free space: / 10%",
+                    "last_check": 1716327000
+                }
+            },
+            "db-server-01": {
+                "PostgreSQL": {
+                    "status": 16,
+                    "plugin_output": "CRITICAL - Connection Refused",
+                    "last_check": 1716327000
+                }
+            }
+        }
+    }
+}

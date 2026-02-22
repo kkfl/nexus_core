@@ -1,0 +1,2 @@
+PJSIP/101-00000003!default!!1!Up!AppDial!(Outgoing Line)!101!!!3!14!(None)!1716327663.12!
+PJSIP/102-00000004!default!!1!Up!AppDial!(Outgoing Line)!102!!!3!14!(None)!1716327665.15!

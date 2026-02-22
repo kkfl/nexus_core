@@ -1,0 +1,2 @@
+System uptime: 2 weeks, 1 day, 4 hours, 10 minutes, 32 seconds
+Last reload: 2 weeks, 1 day, 4 hours, 10 minutes, 32 seconds

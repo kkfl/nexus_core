@@ -1,0 +1,16 @@
+# /etc/caddy/snippets/admin_allowlist.caddyfile
+# Protect sensitive endpoints by IP (Prometheus scrapers, internal operators)
+
+@admin_ips {
+	# Add your trusted IPs/CIDRs here
+	remote_ip 127.0.0.1 192.168.0.0/16 10.0.0.0/8
+}
+
+handle {
+	abort
+}
+
+# Apply handle routing logic specifically to @admin_ips above
+route @admin_ips {
+	# Pass through
+}

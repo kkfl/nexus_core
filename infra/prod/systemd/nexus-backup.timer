@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Nexus Core Backup Daily at 03:15
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

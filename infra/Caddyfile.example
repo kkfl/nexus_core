@@ -1,0 +1,13 @@
+{
+  "api" {
+    reverse_proxy nexus-api:8000
+  }
+  
+  "docs" {
+    reverse_proxy nexus-api:8000
+  }
+
+  "/" {
+    respond "Nexus Core V1 is running." 200
+  }
+}

@@ -1,0 +1,103 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nexus-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Do not start if managed postgres is enabled
+    profiles: [ "local_db" ]
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: nexus-minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Do not start if managed S3 is enabled
+    profiles: [ "local_s3" ]
+
+  nexus-api:
+    build:
+      context: ../../
+      dockerfile: apps/nexus_api/Dockerfile
+    container_name: nexus-api
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}
+      - ENABLE_DOCS=${ENABLE_DOCS:-false}
+    volumes:
+      - model_cache:/root/.cache/fastembed # persist fastembed model cache
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  nexus-worker:
+    build:
+      context: ../../
+      dockerfile: apps/nexus_worker/Dockerfile
+    container_name: nexus-worker
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}
+    volumes:
+      - model_cache:/root/.cache/fastembed
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - nexus-api
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  model_cache:

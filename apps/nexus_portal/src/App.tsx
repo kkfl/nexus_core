@@ -1,0 +1,100 @@
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useAuthStore } from './stores/authStore';
+
+// Layout
+import AdminLayout from './layouts/AdminLayout';
+
+// Pages
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Agents from './pages/Agents';
+import TaskRoutes from './pages/TaskRoutes';
+import Tasks from './pages/Tasks';
+import Personas from './pages/Personas';
+import PersonaDefaults from './pages/PersonaDefaults';
+import KbSources from './pages/KbSources';
+import KbDocuments from './pages/KbDocuments';
+import KbSearch from './pages/KbSearch';
+import Entities from './pages/Entities';
+import Audits from './pages/Audits';
+import IntegrationsPbx from './pages/IntegrationsPbx';
+import IntegrationsMonitoring from './pages/IntegrationsMonitoring';
+import IntegrationsStorage from './pages/IntegrationsStorage';
+import IntegrationsCarrier from './pages/IntegrationsCarrier';
+import Docs from './pages/Docs';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
+  const { accessToken, user } = useAuthStore();
+  const location = useLocation();
+
+  if (!accessToken || !user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+
+          <Route path="/" element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<Dashboard />} />
+
+            {/* Orchestration */}
+            <Route path="agents" element={<Agents />} />
+            <Route path="routes" element={<TaskRoutes />} />
+            <Route path="tasks" element={<Tasks />} />
+
+            {/* Personas */}
+            <Route path="personas" element={<Personas />} />
+            <Route path="personas/defaults" element={<PersonaDefaults />} />
+
+            {/* KB */}
+            <Route path="kb/sources" element={<KbSources />} />
+            <Route path="kb/documents" element={<KbDocuments />} />
+            <Route path="kb/search" element={<KbSearch />} />
+
+            {/* SoR */}
+            <Route path="entities" element={<Entities />} />
+            <Route path="audits" element={<Audits />} />
+
+            {/* Integrations */}
+            <Route path="integrations/pbx" element={<IntegrationsPbx />} />
+            <Route path="integrations/monitoring" element={<IntegrationsMonitoring />} />
+            <Route path="integrations/storage" element={<IntegrationsStorage />} />
+            <Route path="integrations/carrier" element={<IntegrationsCarrier />} />
+
+            {/* Docs */}
+            <Route path="docs" element={<Docs />} />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

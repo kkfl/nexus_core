@@ -1,0 +1,45 @@
+# ------------------------------------------
+# Caddy Production TLD configuration
+# ------------------------------------------
+
+# Replace with your actual domain
+nexus.example.com {
+	# Import common security headers pattern
+	import /etc/caddy/snippets/security_headers.caddyfile
+
+	# Terminate TLS automatically via Let's Encrypt / ZeroSSL
+	tls {
+		# email admin@example.com
+	}
+
+	# Enable compression for text-based assets
+	encode zstd gzip
+
+	# Route API traffic
+	handle_path /api* {
+		reverse_proxy nexus-api:8000
+	}
+
+	# Route Docs (only available if ENABLE_DOCS=true in app config, otherwise app returns 404)
+	# Also restrict docs path to trusted IPs for additional security
+	handle_path /docs* {
+		import /etc/caddy/snippets/admin_allowlist.caddyfile
+		reverse_proxy nexus-api:8000
+	}
+
+	handle_path /openapi.json {
+		import /etc/caddy/snippets/admin_allowlist.caddyfile
+		reverse_proxy nexus-api:8000
+	}
+
+	# Metrics endpoint
+	handle_path /metrics* {
+		import /etc/caddy/snippets/admin_allowlist.caddyfile
+		reverse_proxy nexus-api:8000
+	}
+
+	# Catch-all
+	handle {
+		respond "Nexus API Server Running" 200
+	}
+}

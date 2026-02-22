@@ -1,0 +1,13 @@
+# /etc/caddy/snippets/security_headers.caddyfile
+
+header {
+	# Defense-in-depth headers matching what FastAPI should send
+	Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	X-Content-Type-Options "nosniff"
+	X-Frame-Options "DENY"
+	Referrer-Policy "strict-origin-when-cross-origin"
+	Content-Security-Policy "default-src 'self'"
+	
+	# Hide server info
+	-Server
+}

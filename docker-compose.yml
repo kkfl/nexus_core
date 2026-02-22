@@ -1,0 +1,222 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nexus-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_core}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-nexus_core}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: nexus-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_pass}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nexus-api:
+    build:
+      context: .
+      dockerfile: apps/nexus_api/Dockerfile
+    container_name: nexus-api
+    # WARNING: .env.example contains placeholder secrets. Copy it to .env and
+    # populate real values before deploying. Never use .env.example in production.
+    env_file: .env.example
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_S3_ENDPOINT=http://minio:9000
+      - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docs:/app/docs:ro
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  nexus-worker:
+    build:
+      context: .
+      dockerfile: apps/nexus_worker/Dockerfile
+    container_name: nexus-worker
+    # WARNING: Replace .env.example with a real .env file for production.
+    env_file: .env.example
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_S3_ENDPOINT=http://minio:9000
+      - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      nexus-api:
+        condition: service_started
+    restart: unless-stopped
+
+  demo-agent:
+    build:
+      context: .
+      dockerfile: apps/demo_agent/Dockerfile
+    container_name: demo-agent
+    env_file: .env.example
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  dns-agent:
+    build:
+      context: .
+      dockerfile: apps/dns_agent/Dockerfile
+    container_name: dns-agent
+    env_file: .env.example
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: nexus-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - nexus-api
+    restart: unless-stopped
+
+  pbx-agent:
+    build:
+      context: .
+      dockerfile: apps/pbx_agent/Dockerfile
+    container_name: pbx-agent
+    env_file: .env.example
+    environment:
+      - NEXUS_BASE_URL=http://nexus-api:8000
+      - NEXUS_AGENT_KEY=internal-pbx-key-demo
+      - PBX_MOCK=true
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+
+  monitoring-agent:
+    build:
+      context: .
+      dockerfile: apps/monitoring_agent/Dockerfile
+    container_name: monitoring-agent
+    env_file: .env.example
+    environment:
+      - MONITORING_MOCK=true
+    ports:
+      - "8004:8004"
+    restart: unless-stopped
+
+  storage-agent:
+    build:
+      context: .
+      dockerfile: apps/storage_agent/Dockerfile
+    container_name: storage-agent
+    env_file: .env.example
+    environment:
+      - STORAGE_MOCK=true
+      - NEXUS_BASE_URL=http://nexus-api:8000
+      - NEXUS_AGENT_KEY=internal-storage-key-demo
+      - ENABLE_STORAGE_WRITES=true
+      - ENABLE_DELETES=false
+    ports:
+      - "8005:8005"
+    depends_on:
+      - minio
+      - nexus-api
+    restart: unless-stopped
+
+  carrier-agent:
+    build:
+      context: .
+      dockerfile: apps/carrier_agent/Dockerfile
+    container_name: carrier-agent
+    env_file: .env.example
+    environment:
+      - CARRIER_MOCK=true
+      - NEXUS_BASE_URL=http://nexus-api:8000
+      - NEXUS_AGENT_KEY=internal-carrier-key-demo
+    ports:
+      - "8006:8006"
+    depends_on:
+      - nexus-api
+    restart: unless-stopped
+
+  nexus-portal:
+    build:
+      context: apps/nexus_portal
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: nexus-portal
+    ports:
+      - "3000:80"
+    depends_on:
+      - nexus-api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

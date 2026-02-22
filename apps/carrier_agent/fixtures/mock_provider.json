@@ -1,0 +1,83 @@
+{
+    "dids": [
+        {
+            "number": "+12125551234",
+            "region": "NY",
+            "sms_enabled": true,
+            "voice_enabled": true,
+            "e911_status": "registered",
+            "tags": [
+                "ny-office"
+            ],
+            "assigned_to": null
+        },
+        {
+            "number": "+12135559876",
+            "region": "CA",
+            "sms_enabled": false,
+            "voice_enabled": true,
+            "e911_status": "unregistered",
+            "tags": [
+                "ca-office"
+            ],
+            "assigned_to": {
+                "kind": "pbx_target",
+                "id": "demo-pbx-001"
+            }
+        },
+        {
+            "number": "+18005550000",
+            "region": "TF",
+            "sms_enabled": true,
+            "voice_enabled": true,
+            "e911_status": "unregistered",
+            "tags": [
+                "toll-free"
+            ],
+            "assigned_to": null
+        },
+        {
+            "number": "+13125555555",
+            "region": "IL",
+            "sms_enabled": true,
+            "voice_enabled": true,
+            "e911_status": "registered",
+            "tags": [
+                "chicago-main"
+            ],
+            "assigned_to": {
+                "kind": "pbx_target",
+                "id": "demo-pbx-002"
+            }
+        }
+    ],
+    "trunks": [
+        {
+            "trunk_id": "trunk-us-east",
+            "status": "online",
+            "tags": [
+                "primary",
+                "us-east"
+            ]
+        },
+        {
+            "trunk_id": "trunk-us-west",
+            "status": "online",
+            "tags": [
+                "secondary",
+                "us-west"
+            ]
+        }
+    ],
+    "messaging_status": {
+        "status": "approved",
+        "brand_id": "BR12345",
+        "campaign_id": "CA67890",
+        "registered_at": "2026-01-15T00:00:00Z"
+    },
+    "cnam_status": {
+        "status": "approved",
+        "display_name": "NEXUS CORE",
+        "applied_at": "2026-01-16T00:00:00Z"
+    }
+}

@@ -1,0 +1,7 @@
+[ Context 'from-internal' created by 'pbx_config' ]
+  '100' =>          1. Dial(PJSIP/100,20)                         [pbx_config]
+                    2. Hangup()                                   [pbx_config]
+  '101' =>          1. Dial(PJSIP/101,20)                         [pbx_config]
+                    2. Hangup()                                   [pbx_config]
+
+-= 2 extensions (4 priorities) in 1 context. =-

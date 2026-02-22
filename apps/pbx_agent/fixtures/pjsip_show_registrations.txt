@@ -1,0 +1,6 @@
+ <Registration/ServerURI..............................>  <Auth..........>  <Status.......>
+==========================================================================================
+
+ mytrunk/sip:sip.provider.com                            mytrunk_auth      Registered
+
+Objects found: 1

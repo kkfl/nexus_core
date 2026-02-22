@@ -1,0 +1,3 @@
+{"type":"host","host":"app-worker-01","state":"OK","output":"PING OK","ts":"1716327000"}
+{"type":"service","host":"app-worker-01","service":"Queue Depth","state":"WARNING","output":"WARN - 5000 items queued","ts":"1716327000"}
+{"type":"service","host":"app-worker-01","service":"Memory","state":"CRITICAL","output":"CRIT - 99% RAM used","ts":"1716327000"}

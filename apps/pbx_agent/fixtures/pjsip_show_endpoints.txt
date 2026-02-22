@@ -1,0 +1,11 @@
+Endpoint:  101                                                  Not in use    0 of inf
+     InAuth:  101-auth/101
+        Aor:  101                                                1
+      Contact:  101/sip:101@192.168.1.50:5060              ecfc9bcad5 Avail         7.300
+
+Endpoint:  102                                                  Not in use    0 of inf
+     InAuth:  102-auth/102
+        Aor:  102                                                1
+      Contact:  102/sip:102@192.168.1.51:5060              bcfc12cad5 Avail         12.100
+
+Objects found: 2
