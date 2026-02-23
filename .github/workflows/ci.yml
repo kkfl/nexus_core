@@ -41,7 +41,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v5
     - name: Install dependencies
-      run: uv sync
+      run: uv sync --extra dev
     - name: Run Tests
       # If RUN_INTEGRATION_TESTS is not set, this skips the heavy golden paths tests
       run: uv run pytest tests/ -v
