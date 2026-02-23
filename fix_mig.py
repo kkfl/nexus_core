@@ -14,7 +14,7 @@ paren_count = 0
 
 for line in lines:
     if line.strip().startswith('op.create_table('):
-        if not ('carrier_' in line):
+        if 'carrier_' not in line:
             in_irrelevant_create = True
             paren_count = line.count('(') - line.count(')')
             continue

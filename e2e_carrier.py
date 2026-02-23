@@ -1,4 +1,7 @@
-import requests, uuid, time, json
+import requests
+import uuid
+import time
+import json
 
 BASE = "http://localhost:8013" # Automation agent
 HEADERS = {

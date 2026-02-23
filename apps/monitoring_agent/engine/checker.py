@@ -85,7 +85,8 @@ async def _execute_http_check(target: MonitoringTarget, correlation_id: str) -> 
             # 3. Check capabilities (optional, don't fail if 404)
             resp_c = await client.get(f"{target.base_url}/capabilities", headers=headers)
             if resp_c.status_code == 200:
-                import hashlib, json
+                import hashlib
+                import json
                 try:
                     cap_data = resp_c.json()
                     capabilities_hash = hashlib.sha256(json.dumps(cap_data, sort_keys=True).encode()).hexdigest()

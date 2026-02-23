@@ -2,7 +2,10 @@
 Automation Agent E2E Test
 Validates: Create automation -> Trigger run -> Poll -> Check step outputs
 """
-import requests, uuid, time, json
+import requests
+import uuid
+import time
+import json
 
 BASE = "http://localhost:8013"
 HEADERS = {

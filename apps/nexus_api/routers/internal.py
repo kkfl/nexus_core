@@ -11,7 +11,6 @@ from packages.shared.audit import log_audit_event
 from apps.nexus_api.routers.pbx import PbxTargetOut
 from packages.shared.models import StorageTarget, CarrierTarget
 from typing import Any, Optional
-from pydantic import BaseModel
 
 class StorageTargetInternalOut(BaseModel):
     id: str
