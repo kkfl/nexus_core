@@ -4,11 +4,12 @@ WORKDIR /app
 
 COPY packages/shared /app/packages/shared
 COPY apps/carrier_agent /app/apps/carrier_agent
+COPY apps/secrets_agent /app/apps/secrets_agent
 
-RUN pip install --no-cache-dir fastapi uvicorn pydantic pydantic-settings httpx structlog
+RUN pip install --no-cache-dir fastapi uvicorn "pydantic[email]" pydantic-settings httpx structlog cryptography python-dotenv "sqlalchemy[asyncio]" asyncpg pgvector greenlet
 
 ENV PYTHONPATH=/app
-ENV PORT=8006
+ENV PORT=8009
 
 EXPOSE ${PORT}
 

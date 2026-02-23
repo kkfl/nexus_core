@@ -14,18 +14,92 @@ logger = structlog.get_logger()
 ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").lower() == "true"
 docs_kwargs = {} if ENABLE_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
+from contextlib import asynccontextmanager
+import asyncio
+import httpx
+from packages.shared.client.agent_registry import get_registry_client
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Seed the Agent Registry with native Nexus agents on startup
+    client = get_registry_client()
+    agents_to_register = [
+        {"name": "secrets-agent", "url": "http://secrets-agent:8007", "auth": "headers"},
+        {"name": "dns-agent", "url": "http://dns-agent:8006", "auth": "headers", "auth_secret_alias": "dns-agent.automation-agent.key"},
+        {"name": "notifications-agent", "url": "http://notifications-agent:8008", "auth": "headers"},
+        {"name": "carrier-agent", "url": "http://carrier-agent:8009", "auth": "headers"},
+        {"name": "storage-agent", "url": "http://storage-agent:8005", "auth": "headers"},
+        {"name": "pbx-agent", "url": "http://pbx-agent:8011", "auth": "headers", "auth_secret_alias": "pbx-agent.automation-agent.key"},
+        {"name": "monitoring-agent", "url": "http://monitoring-agent:8004", "auth": "headers"},
+        {"name": "automation-agent", "url": "http://automation-agent:8013", "auth": "headers"},
+    ]
+    
+    # Wait for agent-registry to be ready (up to 10 seconds)
+    registry_up = False
+    for _ in range(5):
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as hc:
+                await hc.get(f"{client.registry_base_url}/healthz")
+            registry_up = True
+            break
+        except Exception:
+            await asyncio.sleep(2)
+            
+    if registry_up:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hc:
+                for a in agents_to_register:
+                    # 1. Create agent (409 Conflict is expected if already exists)
+                    resp = await hc.post(
+                        f"{client.registry_base_url}/v1/agents",
+                        headers=client.headers,
+                        json={"name": a["name"]}
+                    )
+                    
+                    # Fetch agent_id to attach the deployment
+                    agent_resp = await hc.get(f"{client.registry_base_url}/v1/agents/{a['name']}", headers=client.headers)
+                    if agent_resp.status_code == 200:
+                        agent_id = agent_resp.json()["id"]
+                        
+                        # 2. Create global deployment (no tenant_id) for 'prod'
+                        # In a real cluster, deployments would self-register or be pushed by a controller.
+                        await hc.post(
+                            f"{client.registry_base_url}/v1/deployments",
+                            headers=client.headers,
+                            json={
+                                "agent_id": agent_id,
+                                "env": "prod",
+                                "base_url": a["url"],
+                                "auth_scheme": a["auth"],
+                                "auth_secret_alias": a.get("auth_secret_alias")
+                            }
+                        )
+            logger.info("agent_registry_seeded", agents_count=len(agents_to_register))
+        except Exception as exc:
+            logger.error("agent_registry_seeding_failed", error=str(exc))
+    else:
+        logger.warning("agent_registry_unreachable_during_startup")
+
+    yield
+
 app = FastAPI(
     title="Nexus Core API",
     version="1.0.0",
     description="Nexus Core orchestrator and persona registry.",
+    redirect_slashes=False,
+    lifespan=lifespan,
     **docs_kwargs
 )
 
-# CORS
-cors_origins = os.environ.get("CORS_ORIGINS", "").split(",")
-if not cors_origins or cors_origins == [""]:
-    cors_origins = [] # Default deny
+# CORS origins
+cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+if not cors_origins:
+    cors_origins = []
 
+from starlette.middleware.base import BaseHTTPMiddleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=metrics_middleware)
+
+# CORS must be last added (outermost) so it handles OPTIONS preflight before other middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -33,9 +107,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
-
-from starlette.middleware.base import BaseHTTPMiddleware
-app.add_middleware(BaseHTTPMiddleware, dispatch=metrics_middleware)
 
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
@@ -55,7 +126,6 @@ async def request_middleware(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Content-Security-Policy"] = "default-src 'none'"
     if ENABLE_DOCS:
         response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:;"
         

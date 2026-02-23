@@ -5,7 +5,7 @@ WORKDIR /app
 COPY packages/shared /app/packages/shared
 COPY apps/monitoring_agent /app/apps/monitoring_agent
 
-RUN pip install --no-cache-dir fastapi uvicorn pydantic pydantic-settings httpx structlog
+RUN pip install --no-cache-dir fastapi uvicorn "pydantic[email]" pydantic-settings httpx structlog sqlalchemy asyncpg alembic
 
 ENV PYTHONPATH=/app
 ENV PORT=8004

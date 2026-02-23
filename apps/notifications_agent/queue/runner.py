@@ -1,0 +1,188 @@
+"""
+Async job queue runner for notifications_agent.
+- Dispatches asyncio.Task per channel delivery
+- Retry with exponential backoff + jitter
+- After max_attempts: job status → "failed" (DLQ — queryable/replayable via API)
+- Never blocks the HTTP request path
+"""
+from __future__ import annotations
+
+import asyncio
+import random
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+import structlog
+
+from apps.notifications_agent import metrics
+from apps.notifications_agent.channels.factory import build_channel
+from apps.notifications_agent.store.postgres import (
+    create_delivery, get_db, set_job_status, update_delivery,
+)
+from apps.notifications_agent.config import get_settings
+from apps.secrets_agent.client.vault_client import VaultClient
+
+logger = structlog.get_logger(__name__)
+
+
+def _safe_error(exc: Exception) -> str:
+    msg = re.sub(r'[A-Za-z0-9+/=]{32,}', '[REDACTED]', str(exc))
+    return msg[:1000]
+
+
+def _vault() -> VaultClient:
+    s = get_settings()
+    return VaultClient(
+        base_url=s.vault_base_url,
+        service_id=s.vault_service_id,
+        api_key=s.vault_agent_key,
+    )
+
+
+async def _deliver_channel(
+    *,
+    job_id: str,
+    channel_name: str,
+    subject: Optional[str],
+    body: str,
+    destination: Optional[str],
+    tenant_id: str,
+    env: str,
+    correlation_id: str,
+    channel_config: dict | None,
+    max_attempts: int,
+) -> None:
+    """Inner coroutine: attempt delivery with retries, update delivery row."""
+    settings = get_settings()
+    base_delay = settings.job_retry_base_delay
+
+    for attempt in range(1, max_attempts + 1):
+        metrics.inc("notification_send_attempts")
+        start_ms = asyncio.get_event_loop().time() * 1000
+        delivery_id = str(uuid.uuid4())
+        dest_hash = ""
+
+        try:
+            vault = _vault()
+            channel = await build_channel(
+                channel_name, vault,
+                tenant_id=tenant_id, env=env,
+                correlation_id=correlation_id,
+                channel_config=channel_config,
+            )
+
+            ctx = {
+                "correlation_id": correlation_id,
+                "tenant_id": tenant_id,
+                "severity": channel_config.get("severity", "") if channel_config else "",
+            }
+
+            result = await channel.send(
+                subject=subject,
+                body=body,
+                destination=destination,
+                context=ctx,
+            )
+            elapsed = asyncio.get_event_loop().time() * 1000 - start_ms
+            metrics.record_latency(elapsed)
+
+            async for db in get_db():
+                d = await create_delivery(
+                    db, job_id=job_id, channel=channel_name,
+                    destination_hash=result.destination_hash,
+                )
+                delivery_id = str(d.id)
+                if result.success:
+                    metrics.inc("notification_send_success")
+                    await update_delivery(
+                        db, delivery_id,
+                        status="sent",
+                        provider_msg_id=result.provider_msg_id,
+                        attempt=attempt,
+                        sent_at=datetime.now(timezone.utc),
+                    )
+                    logger.info("delivery_success", job_id=job_id, channel=channel_name,
+                                attempt=attempt, correlation_id=correlation_id)
+                else:
+                    metrics.inc("notification_send_failure")
+                    await update_delivery(
+                        db, delivery_id,
+                        status="failed",
+                        attempt=attempt,
+                        error_code=result.error_code,
+                        error_detail_redacted=result.error_detail,
+                    )
+                    if attempt < max_attempts:
+                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                        logger.warning("delivery_retry", job_id=job_id, channel=channel_name,
+                                       attempt=attempt, retry_in=round(delay, 2))
+                        await asyncio.sleep(delay)
+                        continue
+                    # All attempts exhausted
+                    logger.error("delivery_failed_dlq", job_id=job_id, channel=channel_name,
+                                 attempts=attempt)
+                return  # success or final failure
+
+        except Exception as exc:
+            safe = _safe_error(exc)
+            logger.error("delivery_exception", job_id=job_id, channel=channel_name,
+                         attempt=attempt, error=safe)
+            metrics.inc("notification_send_failure")
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                await asyncio.sleep(delay)
+
+
+async def dispatch_job(
+    *,
+    job_id: str,
+    tenant_id: str,
+    env: str,
+    channels: List[str],
+    subject: Optional[str],
+    body: str,
+    correlation_id: str,
+    destinations: Dict[str, str] | None = None,
+    channel_configs: Dict[str, dict] | None = None,
+    max_attempts: int = 3,
+) -> None:
+    """
+    Dispatch one asyncio.Task per channel. Non-blocking — caller returns immediately.
+    Job status is updated to "succeeded" when ALL channels complete.
+    """
+    settings = get_settings()
+    tasks = []
+    for channel_name in channels:
+        dest = (destinations or {}).get(channel_name)
+        cfg = (channel_configs or {}).get(channel_name, {})
+        task = asyncio.create_task(
+            _deliver_channel(
+                job_id=job_id,
+                channel_name=channel_name,
+                subject=subject,
+                body=body,
+                destination=dest,
+                tenant_id=tenant_id,
+                env=env,
+                correlation_id=correlation_id,
+                channel_config=cfg,
+                max_attempts=max_attempts,
+            ),
+            name=f"deliver-{job_id}-{channel_name}",
+        )
+        tasks.append(task)
+
+    async def _finalize():
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        final_status = "succeeded"
+        for r in results:
+            if isinstance(r, Exception):
+                final_status = "partial"
+        async for db in get_db():
+            await set_job_status(db, job_id, final_status,
+                                 completed_at=datetime.now(timezone.utc))
+
+    asyncio.create_task(_finalize(), name=f"finalize-{job_id}")
+    metrics.inc("notification_jobs_dispatched")

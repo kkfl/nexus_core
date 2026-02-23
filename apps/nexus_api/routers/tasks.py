@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 
 from packages.shared.db import get_db
 from packages.shared.models import Task, TaskRun, User, Agent, PersonaVersion, TaskRoute
-from packages.shared.schemas.core import TaskCreate, TaskOut, TaskRunOut
+from packages.shared.schemas.core import TaskCreate, TaskOut
 from packages.shared.queue import task_queue
 from apps.nexus_api.dependencies import get_current_identity, RequireRole
 from packages.shared.policy import enforce_persona_policy

@@ -59,12 +59,14 @@ services:
     container_name: nexus-api
     # WARNING: .env.example contains placeholder secrets. Copy it to .env and
     # populate real values before deploying. Never use .env.example in production.
-    env_file: .env.example
+    env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_S3_ENDPOINT=http://minio:9000
       - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=nexus-registry-key
     ports:
       - "8000:8000"
     depends_on:
@@ -89,7 +91,7 @@ services:
       dockerfile: apps/nexus_worker/Dockerfile
     container_name: nexus-worker
     # WARNING: Replace .env.example with a real .env file for production.
-    env_file: .env.example
+    env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       - REDIS_URL=redis://redis:6379/0
@@ -106,12 +108,34 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  agent-registry:
+    build:
+      context: .
+      dockerfile: apps/agent_registry/Dockerfile
+    container_name: agent-registry
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - 'AGENT_REGISTRY_KEYS={"nexus": "nexus-registry-key", "admin": "admin-registry-key", "automation-agent": "nexus-registry-key", "monitoring-agent": "nexus-registry-key", "secrets-agent": "nexus-registry-key", "carrier-agent":"nexus-registry-key", "pbx-agent":"nexus-registry-key", "storage-agent":"nexus-registry-key"}'
+      - CORS_ORIGINS=http://localhost:8001,http://localhost
+    ports:
+      - "8012:8012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8012/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   demo-agent:
     build:
       context: .
       dockerfile: apps/demo_agent/Dockerfile
     container_name: demo-agent
-    env_file: .env.example
+    env_file: .env
     ports:
       - "8001:8001"
     restart: unless-stopped
@@ -121,10 +145,30 @@ services:
       context: .
       dockerfile: apps/dns_agent/Dockerfile
     container_name: dns-agent
-    env_file: .env.example
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      # DNS_AGENT_KEYS: JSON map of service_id -> api_key for callers allowed to use dns-agent
+      # Example: DNS_AGENT_KEYS={"nexus":"nexus-dns-key","admin":"admin-dns-key"}
+      - 'DNS_AGENT_KEYS=${DNS_AGENT_KEYS:-{"nexus":"nexus-dns-key","admin":"admin-dns-key","automation-agent":"${AUTOMATION_DNS_AGENT_KEY:-automation-dns-key-change-me}"}}'
+      # Vault integration — dns-agent fetches provider credentials from secrets-agent at runtime
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=dns-agent
+      - VAULT_AGENT_KEY=${DNS_VAULT_AGENT_KEY}
+      - ENABLE_DOCS=${ENABLE_DOCS:-false}
     ports:
-      - "8002:8002"
+      - "8006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8002/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   caddy:
     image: caddy:2-alpine
@@ -145,68 +189,195 @@ services:
       context: .
       dockerfile: apps/pbx_agent/Dockerfile
     container_name: pbx-agent
-    env_file: .env.example
     environment:
-      - NEXUS_BASE_URL=http://nexus-api:8000
-      - NEXUS_AGENT_KEY=internal-pbx-key-demo
-      - PBX_MOCK=true
+      - PORT=8011
+      - SERVICE_NAME=pbx-agent
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - PBX_AGENT_KEYS=${PBX_AGENT_KEYS:-{"nexus":"nexus-pbx-key-change-me","admin":"admin-pbx-key-change-me","automation-agent":"automation-pbx-key-change-me"}}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY:-nexus-registry-key}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=pbx-agent
+      - VAULT_AGENT_KEY=${PBX_VAULT_AGENT_KEY:-pbx-vault-key-change-me}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
     ports:
-      - "8003:8003"
+      - "8011:8011"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8011/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   monitoring-agent:
     build:
       context: .
       dockerfile: apps/monitoring_agent/Dockerfile
     container_name: monitoring-agent
-    env_file: .env.example
     environment:
-      - MONITORING_MOCK=true
+      - PORT=8004
+      - SERVICE_NAME=monitoring-agent
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - MONITORING_AGENT_KEYS=${MONITORING_AGENT_KEYS:-{"nexus":"nexus-monitoring-key-change-me","admin":"admin-monitoring-key-change-me","automation-agent":"automation-monitoring-key-change-me"}}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY:-nexus-registry-key}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=monitoring-agent
+      - VAULT_AGENT_KEY=${MONITORING_VAULT_AGENT_KEY:-monitoring-vault-key-change-me}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
     ports:
       - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
     restart: unless-stopped
-
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8004/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   storage-agent:
     build:
       context: .
       dockerfile: apps/storage_agent/Dockerfile
     container_name: storage-agent
-    env_file: .env.example
     environment:
-      - STORAGE_MOCK=true
-      - NEXUS_BASE_URL=http://nexus-api:8000
-      - NEXUS_AGENT_KEY=internal-storage-key-demo
-      - ENABLE_STORAGE_WRITES=true
-      - ENABLE_DELETES=false
+      - PORT=8005
+      - SERVICE_NAME=storage-agent
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - STORAGE_AGENT_KEYS=${STORAGE_AGENT_KEYS:-{"nexus":"nexus-storage-key-change-me","admin":"admin-registry-key","automation-agent":"automation-storage-key-change-me"}}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY:-nexus-registry-key}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=storage-agent
+      - VAULT_AGENT_KEY=${STORAGE_VAULT_AGENT_KEY:-storage-vault-key-change-me}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
     ports:
       - "8005:8005"
     depends_on:
-      - minio
-      - nexus-api
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8005/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   carrier-agent:
     build:
       context: .
       dockerfile: apps/carrier_agent/Dockerfile
     container_name: carrier-agent
-    env_file: .env.example
+    env_file: .env
     environment:
       - CARRIER_MOCK=true
       - NEXUS_BASE_URL=http://nexus-api:8000
       - NEXUS_AGENT_KEY=internal-carrier-key-demo
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - 'CARRIER_AGENT_KEYS={"nexus":"nexus-carrier-key-change-me","admin":"admin-carrier-key-change-me","automation-agent":"internal-carrier-key-demo"}'
     ports:
-      - "8006:8006"
+      - "8009:8009"
     depends_on:
       - nexus-api
     restart: unless-stopped
+
+  secrets-agent:
+    build:
+      context: .
+      dockerfile: apps/secrets_agent/Dockerfile
+    container_name: secrets-agent
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - VAULT_MASTER_KEY=${NEXUS_MASTER_KEY}
+      # VAULT_AGENT_KEYS: JSON map of service_id -> api_key. Configure in .env.
+      # Example: VAULT_AGENT_KEYS={"nexus":"nexus-internal-key","pbx-agent":"pbx-key"}
+      - 'VAULT_AGENT_KEYS=${VAULT_AGENT_KEYS:-{"nexus":"nexus-internal-key","pbx-agent":"pbx-vault-key-change-me","monitoring-agent":"monitoring-vault-key-change-me","carrier-agent":"carrier-vault-key-change-me","dns-agent":"dns-vault-key-change-me","automation-agent":"automation-vault-key-change-me","notifications-agent":"notifications-vault-key-change-me","storage-agent":"storage-vault-key-change-me"}}'
+      # VAULT_ADMIN_KEYS: JSON map for admin-only access. Configure in .env.
+      # Example: VAULT_ADMIN_KEYS={"admin":"admin-vault-key"}
+      - 'VAULT_ADMIN_KEYS=${VAULT_ADMIN_KEYS:-{}}'
+      - ENABLE_DOCS=${ENABLE_DOCS:-false}
+    ports:
+      - "8007:8007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8007/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  automation-agent:
+    build:
+      context: .
+      dockerfile: apps/automation_agent/Dockerfile
+    container_name: automation-agent
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      AUTOMATION_AGENT_KEYS: '${AUTOMATION_AGENT_KEYS:-{"nexus":"nexus-automation-key-change-me","admin":"admin-automation-key-change-me"}}'
+      REGISTRY_BASE_URL: http://agent-registry:8012
+      NEXUS_REGISTRY_AGENT_KEY: ${NEXUS_REGISTRY_AGENT_KEY:-nexus-registry-key}
+      # Keys automation-agent uses when calling outbound services
+      AUTOMATION_VAULT_AGENT_KEY: ${AUTOMATION_VAULT_AGENT_KEY:-automation-vault-key-change-me}
+      AUTOMATION_DNS_AGENT_KEY: ${AUTOMATION_DNS_AGENT_KEY:-automation-dns-key-change-me}
+      AUTOMATION_NOTIF_AGENT_KEY: ${AUTOMATION_NOTIF_AGENT_KEY:-automation-notif-key-change-me}
+    ports:
+      - "8013:8013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8013/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  notifications-agent:
+    build:
+      context: .
+      dockerfile: apps/notifications_agent/Dockerfile
+    container_name: notifications-agent
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      NOTIFICATIONS_AGENT_KEYS: '${NOTIFICATIONS_AGENT_KEYS:-{"nexus":"nexus-notif-key-change-me","admin":"admin-notif-key-change-me","automation-agent":"automation-notif-key-change-me"}}'
+      VAULT_BASE_URL: http://secrets-agent:8007
+      VAULT_SERVICE_ID: notifications-agent
+      VAULT_AGENT_KEY: ${NOTIFICATIONS_VAULT_AGENT_KEY:-notifications-vault-key-change-me}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+    ports:
+      - "8008:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8008/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   nexus-portal:
     build:
       context: apps/nexus_portal
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_BASE_URL: http://localhost/api
     container_name: nexus-portal
     ports:
       - "3000:80"

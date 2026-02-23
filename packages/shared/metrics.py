@@ -27,3 +27,7 @@ async def emit(
         logger.debug("metric_emitted", name=name, value=value)
     except Exception as exc:
         logger.warning("metric_emit_failed", name=name, error=str(exc))
+        try:
+            await db.rollback()
+        except Exception:
+            pass

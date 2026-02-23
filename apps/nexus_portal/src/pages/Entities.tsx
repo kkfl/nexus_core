@@ -1,10 +1,10 @@
-import { Table, Space, Tag, Modal, Typography, Collapse, Input, Select } from 'antd';
+import { Table, Space, Tag, Modal, Typography, Collapse, Input } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useState } from 'react';
 
 const { Title, Text } = Typography;
-const { Search } = Input;
+
 
 export default function Entities() {
     const [selectedEntity, setSelectedEntity] = useState<any>(null);

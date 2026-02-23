@@ -1,0 +1,22 @@
+{
+    "name": "Storage Cleanup Routine",
+    "description": "Periodically clears out temporary Nexus artifacts older than 14 days.",
+    "trigger": {
+        "type": "schedule",
+        "cron": "0 2 * * *"
+    },
+    "steps": [
+        {
+            "id": "purge_logs",
+            "agent": "storage-agent",
+            "action": "storage.retention.execute",
+            "payload": {
+                "storage_target_id": "minio_local",
+                "bucket_name": "nexus-metrics",
+                "prefix": "temp/",
+                "older_than_days": 14,
+                "dry_run": false
+            }
+        }
+    ]
+}

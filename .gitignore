@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest
+.pytest_cache/
+
+# Mypy / Ruff
+.mypy_cache/
+.ruff_cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environments
+.env
+
+# Logs and databases
+*.log
+tmp_*.log
+
+# Temporary local payloads & test scripts
+upsert.json
+insert.json
+payload.json
+*.json
+smoke*.py
+*.txt
+verify_proof.py
+seed_vault_aliases.py

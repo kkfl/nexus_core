@@ -1,0 +1,58 @@
+:80 {
+    # API routes: strip /api prefix before forwarding
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy nexus-api:8000
+    }
+
+    # Agent Registry routes: strip /registry prefix before forwarding
+    handle /registry/* {
+        uri strip_prefix /registry
+        reverse_proxy agent-registry:8012
+    }
+
+    handle_path /monitor/* {
+        reverse_proxy monitoring-agent:8004
+    }
+
+    # Secrets Vault routes: strip /vault prefix before forwarding
+    handle /vault/* {
+        uri strip_prefix /vault
+        reverse_proxy secrets-agent:8007
+    }
+
+    # DNS Agent routes: strip /dns prefix before forwarding
+    handle /dns/* {
+        uri strip_prefix /dns
+        reverse_proxy dns-agent:8006
+    }
+
+    # Notifications Agent routes: strip /notify prefix before forwarding
+    handle /notify/* {
+        uri strip_prefix /notify
+        reverse_proxy notifications-agent:8008
+    }
+
+    # Automation Agent routes: strip /automation prefix before forwarding
+    handle /automation/* {
+        uri strip_prefix /automation
+        reverse_proxy automation-agent:8013
+    }
+
+    # PBX Agent routes: strip /pbx prefix before forwarding
+    handle /pbx/* {
+        uri strip_prefix /pbx
+        reverse_proxy pbx-agent:8011
+    }
+
+    # Storage Agent routes: strip /storage prefix before forwarding
+    handle /storage/* {
+        uri strip_prefix /storage
+        reverse_proxy storage-agent:8005
+    }
+
+    # Everything else goes to the frontend portal
+    handle {
+        reverse_proxy nexus-portal:80
+    }
+}

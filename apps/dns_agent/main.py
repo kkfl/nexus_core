@@ -1,118 +1,141 @@
-from fastapi import FastAPI, Request
-import hashlib
-from typing import Dict, Any
-from packages.shared.schemas.agent_sdk import AgentTaskRequest, AgentTaskResponse, AgentTaskError, ProposedWrite
-from packages.shared.agent_sdk import handle_agent_execute
+"""
+DNS Agent — FastAPI main application.
 
-app = FastAPI(title="DNS Agent V1 (SDK)")
+Routes:
+  GET  /healthz
+  GET  /readyz
+  GET  /metrics
+  GET  /v1/zones
+  POST /v1/zones
+  GET  /v1/records
+  POST /v1/records/upsert
+  POST /v1/records/delete
+  POST /v1/sync
+  GET  /v1/jobs/{job_id}
+  GET  /v1/jobs
+"""
+from __future__ import annotations
 
-# In-memory "database" for local DNS
-dns_records: Dict[str, Dict[str, str]] = {}
+import os
+import time
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
-async def _execute_handler(req: AgentTaskRequest) -> AgentTaskResponse:
-    print(f"DNS Agent received task {req.task_id} of type {req.type}")
-    
-    persona_received = None
-    if req.persona:
-        persona_received = {"name": req.persona.name, "version": req.persona.version}
+import structlog
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
-    if req.type == "dns.lookup":
-        name = req.payload.get("name")
-        rec_type = req.payload.get("record_type", "A")
-        
-        ctx_len = len(req.context) if req.context else 0
-        
-        # 1. Prefer Canonical Entities from Context (if injected by RAG/Worker)
-        found_entity = None
-        if req.context:
-            for ctx_item in req.context:
-                if ctx_item.get("kind") == "dns_record" and ctx_item.get("external_ref") == f"{name}:{rec_type}":
-                    found_entity = ctx_item.get("data")
-                    break
-                # Alternatively, just look for matching data from RAG text chunks
-                if isinstance(ctx_item, dict) and "text" in ctx_item:
-                    # simplistic checking for demo
-                    pass
-        
-        # 2. Fallback to Agent's internal store
-        if found_entity:
-            result_val = found_entity.get("value")
-            source = "nexus_canonical"
-        else:
-            result_val = dns_records.get(f"{name}_{rec_type}")
-            source = "agent_internal"
-            
-        return AgentTaskResponse(
-            ok=True,
-            result={
-                "name": name,
-                "record_type": rec_type,
-                "value": result_val,
-                "status": "found" if result_val else "not_found",
-                "source": source,
-                "persona_received": persona_received,
-                "context_received_count": ctx_len,
-                "context": req.context
-            }
-        )
-        
-    elif req.type == "dns.upsert_record":
-        name = req.payload.get("name")
-        rec_type = req.payload.get("record_type", "A")
-        val = req.payload.get("value")
-        ttl = req.payload.get("ttl", 300)
-        
-        if not name or not val:
-            return AgentTaskResponse(ok=False, error=AgentTaskError(code="invalid_payload", message="name and value required"))
-            
-        # Optional: idempotency key from payload or deterministic
-        idem_key = req.payload.get("idempotency_key")
-        if not idem_key:
-            raw_hash = f"{req.task_id}_{name}_{rec_type}_{val}"
-            idem_key = hashlib.sha256(raw_hash.encode()).hexdigest()
-            
-        dns_records[f"{name}_{rec_type}"] = val
-        ctx_len = len(req.context) if req.context else 0
-        
-        pw = ProposedWrite(
-            entity_kind="dns_record",
-            external_ref=f"{name}:{rec_type}",
-            action="upsert",
-            patch={"name": name, "record_type": rec_type, "value": val, "ttl": ttl},
-            idempotency_key=idem_key
-        )
-        
-        return AgentTaskResponse(
-            ok=True,
-            result={
-                "name": name,
-                "record_type": rec_type,
-                "value": val,
-                "ttl": ttl,
-                "status": "upserted",
-                "persona_received": persona_received,
-                "context_received_count": ctx_len,
-                "context": req.context
-            },
-            proposed_writes=[pw]
-        )
-    
-    return AgentTaskResponse(
-        ok=False,
-        error=AgentTaskError(code="unknown_task_type", message=f"Unknown task type: {req.type}")
+from apps.dns_agent.api import jobs, records, sync, zones
+from apps.dns_agent.config import get_settings
+from apps.dns_agent.metrics import inc, metrics_text
+from apps.dns_agent.models import DnsBase
+from apps.dns_agent.store.postgres import _get_engine
+
+logger = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger.info("dns_agent_startup", version="2.0.0")
+    engine = _get_engine()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(DnsBase.metadata.create_all)
+    except Exception as exc:
+        logger.warning("dns_table_create_skipped", error=str(exc))
+    yield
+    logger.info("dns_agent_shutdown")
+
+
+settings = get_settings()
+ENABLE_DOCS = settings.enable_docs
+
+app = FastAPI(
+    title="Nexus DNS Agent",
+    version="2.0.0",
+    description="Production-grade DNS management for the Nexus multi-agent platform.",
+    lifespan=lifespan,
+    redirect_slashes=False,
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
+)
+
+cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def request_middleware(request: Request, call_next):
+    import uuid
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    start = time.monotonic()
+    inc("requests_total")
+
+    structlog.contextvars.bind_contextvars(
+        correlation_id=correlation_id,
+        path=request.url.path,
+        method=request.method,
     )
 
+    response: Response = await call_next(request)
+    elapsed_ms = round((time.monotonic() - start) * 1000, 1)
 
-@app.post("/execute", response_model=AgentTaskResponse)
-async def execute_task(req: AgentTaskRequest, request: Request):
-    return await handle_agent_execute(req, request, _execute_handler)
+    response.headers["X-Correlation-ID"] = correlation_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+
+    if response.status_code >= 400:
+        inc("requests_error_total")
+
+    logger.info(
+        "dns_request",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        elapsed_ms=elapsed_ms,
+    )
+    return response
 
 
-@app.get("/capabilities")
-async def get_capabilities():
-    return {"capabilities": ["dns.lookup", "dns.upsert_record"], "version": "1.0.0"}
+# ---------------------------------------------------------------------------
+# Health / Ops
+# ---------------------------------------------------------------------------
 
-
-@app.get("/healthz")
+@app.get("/healthz", tags=["ops"])
 async def healthz():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "dns-agent", "version": "2.0.0"}
+
+
+@app.get("/readyz", tags=["ops"])
+async def readyz():
+    from apps.dns_agent.store.postgres import _engine
+    if _engine is None:
+        return Response(content='{"status":"not_ready","reason":"no database"}', status_code=503)
+    try:
+        from sqlalchemy import text
+        async with _engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception as exc:
+        return Response(content=f'{{"status":"not_ready","reason":"{exc}"}}', status_code=503)
+
+
+@app.get("/metrics", tags=["ops"])
+async def metrics():
+    return Response(content=metrics_text(), media_type="text/plain")
+
+
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+
+app.include_router(zones.router)
+app.include_router(records.router)
+app.include_router(sync.router)
+app.include_router(jobs.router)

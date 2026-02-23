@@ -7,9 +7,9 @@ from pydantic import BaseModel
 import uuid
 import datetime
 
-from packages.shared.db import get_db_session
+from packages.shared.db import get_db
 from packages.shared.models import CarrierTarget, CarrierSnapshot, Secret, AuditEvent, Task
-from apps.nexus_api.auth import get_current_user
+from apps.nexus_api.dependencies import get_current_user
 from packages.shared.secrets import encrypt_secret
 
 router = APIRouter(prefix="/carrier", tags=["carrier"])
@@ -50,7 +50,7 @@ class CarrierSnapshotResponse(BaseModel):
 async def create_carrier_target(
     config: CarrierTargetCreate,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -108,14 +108,14 @@ async def create_carrier_target(
     return db_target
 
 @router.get("/targets", response_model=List[CarrierTargetResponse])
-async def list_carrier_targets(user=Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+async def list_carrier_targets(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
     res = await db.execute(select(CarrierTarget))
     return res.scalars().all()
 
 @router.get("/targets/{target_id}", response_model=CarrierTargetResponse)
-async def get_carrier_target(target_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+async def get_carrier_target(target_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
     res = await db.execute(select(CarrierTarget).where(CarrierTarget.id == target_id))
@@ -129,7 +129,7 @@ async def update_carrier_target(
     target_id: str,
     patch: CarrierTargetPatch,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -153,7 +153,7 @@ async def update_carrier_target(
 async def test_carrier_target(
     target_id: str,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -183,7 +183,7 @@ async def list_carrier_snapshots(
     limit: int = 100,
     offset: int = 0,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -199,7 +199,7 @@ async def list_carrier_snapshots(
 async def get_carrier_snapshot(
     snapshot_id: str,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")

@@ -30,7 +30,7 @@ def upgrade() -> None:
     
     for r in routes:
         connection.execute(
-            sa.text(f"INSERT INTO abstract_task_routes (task_type, required_capabilities) VALUES ('{r['task_type']}', '{r['capabilities']}') ON CONFLICT (task_type) DO NOTHING;")
+            sa.text(f"INSERT INTO task_routes (task_type, required_capabilities) VALUES ('{r['task_type']}', '{r['capabilities']}') ON CONFLICT (task_type) DO NOTHING;")
         )
 
 def downgrade() -> None:

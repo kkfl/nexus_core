@@ -5,7 +5,7 @@ import { apiClient } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useState } from 'react';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 const { TextArea } = Input;
 
 export default function KbDocuments() {

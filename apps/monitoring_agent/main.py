@@ -1,244 +1,118 @@
-import os
-import json
-import logging
-import datetime
-from typing import Dict, Any, List
+"""
+Monitoring Agent v1 — production FastAPI application.
+"""
+from __future__ import annotations
 
-from fastapi import FastAPI, Request
-from packages.shared.schemas.agent_sdk import AgentTaskRequest, AgentTaskResponse, AgentTaskError, ProposedWrite, ProposedTask
-from packages.shared.agent_sdk import handle_agent_execute
+import uuid
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
-app = FastAPI(title="Monitoring Agent V1 (SDK)")
-logger = logging.getLogger(__name__)
+import structlog
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
-MONITORING_MOCK = os.getenv("MONITORING_MOCK", "false").lower() == "true"
-FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+from apps.monitoring_agent.config import get_settings
+from apps.monitoring_agent import metrics
+from apps.monitoring_agent.api.targets import router as targets_router
+from apps.monitoring_agent.api.checks import router as checks_router
+from apps.monitoring_agent.api.status import router as status_router
 
-def _parse_statusjson(raw_data: Any) -> tuple[List[Dict], List[Dict]]:
-    # Simple extraction of hosts and services from standard Nagios statusjson
-    hosts = []
-    services = []
+logger = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    settings = get_settings()
+    logger.info("monitoring_agent_startup", version=settings.service_version)
     
-    # In mock or raw, it might be a direct dict
-    data = raw_data
-    if isinstance(raw_data, str):
-        try:
-            data = json.loads(raw_data)
-        except json.JSONDecodeError:
-            pass
-            
-    if isinstance(data, dict):
-        if "data" in data and "hostlist" in data["data"]:
-            hl = data["data"]["hostlist"]
-            for hname, hdata in hl.items():
-                state_val = hdata.get("status", 0)
-                state_str = "UNKNOWN"
-                if state_val == 2: state_str = "OK"
-                elif state_val == 4: state_str = "CRITICAL" # simplifications
-                elif state_val == 8: state_str = "WARNING"
-                
-                hosts.append({
-                    "host": hname,
-                    "state": state_str,
-                    "output": hdata.get("plugin_output", ""),
-                    "last_check_at": hdata.get("last_check", 0) # epoch or iso
-                })
-        
-        if "data" in data and "servicelist" in data["data"]:
-            sl = data["data"]["servicelist"]
-            for hname, sdata in sl.items():
-                for sname, sdetail in sdata.items():
-                    state_val = sdetail.get("status", 0)
-                    state_str = "UNKNOWN"
-                    if state_val == 2: state_str = "OK"
-                    elif state_val == 4: state_str = "WARNING"
-                    elif state_val == 16: state_str = "CRITICAL"
-                    
-                    services.append({
-                        "host": hname,
-                        "service": sname,
-                        "state": state_str,
-                        "output": sdetail.get("plugin_output", ""),
-                        "last_check_at": sdetail.get("last_check", 0)
-                    })
-    return hosts, services
-
-def _parse_ndjson(raw_data: str) -> tuple[List[Dict], List[Dict]]:
-    hosts = []
-    services = []
-    for line in raw_data.splitlines():
-        if not line.strip(): continue
-        try:
-            item = json.loads(line)
-            if item.get("type") == "host":
-                hosts.append(item)
-            elif item.get("type") == "service":
-                services.append(item)
-        except json.JSONDecodeError:
-            continue
-    return hosts, services
-
-async def _execute_handler(req: AgentTaskRequest) -> AgentTaskResponse:
-    source_id = req.payload.get("monitoring_source_id")
-    if not source_id:
-        return AgentTaskResponse(ok=False, error=AgentTaskError(code="missing_source", message="monitoring_source_id is required"))
-
-    persona_received = {"name": req.persona.name, "version": req.persona.version} if req.persona else None
-    ctx_count = len(req.context) if req.context else 0
-
-    hosts = []
-    services = []
+    # Warm up DB engine
+    from apps.monitoring_agent.store.postgres import _get_engine
+    _get_engine()
     
-    create_tasks = req.payload.get("create_tasks_on_alert", False)
+    yield
+    
+    logger.info("monitoring_agent_shutdown")
 
-    try:
-        if req.type == "monitoring.ingest.nagios.statusjson":
-            payload_data = req.payload.get("statusjson")
-            if MONITORING_MOCK and not payload_data:
-                with open(os.path.join(FIXTURES_DIR, "statusjson.json"), "r") as f:
-                    payload_data = json.load(f)
-            hosts, services = _parse_statusjson(payload_data)
-            
-        elif req.type == "monitoring.ingest.nagios.ndjson":
-            payload_data = req.payload.get("ndjson", "")
-            if MONITORING_MOCK and not payload_data:
-                with open(os.path.join(FIXTURES_DIR, "data.ndjson"), "r") as f:
-                    payload_data = f.read()
-            hosts, services = _parse_ndjson(payload_data)
-            
-        elif req.type == "monitoring.snapshot":
-            pass # V1 no-op or explicit pull
-            
-        elif req.type == "monitoring.alert_to_task":
-            # For direct invocation, handled via workflow usually.
-            pass
-        else:
-             return AgentTaskResponse(ok=False, error=AgentTaskError(code="unknown_task", message=f"Task {req.type} not supported"))
 
-        proposed_writes = []
-        proposed_tasks = []
-        
-        iso_now = datetime.datetime.utcnow().isoformat()
-        
-        for h in hosts:
-            hstate = h.get("state", "UNKNOWN")
-            hcheck = h.get("last_check_at", iso_now)
-            pw = ProposedWrite(
-                entity_kind="mon_host",
-                external_ref=f"{source_id}:{h.get('host')}",
-                action="upsert",
-                patch={
-                    "monitoring_source_id": source_id,
-                    "host": h.get("host"),
-                    "state": hstate,
-                    "output": h.get("output", ""),
-                    "last_check_at": hcheck
-                },
-                idempotency_key=f"mon:{source_id}:{h.get('host')}:{h.get('host')}:{hstate}:{hcheck}"
-            )
-            proposed_writes.append(pw)
-            
-            if create_tasks and hstate in ("WARNING", "CRITICAL"):
-                pt = ProposedTask(
-                    type="triage.alert",
-                    priority="high" if hstate == "CRITICAL" else "normal",
-                    payload={
-                        "source_id": source_id,
-                        "host": h.get("host"),
-                        "service": "HOST_STATE",
-                        "state": hstate,
-                        "output": h.get("output", ""),
-                        "last_check_at": str(hcheck)
-                    },
-                    persona_version_id=req.persona.id if req.persona else None, # preserve persona or allow route to default
-                    idempotency_key=f"alert-task:{source_id}:{h.get('host')}:HOST_STATE:{hstate}:{hcheck}"
-                )
-                proposed_tasks.append(pt)
+settings = get_settings()
 
-        for s in services:
-            sstate = s.get("state", "UNKNOWN")
-            scheck = s.get("last_check_at", iso_now)
-            pw = ProposedWrite(
-                entity_kind="mon_service",
-                external_ref=f"{source_id}:{s.get('host')}:{s.get('service')}",
-                action="upsert",
-                patch={
-                    "monitoring_source_id": source_id,
-                    "host": s.get("host"),
-                    "service": s.get("service"),
-                    "state": sstate,
-                    "output": s.get("output", ""),
-                    "last_check_at": scheck
-                },
-                idempotency_key=f"mon:{source_id}:{s.get('host')}:{s.get('service')}:{sstate}:{scheck}"
-            )
-            proposed_writes.append(pw)
-            
-            if create_tasks and sstate in ("WARNING", "CRITICAL"):
-                pt = ProposedTask(
-                    type="triage.alert",
-                    priority="high" if sstate == "CRITICAL" else "normal",
-                    payload={
-                        "source_id": source_id,
-                        "host": s.get("host"),
-                        "service": s.get("service"),
-                        "state": sstate,
-                        "output": s.get("output", ""),
-                        "last_check_at": str(scheck)
-                    },
-                    persona_version_id=req.persona.id if req.persona else None,
-                    idempotency_key=f"alert-task:{source_id}:{s.get('host')}:{s.get('service')}:{sstate}:{scheck}"
-                )
-                proposed_tasks.append(pt)
+app = FastAPI(
+    title="Nexus Monitoring Agent",
+    version=settings.service_version,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
 
-        result_data = {
-            "persona_received": persona_received,
-            "context_received_count": ctx_count,
-            "hosts_processed": len(hosts),
-            "services_processed": len(services),
-            "alerts_evaluated": create_tasks
-        }
+cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-        # Also log the ingest execution
-        pw_ingest = ProposedWrite(
-            entity_kind="monitoring_ingest",
-            external_ref=f"ingest:{req.task_id}",
-            action="upsert",
-            patch={
-                "monitoring_source_id": source_id,
-                "task_id": int(req.task_id),
-                "summary": result_data
-            },
-            idempotency_key=f"mon-log:{req.task_id}"
-        )
-        proposed_writes.append(pw_ingest)
 
-        return AgentTaskResponse(
-            ok=True,
-            result=result_data,
-            proposed_writes=proposed_writes if proposed_writes else None,
-            proposed_tasks=proposed_tasks if proposed_tasks else None
-        )
+@app.middleware("http")
+async def request_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+    with structlog.contextvars.bound_contextvars(path=request.url.path):
+        response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
-    except Exception as e:
-        return AgentTaskResponse(ok=False, error=AgentTaskError(code="ingest_failed", message=str(e)))
 
-@app.post("/execute", response_model=AgentTaskResponse)
-async def execute_task(req: AgentTaskRequest, request: Request):
-    return await handle_agent_execute(req, request, _execute_handler)
+app.include_router(targets_router)
+app.include_router(checks_router)
+app.include_router(status_router)
 
-@app.get("/capabilities")
-async def get_capabilities():
-    return {
-        "capabilities": [
-            "monitoring.ingest.nagios.statusjson",
-            "monitoring.ingest.nagios.ndjson",
-            "monitoring.snapshot",
-            "monitoring.alert_to_task"
-        ],
-        "version": "1.0.0"
-    }
 
-@app.get("/healthz")
+@app.get("/healthz", tags=["ops"])
 async def healthz():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "monitoring-agent", "version": settings.service_version}
+
+
+@app.get("/readyz", tags=["ops"])
+async def readyz():
+    """Check DB + agent_registry connectivity."""
+    try:
+        from apps.monitoring_agent.store.postgres import _get_engine, _session_factory
+        _get_engine()
+        async with _session_factory() as session:
+            await session.execute(__import__("sqlalchemy").text("SELECT 1"))
+    except Exception as exc:
+        return Response(
+            content=f'{{"status":"not_ready","reason":"db_unavailable"}}',
+            status_code=503,
+            media_type="application/json",
+        )
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{settings.registry_base_url}/healthz")
+        if r.status_code != 200:
+            raise RuntimeError(f"registry status {r.status_code}")
+    except Exception:
+        return Response(
+            content='{"status":"not_ready","reason":"registry_unavailable"}',
+            status_code=503,
+            media_type="application/json",
+        )
+    return {"status": "ready"}
+
+
+@app.get("/metrics", tags=["ops"])
+async def get_metrics():
+    return Response(content=metrics.snapshot(), media_type="text/plain")
+
+@app.get("/capabilities", tags=["ops"])
+async def capabilities():
+    return {
+        "checks": ["/healthz", "/readyz", "/capabilities"],
+        "discovery": "agent_registry",
+        "notifications": "notifications_agent",
+        "version": settings.service_version,
+    }

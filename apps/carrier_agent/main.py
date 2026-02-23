@@ -1,262 +1,288 @@
-import os
-import json
-import logging
+"""
+Carrier Agent v2 — Production Upgrade
+Replaces prototype's mock-only provider and old nexus/internal/secrets pattern with:
+  - VaultClient for credentials (account_sid + auth_token from secrets_agent)
+  - Twilio as the V1 real provider (mock still supported via CARRIER_MOCK=true)
+  - structlog structured logging — no credentials ever logged
+  - pydantic-settings config
+  - Proper lifespan, /healthz, /readyz
+
+Secret aliases (pre-create in secrets_agent):
+  carrier.<target_id>.account_sid  — Twilio Account SID
+  carrier.<target_id>.auth_token   — Twilio Auth Token
+
+For mock targets, set provider="mock" — no secrets required.
+"""
+from __future__ import annotations
+
 import datetime
-from typing import Dict, Any, List
+import os
+import re
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastapi import FastAPI, Request, HTTPException
 import httpx
+import structlog
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic_settings import BaseSettings
 
-from packages.shared.schemas.agent_sdk import AgentTaskRequest, AgentTaskResponse, AgentTaskError, ProposedWrite, JobSummary
+from apps.secrets_agent.client.vault_client import VaultClient, VaultError
+from packages.shared.schemas.agent_sdk import (
+    AgentTaskError,
+    AgentTaskRequest,
+    AgentTaskResponse,
+    JobSummary,
+    ProposedWrite,
+)
 from packages.shared.agent_sdk import handle_agent_execute
+from apps.carrier_agent.adapters.factory import get_adapter
 
-app = FastAPI(title="Carrier Agent V1 (SDK)")
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
-CARRIER_MOCK = os.getenv("CARRIER_MOCK", "false").lower() == "true"
-NEXUS_BASE_URL = os.environ.get("NEXUS_BASE_URL", "http://nexus-api:8000")
-NEXUS_AGENT_KEY = os.environ.get("NEXUS_AGENT_KEY", "internal-carrier-key-demo")
 
-def load_mock_provider() -> Dict[str, Any]:
-    with open(os.path.join(os.path.dirname(__file__), "fixtures", "mock_provider.json"), "r") as f:
-        return json.load(f)
+from apps.carrier_agent.config import config as _settings
+from apps.carrier_agent.auth.identity import get_service_identity, ServiceIdentity
+from fastapi import Depends
 
-async def _fetch_target_and_creds(target_id: str) -> tuple[Dict, str, str]:
-    if CARRIER_MOCK and target_id == "mock":
-        return {
-            "name": "Mock Provider",
-            "provider": "mock",
-            "id": target_id
-        }, "mock_ak", "mock_sk"
 
-    async with httpx.AsyncClient() as client:
-        r_meta = await client.get(
-            f"{NEXUS_BASE_URL}/internal/carrier/targets/{target_id}",
-            headers={"X-Nexus-Internal": NEXUS_AGENT_KEY}
+def _vault_client() -> VaultClient:
+    return VaultClient(
+        base_url=_settings.vault_base_url,
+        service_id=_settings.vault_service_id,
+        api_key=_settings.vault_agent_key,
+    )
+
+
+def _safe_error(exc: Exception) -> str:
+    msg = re.sub(r'[A-Za-z0-9+/=]{32,}', '[REDACTED]', str(exc))
+    return msg[:1000]
+
+
+async def _fetch_target_metadata(target_id: str) -> Dict[str, Any]:
+    """Fetch non-credential target metadata from nexus_api."""
+    if _settings.carrier_mock and target_id == "mock":
+        return {"name": "Mock Provider", "provider": "mock", "id": target_id}
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        r = await client.get(
+            f"{_settings.nexus_base_url}/internal/carrier/targets/{target_id}",
+            headers={"X-Nexus-Internal": _settings.nexus_agent_key},
         )
-        if r_meta.status_code != 200:
-            raise Exception(f"Failed to fetch carrier target: {r_meta.text}")
-        target = r_meta.json()
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to fetch carrier target '{target_id}': HTTP {r.status_code}")
+        return r.json()
 
-        ak = None
-        if target.get("api_key_secret_id"):
-            r_ak = await client.post(
-                f"{NEXUS_BASE_URL}/internal/secrets/decrypt",
-                headers={"X-Nexus-Internal": NEXUS_AGENT_KEY},
-                json={"secret_id": target["api_key_secret_id"]}
-            )
-            if r_ak.status_code == 200:
-                ak = r_ak.json()["value"]
 
-        sk = None
-        if target.get("api_secret_secret_id"):
-            r_sk = await client.post(
-                f"{NEXUS_BASE_URL}/internal/secrets/decrypt",
-                headers={"X-Nexus-Internal": NEXUS_AGENT_KEY},
-                json={"secret_id": target["api_secret_secret_id"]}
-            )
-            if r_sk.status_code == 200:
-                sk = r_sk.json()["value"]
-
-    return target, ak, sk
+# ---------------------------------------------------------------------------
+# Execution handler
+# ---------------------------------------------------------------------------
 
 async def _execute_handler(req: AgentTaskRequest) -> AgentTaskResponse:
-    persona_received = {"name": req.persona.name, "version": req.persona.version} if req.persona else None
-    ctx_count = len(req.context) if req.context else 0
-
     target_id = req.payload.get("carrier_target_id")
     if not target_id:
-        return AgentTaskResponse(ok=False, error=AgentTaskError(code="missing_target", message="carrier_target_id is required"))
+        return AgentTaskResponse(
+            ok=False,
+            error=AgentTaskError(code="missing_target", message="carrier_target_id is required"),
+        )
 
-    # KI persona checking
-    allowed = ["carrier.account.status", "carrier.dids.list"]
-    if req.persona and req.persona.tools_policy:
-        allowed = req.persona.tools_policy.get("allowed_capabilities", allowed)
-        
-    if req.type not in allowed:
-        return AgentTaskResponse(ok=False, error=AgentTaskError(code="persona_policy_violation", message=f"{req.type} not in allowed_capabilities"))
+    tenant_id = req.payload.get("tenant_id", "nexus")
+    env = req.payload.get("env", "prod")
+    persona_received = (
+        {"name": req.persona.name, "version": req.persona.version} if req.persona else None
+    )
+    ctx_count = len(req.context) if req.context else 0
+    correlation_id = req.payload.get("correlation_id", str(uuid.uuid4()))
+
+    logger.info(
+        "carrier_task_start",
+        task_type=req.type,
+        target_id=target_id,
+        correlation_id=correlation_id,
+    )
 
     try:
-        target, ak, sk = await _fetch_target_and_creds(target_id)
-        provider = target.get("provider", "mock")
-        
-        # In V1, we only implement mock provider
-        if provider != "mock":
-             return AgentTaskResponse(ok=False, error=AgentTaskError(code="unsupported_provider", message=f"Provider {provider} not fully implemented in V1 (use mock)"))
-             
-        mock_data = load_mock_provider()
+        target = await _fetch_target_metadata(target_id)
+        provider = target.get("provider", "mock" if _settings.carrier_mock else "twilio")
+
+        vault = _vault_client()
+        adapter = await get_adapter(
+            provider=provider,
+            target_id=target_id,
+            vault=vault,
+            tenant_id=tenant_id,
+            env=env,
+            correlation_id=correlation_id,
+        )
+
+        result_data: Dict[str, Any] = {
+            "persona_received": persona_received,
+            "context_received_count": ctx_count,
+            "provider": provider,
+        }
+        proposed_writes: List[ProposedWrite] = []
+        job_summary = None
+        now = datetime.datetime.utcnow().isoformat()
 
         if req.type == "carrier.account.status":
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "provider": provider,
-                "status": "active",
-                "balance": 150.00
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
+            status = await adapter.get_account_status()
+            result_data.update({
+                "status": status.status,
+                "balance": status.balance,
+                "currency": status.currency,
+                "friendly_name": status.friendly_name,
+            })
 
         elif req.type == "carrier.dids.list":
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "dids": mock_data["dids"],
-                "total_count": len(mock_data["dids"])
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
-            
+            dids = await adapter.list_dids()
+            result_data.update({"dids": [d.__dict__ for d in dids], "total_count": len(dids)})
+
         elif req.type == "carrier.did.lookup":
             number = req.payload.get("number")
-            if not number: raise Exception("Missing number")
-            
-            did = next((d for d in mock_data["dids"] if d["number"] == number), None)
+            if not number:
+                return AgentTaskResponse(ok=False, error=AgentTaskError(code="missing_number", message="number required"))
+            did = await adapter.get_did(number)
             if not did:
                 return AgentTaskResponse(ok=False, error=AgentTaskError(code="not_found", message=f"DID {number} not found"))
-                
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "did": did
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
-            
-        elif req.type == "carrier.trunks.list":
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "trunks": mock_data["trunks"]
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
-            
-        elif req.type == "carrier.messaging.status":
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "messaging_status": mock_data["messaging_status"]
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
-            
-        elif req.type == "carrier.cnam.status":
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "cnam_status": mock_data["cnam_status"]
-            }
-            return AgentTaskResponse(ok=True, result=result_data)
-            
-        elif req.type == "carrier.snapshot.inventory":
-            ts = datetime.datetime.utcnow().timestamp()
-            writes = []
-            
-            # 1. Target Entity
-            writes.append(
-                ProposedWrite(
-                    entity_kind="carrier_target",
-                    external_ref=target_id,
-                    action="upsert",
-                    patch={
-                        "name": target.get("name"),
-                        "provider": provider,
-                        "tags": target.get("tags", []),
-                        "last_seen_at": datetime.datetime.utcnow().isoformat()
-                    },
-                    idempotency_key=f"carrier_target:{target_id}:{ts}"
-                )
-            )
-            
-            # 2. DIDs
-            for did in mock_data["dids"]:
-                writes.append(
-                    ProposedWrite(
-                        entity_kind="carrier_did",
-                        external_ref=f"{target_id}:{did['number']}",
-                        action="upsert",
-                        patch={
-                            "carrier_target_id": target_id,
-                            "number": did["number"],
-                            "region": did.get("region"),
-                            "sms_enabled": did.get("sms_enabled", False),
-                            "voice_enabled": did.get("voice_enabled", True),
-                            "e911_status": did.get("e911_status"),
-                            "assigned_to": did.get("assigned_to"),
-                            "tags": did.get("tags", [])
-                        },
-                        idempotency_key=f"carrier_did:{target_id}:{did['number']}:{ts}"
-                    )
-                )
-                
-            # 3. Trunks
-            for trunk in mock_data["trunks"]:
-                writes.append(
-                    ProposedWrite(
-                        entity_kind="carrier_trunk",
-                        external_ref=f"{target_id}:{trunk['trunk_id']}",
-                        action="upsert",
-                        patch={
-                            "carrier_target_id": target_id,
-                            "trunk": trunk["trunk_id"],
-                            "status": trunk.get("status"),
-                            "tags": trunk.get("tags", [])
-                        },
-                        idempotency_key=f"carrier_trunk:{target_id}:{trunk['trunk_id']}:{ts}"
-                    )
-                )
-                
-            # 4. Messaging
-            writes.append(
-                ProposedWrite(
-                    entity_kind="carrier_messaging",
-                    external_ref=f"{target_id}:messaging",
-                    action="upsert",
-                    patch={
-                        "carrier_target_id": target_id,
-                        "status_summary": mock_data["messaging_status"]
-                    },
-                    idempotency_key=f"carrier_messaging:{target_id}:{ts}"
-                )
-            )
-            
-            # 5. CNAM
-            writes.append(
-                ProposedWrite(
-                    entity_kind="carrier_cnam",
-                    external_ref=f"{target_id}:cnam",
-                    action="upsert",
-                    patch={
-                        "carrier_target_id": target_id,
-                        "status_summary": mock_data["cnam_status"]
-                    },
-                    idempotency_key=f"carrier_cnam:{target_id}:{ts}"
-                )
-            )
+            result_data["did"] = did.__dict__
 
+        elif req.type == "carrier.trunks.list":
+            trunks = await adapter.list_trunks()
+            result_data["trunks"] = [t.__dict__ for t in trunks]
+
+        elif req.type == "carrier.messaging.status":
+            ms = await adapter.get_messaging_status()
+            result_data["messaging_status"] = ms.__dict__
+
+        elif req.type == "carrier.cnam.status":
+            number = req.payload.get("number")
+            cnam = await adapter.get_cnam_status(number=number)
+            result_data["cnam_status"] = cnam.__dict__
+
+        elif req.type == "carrier.snapshot.inventory":
+            acct = await adapter.get_account_status()
+            dids = await adapter.list_dids()
+            trunks = await adapter.list_trunks()
+            ms = await adapter.get_messaging_status()
+            cnam = await adapter.get_cnam_status()
+
+            proposed_writes.append(ProposedWrite(
+                entity_kind="carrier_target",
+                external_ref=target_id,
+                action="upsert",
+                patch={"name": target.get("name"), "provider": provider,
+                       "status": acct.status, "last_seen_at": now},
+                idempotency_key=f"carrier_target:{target_id}:{correlation_id}",
+            ))
+            for d in dids:
+                proposed_writes.append(ProposedWrite(
+                    entity_kind="carrier_did",
+                    external_ref=f"{target_id}:{d.number}",
+                    action="upsert",
+                    patch={k: v for k, v in d.__dict__.items() if not k.startswith("_")},
+                    idempotency_key=f"carrier_did:{target_id}:{d.number}:{correlation_id}",
+                ))
+            for t in trunks:
+                proposed_writes.append(ProposedWrite(
+                    entity_kind="carrier_trunk",
+                    external_ref=f"{target_id}:{t.trunk_id}",
+                    action="upsert",
+                    patch={k: v for k, v in t.__dict__.items() if not k.startswith("_")},
+                    idempotency_key=f"carrier_trunk:{target_id}:{t.trunk_id}:{correlation_id}",
+                ))
             job_summary = JobSummary(
-                kind="carrier_snapshot",
-                status="succeeded",
-                details={
-                    "dids_count": len(mock_data["dids"]),
-                    "trunks_count": len(mock_data["trunks"])
-                }
+                kind="carrier_snapshot", status="succeeded",
+                details={"dids_count": len(dids), "trunks_count": len(trunks)},
             )
-            
-            result_data = {
-                "persona_received": persona_received,
-                "context_received_count": ctx_count,
-                "snapshot_status": "generated"
-            }
-            return AgentTaskResponse(ok=True, result=result_data, proposed_writes=writes, job_summary=job_summary)
+            result_data["snapshot_status"] = "generated"
 
         else:
-             return AgentTaskResponse(ok=False, error=AgentTaskError(code="unknown_task", message=f"Task {req.type} not supported"))
+            return AgentTaskResponse(
+                ok=False,
+                error=AgentTaskError(code="unknown_task", message=f"Task {req.type} not supported"),
+            )
 
-    except Exception as e:
-        logger.error(f"Execution failed: {e}", exc_info=True)
-        return AgentTaskResponse(ok=False, error=AgentTaskError(code="execution_failed", message=str(e)))
+        return AgentTaskResponse(
+            ok=True,
+            result=result_data,
+            proposed_writes=proposed_writes or None,
+            job_summary=job_summary,
+        )
+
+    except Exception as exc:
+        safe_msg = _safe_error(exc)
+        logger.error("carrier_task_failed", task_type=req.type, target_id=target_id, error=safe_msg)
+        return AgentTaskResponse(
+            ok=False,
+            error=AgentTaskError(code="execution_failed", message=safe_msg),
+        )
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+
+import asyncio
+from apps.carrier_agent.jobs.runner import run_worker_loop
+
+_worker_task = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    global _worker_task
+    logger.info("carrier_agent_startup", version="2.0.0")
+    _worker_task = asyncio.create_task(run_worker_loop(tick_interval=5))
+    yield
+    if _worker_task:
+        _worker_task.cancel()
+    logger.info("carrier_agent_shutdown")
+
+
+app = FastAPI(
+    title="Nexus Carrier Agent",
+    version="2.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _settings.enable_docs else None,
+    redoc_url="/redoc" if _settings.enable_docs else None,
+    openapi_url="/openapi.json" if _settings.enable_docs else None,
+)
+
+cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=cors_origins or ["*"],
+                   allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def request_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.get("/healthz", tags=["ops"])
+async def healthz():
+    return {"status": "ok", "service": "carrier-agent", "version": "2.0.0"}
+
+
+@app.get("/readyz", tags=["ops"])
+async def readyz():
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{_settings.vault_base_url}/healthz")
+        if r.status_code == 200:
+            return {"status": "ready"}
+    except Exception:
+        pass
+    return Response(content='{"status":"not_ready","reason":"secrets-agent unavailable"}', status_code=503)
 
 
 @app.post("/execute", response_model=AgentTaskResponse)
-async def execute_task(req: AgentTaskRequest, request: Request):
+async def execute_task(req: AgentTaskRequest, request: Request, identity: ServiceIdentity = Depends(get_service_identity)):
     return await handle_agent_execute(req, request, _execute_handler)
+
 
 @app.get("/capabilities")
 async def get_capabilities():
@@ -268,11 +294,8 @@ async def get_capabilities():
             "carrier.trunks.list",
             "carrier.messaging.status",
             "carrier.cnam.status",
-            "carrier.snapshot.inventory"
+            "carrier.snapshot.inventory",
         ],
-        "version": "1.0.0"
+        "providers": ["twilio", "mock"],
+        "version": "2.0.0",
     }
-
-@app.get("/healthz")
-async def healthz():
-    return {"status": "ok"}

@@ -6,9 +6,9 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import uuid
 
-from packages.shared.db import get_db_session
+from packages.shared.db import get_db
 from packages.shared.models import StorageTarget, StorageJob, Secret, AuditEvent, Task, Entity, TaskLink, EntityEvent, IdempotencyKey
-from apps.nexus_api.auth import get_current_user
+from apps.nexus_api.dependencies import get_current_user
 from packages.shared.secrets import encrypt_secret
 import datetime
 
@@ -62,7 +62,7 @@ class StorageJobResponse(BaseModel):
 async def create_storage_target(
     config: StorageTargetCreateConfig,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -122,14 +122,14 @@ async def create_storage_target(
     return db_target
 
 @router.get("/targets", response_model=List[StorageTargetResponse])
-async def list_storage_targets(user=Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+async def list_storage_targets(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
     res = await db.execute(select(StorageTarget))
     return res.scalars().all()
 
 @router.get("/targets/{target_id}", response_model=StorageTargetResponse)
-async def get_storage_target(target_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+async def get_storage_target(target_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
     res = await db.execute(select(StorageTarget).where(StorageTarget.id == target_id))
@@ -143,7 +143,7 @@ async def update_storage_target(
     target_id: str,
     patch: StorageTargetPatch,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -167,7 +167,7 @@ async def update_storage_target(
 async def test_storage_target(
     target_id: str,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -199,7 +199,7 @@ async def list_storage_jobs(
     limit: int = 100,
     offset: int = 0,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -215,7 +215,7 @@ async def list_storage_jobs(
 async def get_storage_job(
     job_id: str,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db)
 ):
     if user.role not in ("admin", "operator", "reader"):
         raise HTTPException(status_code=403, detail="Not authorized")
