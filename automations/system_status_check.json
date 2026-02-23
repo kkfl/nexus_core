@@ -1,0 +1,26 @@
+{
+    "name": "System Status Check",
+    "description": "Runs active health checks across all monitoring targets every 5 minutes. The monitoring agent natively evaluates states and dispatches critical alerts on failure.",
+    "tenant_id": "nexus",
+    "env": "prod",
+    "schedule_cron": "*/5 * * * *",
+    "enabled": true,
+    "notify_on_failure": true,
+    "notify_on_success": false,
+    "max_concurrent_runs": 1,
+    "workflow_spec": {
+        "steps": [
+            {
+                "step_id": "run_checks",
+                "agent_name": "monitoring-agent",
+                "action": "POST /v1/check/run",
+                "input": {},
+                "timeout_seconds": 30,
+                "retry_policy": {
+                    "max_attempts": 1,
+                    "backoff_ms": 0
+                }
+            }
+        ]
+    }
+}

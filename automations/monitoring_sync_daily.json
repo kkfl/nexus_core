@@ -1,0 +1,26 @@
+{
+    "name": "Monitoring Targets Sync",
+    "description": "Daily synchronization of deployments from the registry into the monitoring agent's target list.",
+    "tenant_id": "nexus",
+    "env": "prod",
+    "schedule_cron": "0 6 * * *",
+    "enabled": true,
+    "notify_on_failure": true,
+    "notify_on_success": false,
+    "max_concurrent_runs": 1,
+    "workflow_spec": {
+        "steps": [
+            {
+                "step_id": "sync_targets",
+                "agent_name": "monitoring-agent",
+                "action": "POST /v1/targets/sync-from-registry",
+                "input": {},
+                "timeout_seconds": 15,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "backoff_ms": 2000
+                }
+            }
+        ]
+    }
+}

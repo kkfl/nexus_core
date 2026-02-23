@@ -110,3 +110,74 @@ async def list_incidents(
         }
         for e in events
     ]
+
+@router.post("/status/dispatch-digest")
+async def dispatch_daily_digest(
+    tenant_id: Optional[str] = Query(None),
+    env: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    import uuid
+    from datetime import datetime, timezone, timedelta
+    from apps.monitoring_agent.engine.alerter import dispatch_alert
+    
+    correlation_id = str(uuid.uuid4())
+    
+    # Get current targets
+    stmt = select(MonitoringTarget, MonitoringState).join(
+        MonitoringState, MonitoringTarget.id == MonitoringState.target_id
+    )
+    if tenant_id: stmt = stmt.where(MonitoringTarget.tenant_id == tenant_id)
+    if env: stmt = stmt.where(MonitoringTarget.env == env)
+        
+    targets_res = await db.execute(stmt)
+    records = targets_res.all()
+    
+    total = len(records)
+    up_count = sum(1 for _, s in records if s.current_state == "UP")
+    down_count = total - up_count
+    
+    agent_lines = []
+    for t, s in records:
+        icon = "✅" if s.current_state == "UP" else "❌"
+        agent_lines.append(f"{icon} {t.agent_name} ({s.current_state})")
+        
+    agents_summary = "\n".join(agent_lines)
+    
+    # Get recent incidents (last 24 hours)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).replace(tzinfo=None)
+    inc_stmt = select(MonitoringAuditEvent).where(
+        MonitoringAuditEvent.action.in_(["state_change", "alert_dispatched"]),
+        MonitoringAuditEvent.created_at >= yesterday
+    ).order_by(desc(MonitoringAuditEvent.created_at)).limit(5)
+    
+    if tenant_id: inc_stmt = inc_stmt.where(MonitoringAuditEvent.tenant_id == tenant_id)
+    if env: inc_stmt = inc_stmt.where(MonitoringAuditEvent.env == env)
+        
+    inc_res = await db.execute(inc_stmt)
+    incidents = inc_res.scalars().all()
+    
+    incident_lines = []
+    if not incidents:
+        incident_lines.append("No incidents recorded in the last 24 hours.")
+    else:
+        for inc in incidents:
+            action = inc.action
+            detail = inc.detail or "No detail"
+            time_str = inc.created_at.strftime("%H:%M UTC")
+            incident_lines.append(f"- {time_str} | {action}: {detail}")
+            
+    incidents_summary = "\n".join(incident_lines)
+    
+    message = (
+        f"*Daily System Digest*\n\n"
+        f"Overall: {up_count}/{total} Targets UP\n\n"
+        f"*Target Status*\n{agents_summary}\n\n"
+        f"*Recent Incidents (Last 24h)*\n{incidents_summary}"
+    )
+    
+    # Create a dummy target object to route the alert cleanly using the existing alerter
+    dummy = MonitoringTarget(tenant_id=tenant_id, env=env, agent_name="Nexus Platform Root", base_url="")
+    await dispatch_alert(dummy, "info", message, correlation_id)
+    
+    return {"status": "dispatched", "message_length": len(message), "correlation_id": correlation_id}
