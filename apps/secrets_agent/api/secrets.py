@@ -8,25 +8,33 @@ Access control matrix:
   - rotate:              service with rotate policy
   - delete (deactivate): admin only
 """
+
 from __future__ import annotations
 
 import datetime
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.secrets_agent.audit import sink as audit_sink
+from apps.secrets_agent.crypto.envelope import encrypt_secret
 from apps.secrets_agent.dependencies import (
-    ServiceIdentity, get_policy_engine, get_service_identity, get_vault_db, require_admin,
+    ServiceIdentity,
+    get_policy_engine,
+    get_service_identity,
+    get_vault_db,
+    require_admin,
 )
-from apps.secrets_agent.crypto.envelope import encrypt_secret, EncryptedSecret
-from apps.secrets_agent.crypto.redaction import redact
 from apps.secrets_agent.models import VaultSecret
 from apps.secrets_agent.policy.engine import PolicyEngine
 from apps.secrets_agent.schemas import (
-    SecretCreate, SecretMeta, SecretReadRequest, SecretReadResponse,
-    SecretRotateRequest, SecretRotateResponse, SecretUpdate,
+    SecretCreate,
+    SecretMeta,
+    SecretReadRequest,
+    SecretReadResponse,
+    SecretRotateRequest,
+    SecretRotateResponse,
+    SecretUpdate,
 )
 from apps.secrets_agent.store.postgres import PostgresSecretStore
 
@@ -54,10 +62,16 @@ async def create_secret(
         env=payload.env,
     )
     await audit_sink.log_event(
-        db, request_id=identity.request_id, service_id=identity.service_id,
-        tenant_id=payload.tenant_id, env=payload.env, secret_alias=payload.alias,
-        action="write", result="allowed" if decision.allowed else "denied",
-        reason=decision.reason, ip_address=identity.ip_address,
+        db,
+        request_id=identity.request_id,
+        service_id=identity.service_id,
+        tenant_id=payload.tenant_id,
+        env=payload.env,
+        secret_alias=payload.alias,
+        action="write",
+        result="allowed" if decision.allowed else "denied",
+        reason=decision.reason,
+        ip_address=identity.ip_address,
     )
     if not decision.allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
@@ -74,16 +88,16 @@ async def create_secret(
     return _to_meta(secret)
 
 
-@router.get("", response_model=List[SecretMeta])
+@router.get("", response_model=list[SecretMeta])
 async def list_secrets(
-    tenant_id: Optional[str] = Query(None),
-    env: Optional[str] = Query(None, pattern="^(dev|stage|prod)$"),
+    tenant_id: str | None = Query(None),
+    env: str | None = Query(None, pattern="^(dev|stage|prod)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     identity: ServiceIdentity = Depends(get_service_identity),
     policy: PolicyEngine = Depends(get_policy_engine),
     db: AsyncSession = Depends(get_vault_db),
-) -> List[SecretMeta]:
+) -> list[SecretMeta]:
     """List secret metadata. Values are never included."""
     decision = policy.check(
         service_id=identity.service_id,
@@ -137,10 +151,16 @@ async def read_secret_value(
         env=secret.env,
     )
     await audit_sink.log_event(
-        db, request_id=identity.request_id, service_id=identity.service_id,
-        tenant_id=secret.tenant_id, env=secret.env, secret_alias=secret.alias,
-        action="read", result="allowed" if decision.allowed else "denied",
-        reason=body.reason or decision.reason, ip_address=identity.ip_address,
+        db,
+        request_id=identity.request_id,
+        service_id=identity.service_id,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+        secret_alias=secret.alias,
+        action="read",
+        result="allowed" if decision.allowed else "denied",
+        reason=body.reason or decision.reason,
+        ip_address=identity.ip_address,
     )
     if not decision.allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
@@ -170,8 +190,11 @@ async def update_secret(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found.")
 
     decision = policy.check(
-        service_id=identity.service_id, action="write",
-        secret_alias=secret.alias, tenant_id=secret.tenant_id, env=secret.env,
+        service_id=identity.service_id,
+        action="write",
+        secret_alias=secret.alias,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
     )
     if not decision.allowed and not identity.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
@@ -194,14 +217,23 @@ async def rotate_secret(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found.")
 
     decision = policy.check(
-        service_id=identity.service_id, action="rotate",
-        secret_alias=secret.alias, tenant_id=secret.tenant_id, env=secret.env,
+        service_id=identity.service_id,
+        action="rotate",
+        secret_alias=secret.alias,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
     )
     await audit_sink.log_event(
-        db, request_id=identity.request_id, service_id=identity.service_id,
-        tenant_id=secret.tenant_id, env=secret.env, secret_alias=secret.alias,
-        action="rotate", result="allowed" if decision.allowed else "denied",
-        reason=body.reason or decision.reason, ip_address=identity.ip_address,
+        db,
+        request_id=identity.request_id,
+        service_id=identity.service_id,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+        secret_alias=secret.alias,
+        action="rotate",
+        result="allowed" if decision.allowed else "denied",
+        reason=body.reason or decision.reason,
+        ip_address=identity.ip_address,
     )
     if not decision.allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
@@ -214,7 +246,9 @@ async def rotate_secret(
     if secret.rotation_interval_days:
         secret.next_due_at = now + datetime.timedelta(days=secret.rotation_interval_days)
     await db.flush()
-    return SecretRotateResponse(id=secret.id, alias=secret.alias, rotated_at=now, key_version=secret.key_version)
+    return SecretRotateResponse(
+        id=secret.id, alias=secret.alias, rotated_at=now, key_version=secret.key_version
+    )
 
 
 @router.delete("/{secret_id}")
@@ -228,9 +262,15 @@ async def delete_secret(
     if not secret:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found.")
     await audit_sink.log_event(
-        db, request_id=identity.request_id, service_id=identity.service_id,
-        tenant_id=secret.tenant_id, env=secret.env, secret_alias=secret.alias,
-        action="delete", result="allowed", ip_address=identity.ip_address,
+        db,
+        request_id=identity.request_id,
+        service_id=identity.service_id,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+        secret_alias=secret.alias,
+        action="delete",
+        result="allowed",
+        ip_address=identity.ip_address,
     )
     await _store.deactivate(db, secret)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

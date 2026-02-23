@@ -2,10 +2,10 @@
 Docs router: serves pilot plan markdown files from the /docs directory.
 RBAC: all authenticated users (admin, operator, reader) may read docs.
 """
+
 import os
 import re
 from pathlib import Path
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -24,7 +24,7 @@ def _safe_name(name: str) -> bool:
 
 
 @router.get("/list", tags=["docs"])
-async def list_docs(_: any = Depends(get_current_user)) -> List[dict]:
+async def list_docs(_: any = Depends(get_current_user)) -> list[dict]:
     """Return a list of available markdown docs with their display titles."""
     if not DOCS_DIR.exists():
         return []

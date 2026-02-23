@@ -1,11 +1,12 @@
-from typing import Any, Dict, List
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from structlog import get_logger
 
-from apps.storage_agent.store import postgres
 from apps.storage_agent.engine import s3
 from apps.storage_agent.metrics import observe_latency
-from structlog import get_logger
+from apps.storage_agent.store import postgres
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["targets"])
@@ -18,8 +19,8 @@ class TargetUpsertRequest(BaseModel):
     endpoint_url: str
     region: str
     default_bucket: str
-    credential_aliases: Dict[str, str]
-    flags: Dict[str, Any] = {}
+    credential_aliases: dict[str, str]
+    flags: dict[str, Any] = {}
 
 
 class BucketEnsureRequest(BaseModel):
@@ -34,11 +35,21 @@ class BucketEnsureRequest(BaseModel):
 async def upsert_target(req: TargetUpsertRequest, db=Depends(postgres.get_db)):
     """Upsert a new storage target configuration (no raw secrets, just aliases)."""
     # Validation
-    if "access_key_id" not in req.credential_aliases or "secret_access_key" not in req.credential_aliases:
-        raise HTTPException(400, "credential_aliases must contain access_key_id and secret_access_key pointers")
+    if (
+        "access_key_id" not in req.credential_aliases
+        or "secret_access_key" not in req.credential_aliases
+    ):
+        raise HTTPException(
+            400, "credential_aliases must contain access_key_id and secret_access_key pointers"
+        )
 
-    logger.info("upserting_storage_target", target_id=req.storage_target_id, tenant_id=req.tenant_id, env=req.env)
-    
+    logger.info(
+        "upserting_storage_target",
+        target_id=req.storage_target_id,
+        tenant_id=req.tenant_id,
+        env=req.env,
+    )
+
     t = await postgres.upsert_target(
         db,
         tenant_id=req.tenant_id,
@@ -48,10 +59,10 @@ async def upsert_target(req: TargetUpsertRequest, db=Depends(postgres.get_db)):
         region=req.region,
         default_bucket=req.default_bucket,
         credential_aliases=req.credential_aliases,
-        flags=req.flags
+        flags=req.flags,
     )
     await db.commit()
-    
+
     return {
         "id": t.id,
         "storage_target_id": t.storage_target_id,
@@ -60,7 +71,7 @@ async def upsert_target(req: TargetUpsertRequest, db=Depends(postgres.get_db)):
         "endpoint_url": t.endpoint_url,
         "region": t.region,
         "default_bucket": t.default_bucket,
-        "enabled": t.enabled
+        "enabled": t.enabled,
     }
 
 
@@ -78,8 +89,9 @@ async def list_targets(tenant_id: str = "nexus", env: str = "prod", db=Depends(p
                 "endpoint_url": t.endpoint_url,
                 "region": t.region,
                 "default_bucket": t.default_bucket,
-                "enabled": t.enabled
-            } for t in targets
+                "enabled": t.enabled,
+            }
+            for t in targets
         ]
     }
 
@@ -91,16 +103,18 @@ async def ensure_bucket(req: BucketEnsureRequest, db=Depends(postgres.get_db)):
     target = await postgres.get_target(db, req.storage_target_id, req.tenant_id, req.env)
     if not target:
         raise HTTPException(404, "storage_target_not_found")
-        
+
     logger.info("ensuring_bucket", target_id=req.storage_target_id, bucket=req.bucket_name)
 
     # Note: correlation ID would typically be passed down here from middleware context via structlog
     correlation_id = "bucket_ensure"
-    
+
     try:
         success = await s3.ensure_bucket(target, req.bucket_name, correlation_id)
         if success:
-            b = await postgres.get_or_create_bucket(db, target.id, req.bucket_name, target.tenant_id, target.env)
+            b = await postgres.get_or_create_bucket(
+                db, target.id, req.bucket_name, target.tenant_id, target.env
+            )
             await db.commit()
             return {"status": "success", "bucket_id": b.id, "bucket_name": b.bucket_name}
     except s3.StorageOperationError as e:

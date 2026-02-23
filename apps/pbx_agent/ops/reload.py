@@ -6,13 +6,14 @@ core reload is:
 - Idempotent: running it twice does not change system state
 - AMI-executable: Action: Command / Command: core reload
 """
-from typing import Any, Dict
+
+from typing import Any
 
 from apps.pbx_agent.adapters.ami import run_ami_command
 from apps.pbx_agent.config import config
 
 
-async def reload_asterisk(host: str, port: int, username: str, secret: str) -> Dict[str, Any]:
+async def reload_asterisk(host: str, port: int, username: str, secret: str) -> dict[str, Any]:
     """
     Trigger a safe Asterisk configuration reload.
     Idempotent: can be run multiple times without side effects.

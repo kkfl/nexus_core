@@ -15,19 +15,19 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
+    - name: Install ruff (pinned)
+      run: pip install "ruff==0.9.10"
+    - name: Format Check (Ruff)
+      run: ruff format --check .
+    - name: Lint Check (Ruff)
+      run: ruff check .
     - name: Install uv
       uses: astral-sh/setup-uv@v5
     - name: Install dependencies
       run: uv sync
-    - name: Format Check (Ruff)
-      continue-on-error: true
-      run: uv run ruff format --check .
-    - name: Lint Check (Ruff)
-      continue-on-error: true
-      run: uv run ruff check .
     - name: Type Check (MyPy)
+      run: uv run mypy packages/ apps/ --ignore-missing-imports --no-error-summary
       continue-on-error: true
-      run: uv run mypy packages/ apps/
 
   python-test:
     runs-on: ubuntu-latest

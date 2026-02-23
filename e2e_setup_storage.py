@@ -1,12 +1,13 @@
 import asyncio
-import httpx
-import sys
+
 import asyncpg
+import httpx
 
 NEXUS_API_URL = "http://localhost:8000"
 REGISTRY_URL = "http://localhost:8012"
 VAULT_URL = "http://localhost:8007"
 VAULT_ADMIN_KEY = "admin-vault-key-change-me-in-production"
+
 
 async def run_setup():
     print("=== Nexus V1 Storage Agent Setup ===")
@@ -21,9 +22,11 @@ async def run_setup():
         ON CONFLICT (name) DO NOTHING;
         """
         await conn.execute(q1)
-        
-        await conn.execute("DELETE FROM registry_deployments WHERE agent_id = (SELECT id FROM registry_agents WHERE name = 'storage-agent') AND env = 'prod';")
-        
+
+        await conn.execute(
+            "DELETE FROM registry_deployments WHERE agent_id = (SELECT id FROM registry_agents WHERE name = 'storage-agent') AND env = 'prod';"
+        )
+
         q2 = """
         INSERT INTO registry_deployments (id, agent_id, env, base_url, version, auth_scheme, auth_secret_alias, created_at, updated_at)
         VALUES (
@@ -63,31 +66,32 @@ async def run_setup():
         await conn.close()
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-
         # 1. Setup Vault Secrets for 'minio_local' test target
         print("\n1. Seeding Vault Secrets for minio_local target...")
         secrets = [
             {"alias": "storage.minio_local.access_key_id", "value": "admin"},
-            {"alias": "storage.minio_local.secret_access_key", "value": "minio_pass"}
+            {"alias": "storage.minio_local.secret_access_key", "value": "minio_pass"},
         ]
-        
+
         for s in secrets:
-             payload = {
-                 "alias": s["alias"],
-                 "value": s["value"],
-                 "tenant_id": "nexus",
-                 "env": "prod",
-                 "description": f"S3 Credential for minio_local target"
-             }
-             resp = await client.post(
-                 f"{VAULT_URL}/v1/secrets",
-                 json=payload,
-                 headers={"X-Service-ID": "admin", "X-Agent-Key": VAULT_ADMIN_KEY}
-             )
-             if resp.status_code in (200, 201, 409):
-                 print(f"  [+] Secret '{s['alias']}' created/updated.")
-             else:
-                 print(f"  [!] Failed to create secret '{s['alias']}': {resp.status_code} - {resp.text}")
+            payload = {
+                "alias": s["alias"],
+                "value": s["value"],
+                "tenant_id": "nexus",
+                "env": "prod",
+                "description": "S3 Credential for minio_local target",
+            }
+            resp = await client.post(
+                f"{VAULT_URL}/v1/secrets",
+                json=payload,
+                headers={"X-Service-ID": "admin", "X-Agent-Key": VAULT_ADMIN_KEY},
+            )
+            if resp.status_code in (200, 201, 409):
+                print(f"  [+] Secret '{s['alias']}' created/updated.")
+            else:
+                print(
+                    f"  [!] Failed to create secret '{s['alias']}': {resp.status_code} - {resp.text}"
+                )
 
         # 3. Register automation-agent secret credential down into Vault for monitoring to use
         print("\n3. Seeding Storage Agent automation-agent key...")
@@ -96,18 +100,18 @@ async def run_setup():
             "value": "automation-storage-key-change-me",
             "tenant_id": "nexus",
             "env": "prod",
-            "description": "Auth token used by automation-agent to call storage-agent"
+            "description": "Auth token used by automation-agent to call storage-agent",
         }
         resp = await client.post(
             f"{VAULT_URL}/v1/secrets",
             json=aa_payload,
-            headers={"X-Service-ID": "admin", "X-Agent-Key": VAULT_ADMIN_KEY}
+            headers={"X-Service-ID": "admin", "X-Agent-Key": VAULT_ADMIN_KEY},
         )
         if resp.status_code in (200, 201):
-             print("  [+] Auth secret 'storage-agent.automation-agent.key' seeded.")
+            print("  [+] Auth secret 'storage-agent.automation-agent.key' seeded.")
         else:
-             print(f"  [!] Failed to seed auth secret: {resp.status_code} - {resp.text}")
-             
+            print(f"  [!] Failed to seed auth secret: {resp.status_code} - {resp.text}")
+
         print("\n[✔] Setup Script Complete.")
 
 

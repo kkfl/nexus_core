@@ -2,16 +2,15 @@
 Jobs API — POST /v1/jobs, GET /v1/jobs/{job_id}
 Async mutating actions (V1: reload only).
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from apps.pbx_agent.store.database import get_db
-from apps.pbx_agent.store import postgres
-from apps.pbx_agent.auth.identity import get_service_identity, ServiceIdentity
-from apps.pbx_agent.schemas import JobCreate, PbxJobOut, PbxJobDetailOut, PbxJobResultOut
-from apps.pbx_agent.models import PbxJob, PbxJobResult
 from apps.pbx_agent.audit.log import write_audit_event
+from apps.pbx_agent.auth.identity import ServiceIdentity, get_service_identity
+from apps.pbx_agent.schemas import JobCreate, PbxJobDetailOut, PbxJobOut, PbxJobResultOut
+from apps.pbx_agent.store import postgres
+from apps.pbx_agent.store.database import get_db
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 
@@ -27,7 +26,10 @@ async def create_job(
     if identity.read_only:
         raise HTTPException(status_code=403, detail="Read-only service cannot create jobs")
     if payload.action not in ALLOWED_ACTIONS:
-        raise HTTPException(status_code=400, detail=f"Action '{payload.action}' not supported. Allowed: {sorted(ALLOWED_ACTIONS)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Action '{payload.action}' not supported. Allowed: {sorted(ALLOWED_ACTIONS)}",
+        )
 
     # Verify target exists
     target = await postgres.get_target(db, payload.pbx_target_id, payload.tenant_id, payload.env)
@@ -35,9 +37,16 @@ async def create_job(
         raise HTTPException(status_code=404, detail="Target not found")
 
     job = await postgres.create_job(db, payload)
-    await write_audit_event(db, identity.correlation_id, identity.service_id,
-                            f"job.{payload.action}", "queued",
-                            tenant_id=payload.tenant_id, env=payload.env, target_id=target.id)
+    await write_audit_event(
+        db,
+        identity.correlation_id,
+        identity.service_id,
+        f"job.{payload.action}",
+        "queued",
+        tenant_id=payload.tenant_id,
+        env=payload.env,
+        target_id=target.id,
+    )
     await db.commit()
     await db.refresh(job)
     return PbxJobOut.model_validate(job)

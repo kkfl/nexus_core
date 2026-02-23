@@ -1,29 +1,34 @@
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
 import datetime
+from typing import Any
+
+from pydantic import BaseModel
+
 
 class KbSourceCreate(BaseModel):
     name: str
     kind: str
-    config: Optional[Dict[str, Any]] = None
+    config: dict[str, Any] | None = None
+
 
 class KbSourceOut(BaseModel):
     id: int
     name: str
     kind: str
-    config: Optional[Dict[str, Any]]
+    config: dict[str, Any] | None
     is_active: bool
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
 
+
 class KbDocumentTextCreate(BaseModel):
     source_id: int
     namespace: str
     title: str
     text: str
-    meta_data: Optional[Dict[str, Any]] = None
+    meta_data: dict[str, Any] | None = None
+
 
 class KbDocumentOut(BaseModel):
     id: int
@@ -34,12 +39,13 @@ class KbDocumentOut(BaseModel):
     storage_backend: str
     object_key: str
     bytes_size: int
-    meta_data: Optional[Dict[str, Any]]
+    meta_data: dict[str, Any] | None
     ingest_status: str
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
+
 
 class KbChunkOut(BaseModel):
     id: int
@@ -47,17 +53,19 @@ class KbChunkOut(BaseModel):
     chunk_index: int
     text_content: str
     char_count: int
-    meta_data: Optional[Dict[str, Any]]
-    
+    meta_data: dict[str, Any] | None
+
     class Config:
         from_attributes = True
 
+
 class KbSearchRequest(BaseModel):
     query: str
-    namespaces: List[str] = ["global"]
+    namespaces: list[str] = ["global"]
     top_k: int = 6
-    min_score: Optional[float] = None
-    filters: Optional[Dict[str, Any]] = None
+    min_score: float | None = None
+    filters: dict[str, Any] | None = None
+
 
 class KbSearchResult(BaseModel):
     chunk_id: str
@@ -67,5 +75,6 @@ class KbSearchResult(BaseModel):
     score: float
     text: str
 
+
 class KbSearchResponse(BaseModel):
-    results: List[KbSearchResult]
+    results: list[KbSearchResult]

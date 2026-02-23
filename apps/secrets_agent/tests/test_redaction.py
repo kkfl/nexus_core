@@ -1,4 +1,5 @@
 """Unit tests for the redaction module."""
+
 from apps.secrets_agent.crypto.redaction import SafeValue, redact, sanitize_dict
 
 
@@ -40,7 +41,7 @@ def test_sanitize_dict_nested():
         "credentials": {
             "password": "secret",
             "user": "alice",
-        }
+        },
     }
     sanitized = sanitize_dict(data)
     assert sanitized["outer"] == "safe"

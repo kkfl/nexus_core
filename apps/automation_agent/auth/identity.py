@@ -1,11 +1,11 @@
 """
 ServiceIdentity — validates X-Service-ID + X-Agent-Key headers on every request.
 """
+
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Optional
 
 import structlog
 from fastapi import Header, HTTPException, Request, status
@@ -19,7 +19,7 @@ logger = structlog.get_logger(__name__)
 class ServiceIdentity:
     service_id: str
     is_admin: bool
-    ip_address: Optional[str]
+    ip_address: str | None
     request_id: str
     correlation_id: str
 
@@ -28,8 +28,8 @@ def get_service_identity(
     request: Request,
     x_service_id: str = Header(..., alias="X-Service-ID"),
     x_agent_key: str = Header(..., alias="X-Agent-Key"),
-    x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID"),
-    x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+    x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
+    x_request_id: str | None = Header(None, alias="X-Request-ID"),
 ) -> ServiceIdentity:
     """FastAPI dependency — validates service identity from headers."""
 

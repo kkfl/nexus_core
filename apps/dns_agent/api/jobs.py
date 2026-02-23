@@ -1,7 +1,6 @@
 """Jobs router — GET /v1/jobs/{job_id}, GET /v1/jobs."""
-from __future__ import annotations
 
-from typing import List
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -28,7 +27,7 @@ async def get_job(
     return JobOut.model_validate(job)
 
 
-@router.get("", response_model=List[JobOut])
+@router.get("", response_model=list[JobOut])
 async def list_jobs(
     tenant_id: str = Query(...),
     env: str = Query(None),
@@ -36,7 +35,7 @@ async def list_jobs(
     limit: int = Query(50, ge=1, le=200),
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(store.get_db),
-) -> List[JobOut]:
+) -> list[JobOut]:
     """List change jobs for a tenant, optionally filtered by status."""
     q = select(DnsChangeJob).where(DnsChangeJob.tenant_id == tenant_id)
     if env:

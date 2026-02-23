@@ -2,16 +2,20 @@
 Unit tests for Telegram channel.
 Covers: send, MarkdownV2 escaping, truncation, rate limit retry, token redaction.
 """
+
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 
 from apps.notifications_agent.channels.telegram import (
-    TelegramChannel, escape_markdown_v2, _truncate, _TG_MAX_LEN,
+    _TG_MAX_LEN,
+    TelegramChannel,
+    _truncate,
+    escape_markdown_v2,
 )
 
 
@@ -93,7 +97,8 @@ async def test_send_api_error(channel):
 async def test_rate_limit_retry(channel):
     """429 with Retry-After should retry and succeed."""
     rate_limit = httpx.Response(
-        429, content=b'{"ok":false}',
+        429,
+        content=b'{"ok":false}',
         headers={"Retry-After": "0.01", "Content-Type": "application/json"},
     )
     success = _mock_resp({"ok": True, "result": {"message_id": 99}})

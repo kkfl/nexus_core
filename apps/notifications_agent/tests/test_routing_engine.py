@@ -2,6 +2,7 @@
 Unit tests for the routing engine.
 Covers: explicit channel passthrough, DB rule match, wildcard fallback, default routes.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

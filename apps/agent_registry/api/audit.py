@@ -1,7 +1,6 @@
 """
 Audit router — GET /v1/audit (admin only)
 """
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -15,14 +14,14 @@ from apps.agent_registry.store import postgres as store
 router = APIRouter(prefix="/v1/audit", tags=["audit"])
 
 
-@router.get("", response_model=List[AuditEventOut])
+@router.get("", response_model=list[AuditEventOut])
 async def get_audit_events(
-    tenant_id: Optional[str] = Query(None),
-    env: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
+    env: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(store.get_db),
-) -> List[AuditEventOut]:
+) -> list[AuditEventOut]:
     """Retrieve an audit log of all mutations inside the registry. Admin only."""
     if not identity.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only.")

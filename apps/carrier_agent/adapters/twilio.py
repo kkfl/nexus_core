@@ -10,18 +10,22 @@ Auth: HTTP Basic Auth — Account SID + Auth Token
 
 INVARIANT: Auth token is NEVER logged in any function in this module.
 """
+
 from __future__ import annotations
 
 import asyncio
 import random
-from typing import List, Optional
 
 import httpx
 import structlog
 
 from apps.carrier_agent.adapters.base import (
-    AccountStatus, CarrierProviderAdapter, CnamStatus,
-    DidRecord, MessagingStatus, TrunkRecord,
+    AccountStatus,
+    CarrierProviderAdapter,
+    CnamStatus,
+    DidRecord,
+    MessagingStatus,
+    TrunkRecord,
 )
 
 logger = structlog.get_logger(__name__)
@@ -31,24 +35,28 @@ _MAX_RETRIES = 3
 _BASE_DELAY = 0.5
 
 
-async def _twilio_request(client: httpx.AsyncClient, method: str, url: str,
-                          account_sid: str, auth_token: str, **kwargs) -> dict:
+async def _twilio_request(
+    client: httpx.AsyncClient, method: str, url: str, account_sid: str, auth_token: str, **kwargs
+) -> dict:
     """
     Perform a Twilio API request with retry + backoff.
     Auth credentials are passed as Basic auth — never logged.
     """
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
             resp = await client.request(
-                method, url,
+                method,
+                url,
                 auth=(account_sid, auth_token),
                 **kwargs,
             )
             if resp.status_code == 429:
-                wait = float(resp.headers.get("Retry-After", _BASE_DELAY * (2 ** attempt)))
+                wait = float(resp.headers.get("Retry-After", _BASE_DELAY * (2**attempt)))
                 wait += random.uniform(0, 0.3)
-                logger.warning("twilio_rate_limited", url=url, attempt=attempt, wait_s=round(wait, 2))
+                logger.warning(
+                    "twilio_rate_limited", url=url, attempt=attempt, wait_s=round(wait, 2)
+                )
                 await asyncio.sleep(wait)
                 continue
             if resp.status_code >= 500:
@@ -62,7 +70,9 @@ async def _twilio_request(client: httpx.AsyncClient, method: str, url: str,
             if resp.status_code >= 400:
                 # Twilio errors include a message — safe to surface (no credentials in error body)
                 body = resp.json() if resp.content else {}
-                raise RuntimeError(f"Twilio {method} {url} → {resp.status_code}: {body.get('message', resp.text[:200])}")
+                raise RuntimeError(
+                    f"Twilio {method} {url} → {resp.status_code}: {body.get('message', resp.text[:200])}"
+                )
             return resp.json() if resp.content else {}
         except httpx.TimeoutException as exc:
             delay = _BASE_DELAY * (2 ** (attempt - 1))
@@ -94,8 +104,11 @@ class TwilioAdapter(CarrierProviderAdapter):
     async def get_account_status(self) -> AccountStatus:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _twilio_request(
-                client, "GET", self._accounts_url(),
-                self.__account_sid, self.__auth_token,
+                client,
+                "GET",
+                self._accounts_url(),
+                self.__account_sid,
+                self.__auth_token,
             )
         return AccountStatus(
             provider="twilio",
@@ -103,12 +116,14 @@ class TwilioAdapter(CarrierProviderAdapter):
             friendly_name=data.get("friendly_name", ""),
         )
 
-    async def list_dids(self) -> List[DidRecord]:
+    async def list_dids(self) -> list[DidRecord]:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _twilio_request(
-                client, "GET",
+                client,
+                "GET",
                 self._accounts_url("/IncomingPhoneNumbers"),
-                self.__account_sid, self.__auth_token,
+                self.__account_sid,
+                self.__auth_token,
                 params={"PageSize": 1000},
             )
         numbers = data.get("incoming_phone_numbers", [])
@@ -126,13 +141,15 @@ class TwilioAdapter(CarrierProviderAdapter):
             for n in numbers
         ]
 
-    async def get_did(self, number: str) -> Optional[DidRecord]:
+    async def get_did(self, number: str) -> DidRecord | None:
         # Twilio accepts E.164 format in filter
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _twilio_request(
-                client, "GET",
+                client,
+                "GET",
                 self._accounts_url("/IncomingPhoneNumbers"),
-                self.__account_sid, self.__auth_token,
+                self.__account_sid,
+                self.__auth_token,
                 params={"PhoneNumber": number, "PageSize": 10},
             )
         numbers = data.get("incoming_phone_numbers", [])
@@ -150,13 +167,15 @@ class TwilioAdapter(CarrierProviderAdapter):
             assigned_to=n.get("voice_application_sid"),
         )
 
-    async def list_trunks(self) -> List[TrunkRecord]:
+    async def list_trunks(self) -> list[TrunkRecord]:
         """List SIP elastic trunks via Twilio Trunking API."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _twilio_request(
-                client, "GET",
+                client,
+                "GET",
                 "https://trunking.twilio.com/v1/Trunks",
-                self.__account_sid, self.__auth_token,
+                self.__account_sid,
+                self.__auth_token,
                 params={"PageSize": 100},
             )
         trunks = data.get("trunks", [])
@@ -178,7 +197,7 @@ class TwilioAdapter(CarrierProviderAdapter):
             overall_status="enabled" if status.status == "active" else "disabled",
         )
 
-    async def get_cnam_status(self, number: Optional[str] = None) -> CnamStatus:
+    async def get_cnam_status(self, number: str | None = None) -> CnamStatus:
         """
         Check CNAM status for a DID. Twilio exposes caller ID as a resource.
         If number is None, checks the account's first number.
@@ -188,9 +207,11 @@ class TwilioAdapter(CarrierProviderAdapter):
             if did and did.provider_sid:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
                     data = await _twilio_request(
-                        client, "GET",
+                        client,
+                        "GET",
                         self._accounts_url(f"/IncomingPhoneNumbers/{did.provider_sid}"),
-                        self.__account_sid, self.__auth_token,
+                        self.__account_sid,
+                        self.__auth_token,
                     )
                 friendly_name = data.get("friendly_name", "")
                 return CnamStatus(
@@ -202,17 +223,19 @@ class TwilioAdapter(CarrierProviderAdapter):
 
     async def purchase_did(self, number: str, capabilities: dict) -> DidRecord:
         """
-        Purchase a specific phone number. 
+        Purchase a specific phone number.
         Twilio requires the exact E.164 number in the PhoneNumber parameter.
         """
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _twilio_request(
-                client, "POST",
+                client,
+                "POST",
                 self._accounts_url("/IncomingPhoneNumbers"),
-                self.__account_sid, self.__auth_token,
-                data={"PhoneNumber": number}
+                self.__account_sid,
+                self.__auth_token,
+                data={"PhoneNumber": number},
             )
-        
+
         return DidRecord(
             number=data.get("phone_number", ""),
             region=data.get("region"),
@@ -224,7 +247,7 @@ class TwilioAdapter(CarrierProviderAdapter):
             assigned_to=data.get("voice_application_sid"),
         )
 
-    async def release_did(self, number: str, provider_sid: Optional[str] = None) -> bool:
+    async def release_did(self, number: str, provider_sid: str | None = None) -> bool:
         """
         Release a phone number back to Twilio.
         Requires the provider_sid (e.g. PNxxxxxxxx). If not provided, we look it up.
@@ -238,17 +261,20 @@ class TwilioAdapter(CarrierProviderAdapter):
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             try:
                 await _twilio_request(
-                    client, "DELETE",
+                    client,
+                    "DELETE",
                     self._accounts_url(f"/IncomingPhoneNumbers/{provider_sid}"),
-                    self.__account_sid, self.__auth_token,
+                    self.__account_sid,
+                    self.__auth_token,
                 )
                 return True
             except Exception as e:
                 logger.error("twilio_release_failed", number=number, error=str(e))
                 return False
 
-    async def create_or_update_trunk(self, trunk_id: str, friendly_name: str, 
-                                     termination_sip_domain: Optional[str] = None) -> TrunkRecord:
+    async def create_or_update_trunk(
+        self, trunk_id: str, friendly_name: str, termination_sip_domain: str | None = None
+    ) -> TrunkRecord:
         """
         Create or update a SIP trunk.
         If trunk_id is provided, we update it. If not, or if it says 'new', we create it.
@@ -274,23 +300,27 @@ class TwilioAdapter(CarrierProviderAdapter):
             if target_sid:
                 # Update existing
                 data = await _twilio_request(
-                    client, "POST",
+                    client,
+                    "POST",
                     f"https://trunking.twilio.com/v1/Trunks/{target_sid}",
-                    self.__account_sid, self.__auth_token,
-                    data=payload
+                    self.__account_sid,
+                    self.__auth_token,
+                    data=payload,
                 )
             else:
                 # Create new
                 data = await _twilio_request(
-                    client, "POST",
+                    client,
+                    "POST",
                     "https://trunking.twilio.com/v1/Trunks",
-                    self.__account_sid, self.__auth_token,
-                    data=payload
+                    self.__account_sid,
+                    self.__auth_token,
+                    data=payload,
                 )
 
         return TrunkRecord(
             trunk_id=data.get("sid", ""),
             friendly_name=data.get("friendly_name", ""),
             status="active",
-            termination_sip_domain=data.get("domain_name")
+            termination_sip_domain=data.get("domain_name"),
         )

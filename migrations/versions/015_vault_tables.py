@@ -1,6 +1,7 @@
 """015_vault_tables — Create vault_secrets, vault_policies, vault_audit_events, vault_leases."""
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 
 revision = "015_vault_tables"
 down_revision = "014_metrics_events"

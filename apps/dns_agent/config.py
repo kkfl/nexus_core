@@ -2,11 +2,10 @@
 DNS Agent configuration — all values loaded from environment variables.
 No defaults for secrets. No hardcoded values.
 """
+
 from __future__ import annotations
 
 import json
-import os
-from typing import Dict
 
 from pydantic_settings import BaseSettings
 
@@ -35,7 +34,7 @@ class DnsAgentSettings(BaseSettings):
 
     model_config = {"env_file": ".env", "extra": "ignore", "case_sensitive": False}
 
-    def get_agent_keys(self) -> Dict[str, str]:
+    def get_agent_keys(self) -> dict[str, str]:
         """Parse DNS_AGENT_KEYS JSON map."""
         try:
             return json.loads(self.dns_agent_keys)

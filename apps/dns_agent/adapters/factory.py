@@ -4,10 +4,10 @@ Adapter factory — selects the correct DnsProviderAdapter for a zone.
 Credentials are fetched from secrets_agent at runtime by alias.
 Never cached beyond the request lifecycle. Never logged.
 """
+
 from __future__ import annotations
 
 import structlog
-from typing import Optional
 
 from apps.dns_agent.adapters.base import DnsProviderAdapter
 from apps.dns_agent.adapters.cloudflare import CloudflareAdapter
@@ -17,9 +17,13 @@ from apps.dns_agent.client.vault_client import DnsVaultClient
 logger = structlog.get_logger(__name__)
 
 
-async def get_adapter(provider: str, tenant_id: str, env: str,
-                      vault: DnsVaultClient,
-                      correlation_id: Optional[str] = None) -> DnsProviderAdapter:
+async def get_adapter(
+    provider: str,
+    tenant_id: str,
+    env: str,
+    vault: DnsVaultClient,
+    correlation_id: str | None = None,
+) -> DnsProviderAdapter:
     """
     Build and return the correct adapter for the given provider.
     Credentials are fetched from the vault at call time — never cached.

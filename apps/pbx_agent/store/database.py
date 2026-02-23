@@ -1,8 +1,9 @@
 """
 Async SQLAlchemy engine + session factory for pbx_agent.
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from apps.pbx_agent.models import Base
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from apps.pbx_agent.config import config
 
 engine = create_async_engine(config.database_url, echo=False)

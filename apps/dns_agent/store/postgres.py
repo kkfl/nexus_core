@@ -2,15 +2,15 @@
 Postgres store for DNS Agent — CRUD layer for zones, records, jobs, and audit events.
 All operations use async SQLAlchemy sessions.
 """
+
 from __future__ import annotations
 
 import datetime
 import uuid
-from typing import List, Optional
 
 import structlog
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from apps.dns_agent.config import get_settings
 from apps.dns_agent.models import DnsAuditEvent, DnsChangeJob, DnsRecord, DnsZone
@@ -33,34 +33,38 @@ def _get_engine():
 async def get_db():
     """FastAPI dependency — yields an async DB session."""
     _get_engine()
-    async with _session_factory() as session:
-        async with session.begin():
-            yield session
+    async with _session_factory() as session, session.begin():
+        yield session
 
 
 # ---------------------------------------------------------------------------
 # Zones
 # ---------------------------------------------------------------------------
 
-async def get_zone(db: AsyncSession, zone_id: str) -> Optional[DnsZone]:
+
+async def get_zone(db: AsyncSession, zone_id: str) -> DnsZone | None:
     result = await db.execute(select(DnsZone).where(DnsZone.id == zone_id))
     return result.scalars().first()
 
 
-async def get_zone_by_name(db: AsyncSession, tenant_id: str, env: str, zone_name: str) -> Optional[DnsZone]:
+async def get_zone_by_name(
+    db: AsyncSession, tenant_id: str, env: str, zone_name: str
+) -> DnsZone | None:
     result = await db.execute(
         select(DnsZone).where(
             DnsZone.tenant_id == tenant_id,
             DnsZone.env == env,
             DnsZone.zone_name == zone_name,
-            DnsZone.is_active == True,
+            DnsZone.is_active is True,
         )
     )
     return result.scalars().first()
 
 
-async def list_zones(db: AsyncSession, tenant_id: Optional[str] = None, env: Optional[str] = None) -> List[DnsZone]:
-    q = select(DnsZone).where(DnsZone.is_active == True)
+async def list_zones(
+    db: AsyncSession, tenant_id: str | None = None, env: str | None = None
+) -> list[DnsZone]:
+    q = select(DnsZone).where(DnsZone.is_active is True)
     if tenant_id:
         q = q.where(DnsZone.tenant_id == tenant_id)
     if env:
@@ -69,8 +73,9 @@ async def list_zones(db: AsyncSession, tenant_id: Optional[str] = None, env: Opt
     return list(result.scalars().all())
 
 
-async def create_zone(db: AsyncSession, tenant_id: str, env: str, zone_name: str,
-                      provider: str) -> DnsZone:
+async def create_zone(
+    db: AsyncSession, tenant_id: str, env: str, zone_name: str, provider: str
+) -> DnsZone:
     zone = DnsZone(
         id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -93,15 +98,19 @@ async def set_provider_zone_id(db: AsyncSession, zone: DnsZone, provider_zone_id
 # Records
 # ---------------------------------------------------------------------------
 
-async def list_records(db: AsyncSession, zone_id: str) -> List[DnsRecord]:
+
+async def list_records(db: AsyncSession, zone_id: str) -> list[DnsRecord]:
     result = await db.execute(
-        select(DnsRecord).where(DnsRecord.zone_id == zone_id)
+        select(DnsRecord)
+        .where(DnsRecord.zone_id == zone_id)
         .order_by(DnsRecord.record_type, DnsRecord.name)
     )
     return list(result.scalars().all())
 
 
-async def get_record(db: AsyncSession, zone_id: str, record_type: str, name: str) -> Optional[DnsRecord]:
+async def get_record(
+    db: AsyncSession, zone_id: str, record_type: str, name: str
+) -> DnsRecord | None:
     result = await db.execute(
         select(DnsRecord).where(
             DnsRecord.zone_id == zone_id,
@@ -112,9 +121,17 @@ async def get_record(db: AsyncSession, zone_id: str, record_type: str, name: str
     return result.scalars().first()
 
 
-async def upsert_record(db: AsyncSession, zone: DnsZone, record_type: str, name: str,
-                        value: str, ttl: int, priority: Optional[int],
-                        tags: Optional[dict], provider_record_id: Optional[str] = None) -> DnsRecord:
+async def upsert_record(
+    db: AsyncSession,
+    zone: DnsZone,
+    record_type: str,
+    name: str,
+    value: str,
+    ttl: int,
+    priority: int | None,
+    tags: dict | None,
+    provider_record_id: str | None = None,
+) -> DnsRecord:
     existing = await get_record(db, zone.id, record_type, name)
     now = datetime.datetime.utcnow()
     if existing:
@@ -148,7 +165,9 @@ async def upsert_record(db: AsyncSession, zone: DnsZone, record_type: str, name:
         return rec
 
 
-async def delete_record_by_spec(db: AsyncSession, zone_id: str, record_type: str, name: str) -> bool:
+async def delete_record_by_spec(
+    db: AsyncSession, zone_id: str, record_type: str, name: str
+) -> bool:
     rec = await get_record(db, zone_id, record_type, name)
     if not rec:
         return False
@@ -161,9 +180,17 @@ async def delete_record_by_spec(db: AsyncSession, zone_id: str, record_type: str
 # Change Jobs
 # ---------------------------------------------------------------------------
 
-async def create_job(db: AsyncSession, tenant_id: str, env: str, zone_name: str,
-                     operation: str, payload: dict, service_id: str,
-                     correlation_id: str) -> DnsChangeJob:
+
+async def create_job(
+    db: AsyncSession,
+    tenant_id: str,
+    env: str,
+    zone_name: str,
+    operation: str,
+    payload: dict,
+    service_id: str,
+    correlation_id: str,
+) -> DnsChangeJob:
     job = DnsChangeJob(
         id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -181,13 +208,14 @@ async def create_job(db: AsyncSession, tenant_id: str, env: str, zone_name: str,
     return job
 
 
-async def get_job(db: AsyncSession, job_id: str) -> Optional[DnsChangeJob]:
+async def get_job(db: AsyncSession, job_id: str) -> DnsChangeJob | None:
     result = await db.execute(select(DnsChangeJob).where(DnsChangeJob.id == job_id))
     return result.scalars().first()
 
 
-async def update_job_status(db: AsyncSession, job: DnsChangeJob, status: str,
-                            last_error: Optional[str] = None) -> DnsChangeJob:
+async def update_job_status(
+    db: AsyncSession, job: DnsChangeJob, status: str, last_error: str | None = None
+) -> DnsChangeJob:
     now = datetime.datetime.utcnow()
     job.status = status
     if status == "running":
@@ -205,11 +233,21 @@ async def update_job_status(db: AsyncSession, job: DnsChangeJob, status: str,
 # Audit
 # ---------------------------------------------------------------------------
 
-async def log_audit(db: AsyncSession, correlation_id: str, service_id: str,
-                    tenant_id: str, env: str, action: str, result: str,
-                    zone_name: Optional[str] = None, record_type: Optional[str] = None,
-                    record_name: Optional[str] = None, reason: Optional[str] = None,
-                    ip_address: Optional[str] = None) -> None:
+
+async def log_audit(
+    db: AsyncSession,
+    correlation_id: str,
+    service_id: str,
+    tenant_id: str,
+    env: str,
+    action: str,
+    result: str,
+    zone_name: str | None = None,
+    record_type: str | None = None,
+    record_name: str | None = None,
+    reason: str | None = None,
+    ip_address: str | None = None,
+) -> None:
     """Write an audit event. Never logs credential values. Never raises."""
     try:
         event = DnsAuditEvent(

@@ -1,8 +1,6 @@
 """Job runner tests — state machine, retry logic, and safe error redaction."""
-from __future__ import annotations
 
-import pytest
-import re
+from __future__ import annotations
 
 from apps.dns_agent.jobs.runner import _safe_error
 

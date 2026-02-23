@@ -1,6 +1,7 @@
 """017_notifications_tables — notification_jobs, deliveries, templates, routing_rules, audit_events."""
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 revision = "017_notifications_tables"
@@ -42,8 +43,12 @@ def upgrade() -> None:
     op.create_table(
         "notification_deliveries",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("job_id", sa.String(36),
-                  sa.ForeignKey("notification_jobs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "job_id",
+            sa.String(36),
+            sa.ForeignKey("notification_jobs.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("channel", sa.String(32), nullable=False),
         sa.Column("destination_hash", sa.String(64), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default="pending"),

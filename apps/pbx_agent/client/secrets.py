@@ -3,8 +3,10 @@ Secrets-agent client for pbx_agent.
 Fetches AMI credentials + other PBX secrets at runtime by alias.
 NEVER logs the returned secret value.
 """
+
 import httpx
 import structlog
+
 from apps.pbx_agent.config import config
 
 logger = structlog.get_logger(__name__)

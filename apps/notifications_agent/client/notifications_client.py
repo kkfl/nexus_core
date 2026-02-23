@@ -2,10 +2,11 @@
 Thin client library for notifications_agent.
 Used by nexus_api and other agents to send notifications.
 """
+
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import structlog
@@ -19,8 +20,7 @@ class NotificationsClient:
     Handles connection errors gracefully — notifications must never block orchestrator flows.
     """
 
-    def __init__(self, base_url: str, service_id: str, api_key: str,
-                 timeout: float = 5.0) -> None:
+    def __init__(self, base_url: str, service_id: str, api_key: str, timeout: float = 5.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._service_id = service_id
         self.__api_key = api_key  # private — never logged
@@ -41,17 +41,17 @@ class NotificationsClient:
         tenant_id: str,
         env: str = "prod",
         severity: str,
-        template_id: Optional[str] = None,
-        subject: Optional[str] = None,
-        body: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-        channels: Optional[List[str]] = None,
-        idempotency_key: Optional[str] = None,
-        correlation_id: Optional[str] = None,
+        template_id: str | None = None,
+        subject: str | None = None,
+        body: str | None = None,
+        context: dict[str, Any] | None = None,
+        channels: list[str] | None = None,
+        idempotency_key: str | None = None,
+        correlation_id: str | None = None,
         sensitivity: str = "normal",
-        destinations: Optional[Dict[str, str]] = None,
+        destinations: dict[str, str] | None = None,
         raise_on_error: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Send a notification request. Non-blocking — returns job metadata.
         If notifications_agent is unavailable, logs warning and returns error dict
@@ -90,8 +90,9 @@ class NotificationsClient:
                 )
             if resp.status_code == 202:
                 return resp.json()
-            logger.warning("notifications_client_error", status=resp.status_code,
-                           body=resp.text[:200])
+            logger.warning(
+                "notifications_client_error", status=resp.status_code, body=resp.text[:200]
+            )
             result = {"error": f"HTTP {resp.status_code}", "detail": resp.text[:200]}
             if raise_on_error:
                 raise RuntimeError(result["error"])
@@ -107,22 +108,39 @@ class NotificationsClient:
                 raise
             return {"error": "unavailable", "detail": str(exc)[:200]}
 
-    async def notify_agent_down(self, agent: str, reason: str, *,
-                                tenant_id: str, env: str = "prod",
-                                correlation_id: Optional[str] = None) -> Dict[str, Any]:
+    async def notify_agent_down(
+        self,
+        agent: str,
+        reason: str,
+        *,
+        tenant_id: str,
+        env: str = "prod",
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         return await self.notify(
-            tenant_id=tenant_id, env=env, severity="critical",
+            tenant_id=tenant_id,
+            env=env,
+            severity="critical",
             template_id="agent_down",
             context={"agent": agent, "reason": reason},
             idempotency_key=f"agent_down:{agent}:{env}:{correlation_id or uuid.uuid4()}",
             correlation_id=correlation_id,
         )
 
-    async def notify_job_failed(self, job_id: str, service: str, error: str, *,
-                                tenant_id: str, env: str = "prod",
-                                correlation_id: Optional[str] = None) -> Dict[str, Any]:
+    async def notify_job_failed(
+        self,
+        job_id: str,
+        service: str,
+        error: str,
+        *,
+        tenant_id: str,
+        env: str = "prod",
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         return await self.notify(
-            tenant_id=tenant_id, env=env, severity="error",
+            tenant_id=tenant_id,
+            env=env,
+            severity="error",
             template_id="job_failed",
             context={"job_id": job_id, "service": service, "error": error},
             idempotency_key=f"job_failed:{job_id}:{correlation_id or uuid.uuid4()}",

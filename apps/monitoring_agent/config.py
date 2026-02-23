@@ -1,15 +1,16 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     # API/Agent Info
     port: int = 8004
     service_name: str = "monitoring-agent"
     service_version: str = "1.0.0"
     environment: str = "development"
-    
+
     # Auth
     monitoring_agent_keys: dict[str, str] = {}  # Inbound API keys
-    
+
     # Internal Agent Auth (outbound)
     registry_base_url: str = "http://agent-registry:8012"
     nexus_registry_agent_key: str = "nexus-registry-key"
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     vault_base_url: str = "http://secrets-agent:8007"
     vault_service_id: str = "monitoring-agent"
     vault_agent_key: str = "monitoring-vault-key-change-me"
-    
+
     # Notifications Auth (to send alerts)
     notifications_base_url: str = "http://notifications-agent:8008"
 
@@ -31,7 +32,9 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         extra = "ignore"
 
+
 config = Settings()
+
 
 def get_settings() -> Settings:
     return config

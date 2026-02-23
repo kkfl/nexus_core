@@ -1,9 +1,7 @@
-from typing import Optional
-import httpx
-from pydantic import BaseModel
 import structlog
 
 logger = structlog.get_logger(__name__)
+
 
 # Very basic metrics stub for standard Prometheus scrape
 class MetricsState:
@@ -29,13 +27,17 @@ class MetricsState:
             lines.append(f"{name}{{{label_str}}} {val}")
         return "\n".join(lines) + "\n"
 
+
 _metrics = MetricsState()
+
 
 def inc(name: str, value: int = 1, **labels):
     _metrics.inc(name, value, **labels)
 
+
 def set_gauge(name: str, value: float, **labels):
     _metrics.set_gauge(name, value, **labels)
+
 
 def snapshot() -> str:
     return _metrics.snapshot()

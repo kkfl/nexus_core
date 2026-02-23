@@ -1,14 +1,16 @@
 """
 018_agent_registry_tables — agents, deployments, capabilities, audit_events.
 """
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 revision = "018_agent_registry_tables"
 down_revision = "017_notifications_tables"
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     op.create_table(
@@ -20,14 +22,19 @@ def upgrade() -> None:
         sa.Column("owner", sa.String(128)),
         sa.Column("tags", ARRAY(sa.String)),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True))
+        sa.Column("updated_at", sa.DateTime(timezone=True)),
     )
     op.create_index("ix_reg_agents_name", "registry_agents", ["name"])
 
     op.create_table(
         "registry_deployments",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("agent_id", sa.String(36), sa.ForeignKey("registry_agents.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "agent_id",
+            sa.String(36),
+            sa.ForeignKey("registry_agents.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", sa.String(128)),
         sa.Column("env", sa.String(32), nullable=False),
         sa.Column("base_url", sa.String(256), nullable=False),
@@ -44,7 +51,7 @@ def upgrade() -> None:
         sa.Column("rate_limits", JSONB),
         sa.Column("timeouts", JSONB),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True))
+        sa.Column("updated_at", sa.DateTime(timezone=True)),
     )
     op.create_index("ix_reg_deps_agent", "registry_deployments", ["agent_id"])
     op.create_index("ix_reg_deps_tenant_env", "registry_deployments", ["tenant_id", "env"])
@@ -52,7 +59,12 @@ def upgrade() -> None:
     op.create_table(
         "registry_capabilities",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("agent_id", sa.String(36), sa.ForeignKey("registry_agents.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "agent_id",
+            sa.String(36),
+            sa.ForeignKey("registry_agents.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("version", sa.String(64), nullable=False),
         sa.Column("description", sa.Text),
@@ -60,7 +72,7 @@ def upgrade() -> None:
         sa.Column("output_schema", JSONB),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True)),
-        sa.UniqueConstraint("agent_id", "name", "version", name="uq_reg_cap")
+        sa.UniqueConstraint("agent_id", "name", "version", name="uq_reg_cap"),
     )
     op.create_index("ix_reg_caps_agent", "registry_capabilities", ["agent_id"])
 
@@ -74,7 +86,7 @@ def upgrade() -> None:
         sa.Column("action", sa.String(64), nullable=False),
         sa.Column("result", sa.String(16), nullable=False),
         sa.Column("detail", sa.Text),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now())
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_index("ix_reg_audit_tenant_env", "registry_audit_events", ["tenant_id", "env"])
     op.create_index("ix_reg_audit_corr", "registry_audit_events", ["correlation_id"])

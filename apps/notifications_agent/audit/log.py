@@ -3,12 +3,10 @@ Audit writer for notifications_agent.
 Every notification attempt, delivery, and auth event is logged here.
 Content is hashed if sensitivity=sensitive. Destinations are always hashed.
 """
+
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
-from typing import Optional
-from uuid import UUID
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,11 +39,11 @@ async def write_audit(
     env: str,
     action: str,
     result: str,
-    job_id: Optional[str] = None,
-    delivery_id: Optional[str] = None,
-    channel: Optional[str] = None,
-    detail: Optional[str] = None,
-    ip_address: Optional[str] = None,
+    job_id: str | None = None,
+    delivery_id: str | None = None,
+    channel: str | None = None,
+    detail: str | None = None,
+    ip_address: str | None = None,
 ) -> None:
     """Write an audit event. Runs inside an existing session transaction."""
     event = NotificationAuditEvent(

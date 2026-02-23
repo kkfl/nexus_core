@@ -20,11 +20,11 @@ Design rules:
 - Honors correlation_id for distributed tracing.
 - Raises VaultAccessDenied (403), VaultNotFound (404), or VaultError on failure.
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 import httpx
 
@@ -58,7 +58,7 @@ class VaultClient:
         self._api_key = api_key
         self._timeout = timeout
 
-    def _headers(self, correlation_id: Optional[str] = None) -> dict[str, str]:
+    def _headers(self, correlation_id: str | None = None) -> dict[str, str]:
         h = {
             "X-Service-ID": self._service_id,
             "X-Agent-Key": self._api_key,
@@ -74,8 +74,8 @@ class VaultClient:
         alias: str,
         tenant_id: str,
         env: str,
-        reason: Optional[str] = None,
-        correlation_id: Optional[str] = None,
+        reason: str | None = None,
+        correlation_id: str | None = None,
     ) -> str:
         """
         Retrieve a plaintext secret value by alias.
@@ -109,7 +109,9 @@ class VaultClient:
             items = list_resp.json()
             matched = next((s for s in items if s["alias"] == alias), None)
             if not matched:
-                raise VaultNotFound(f"Secret alias '{alias}' not found for tenant={tenant_id} env={env}.")
+                raise VaultNotFound(
+                    f"Secret alias '{alias}' not found for tenant={tenant_id} env={env}."
+                )
 
             secret_id = matched["id"]
 
@@ -134,7 +136,7 @@ class VaultClient:
                 alias=alias,
                 tenant_id=tenant_id,
                 env=env,
-                value=safe,   # SafeValue.__str__ returns [REDACTED]
+                value=safe,  # SafeValue.__str__ returns [REDACTED]
             )
             # Return the raw string — caller uses it immediately
             return safe.unsafe_value
@@ -143,6 +145,7 @@ class VaultClient:
 # ---------------------------------------------------------------------------
 # Convenience factory from environment variables
 # ---------------------------------------------------------------------------
+
 
 def vault_client_from_env() -> VaultClient:
     """

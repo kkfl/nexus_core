@@ -2,22 +2,28 @@
 Mock carrier adapter — preserves existing fixture behavior for local dev/testing.
 Loads data from apps/carrier_agent/fixtures/mock_provider.json.
 """
+
 from __future__ import annotations
 
 import json
 import os
-from typing import List, Optional
 
 from apps.carrier_agent.adapters.base import (
-    AccountStatus, CarrierProviderAdapter, CnamStatus,
-    DidRecord, MessagingStatus, TrunkRecord,
+    AccountStatus,
+    CarrierProviderAdapter,
+    CnamStatus,
+    DidRecord,
+    MessagingStatus,
+    TrunkRecord,
 )
 
-_FIXTURE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fixtures", "mock_provider.json")
+_FIXTURE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "fixtures", "mock_provider.json"
+)
 
 
 def _load_fixture() -> dict:
-    with open(_FIXTURE_PATH, "r") as f:
+    with open(_FIXTURE_PATH) as f:
         return json.load(f)
 
 
@@ -36,7 +42,7 @@ class MockCarrierAdapter(CarrierProviderAdapter):
             friendly_name=data.get("name", "Mock Provider"),
         )
 
-    async def list_dids(self) -> List[DidRecord]:
+    async def list_dids(self) -> list[DidRecord]:
         data = _load_fixture()
         return [
             DidRecord(
@@ -51,7 +57,7 @@ class MockCarrierAdapter(CarrierProviderAdapter):
             for d in data.get("dids", [])
         ]
 
-    async def get_did(self, number: str) -> Optional[DidRecord]:
+    async def get_did(self, number: str) -> DidRecord | None:
         data = _load_fixture()
         did_data = next((d for d in data.get("dids", []) if d["number"] == number), None)
         if not did_data:
@@ -64,10 +70,12 @@ class MockCarrierAdapter(CarrierProviderAdapter):
             tags=did_data.get("tags", []),
         )
 
-    async def list_trunks(self) -> List[TrunkRecord]:
+    async def list_trunks(self) -> list[TrunkRecord]:
         data = _load_fixture()
         return [
-            TrunkRecord(trunk_id=t["trunk_id"], status=t.get("status", "active"), tags=t.get("tags", []))
+            TrunkRecord(
+                trunk_id=t["trunk_id"], status=t.get("status", "active"), tags=t.get("tags", [])
+            )
             for t in data.get("trunks", [])
         ]
 
@@ -76,8 +84,9 @@ class MockCarrierAdapter(CarrierProviderAdapter):
         ms = data.get("messaging_status", {})
         return MessagingStatus(overall_status=ms.get("status", "enabled"))
 
-    async def get_cnam_status(self, number: Optional[str] = None) -> CnamStatus:
+    async def get_cnam_status(self, number: str | None = None) -> CnamStatus:
         data = _load_fixture()
+        cn = data.get("cnam_status", {})
         return CnamStatus(
             registered=cn.get("registered", False),
             display_name=cn.get("display_name"),
@@ -95,11 +104,12 @@ class MockCarrierAdapter(CarrierProviderAdapter):
             provider_sid=f"PNmock{number.strip('+')}",
         )
 
-    async def release_did(self, number: str, provider_sid: Optional[str] = None) -> bool:
+    async def release_did(self, number: str, provider_sid: str | None = None) -> bool:
         return True
 
-    async def create_or_update_trunk(self, trunk_id: str, friendly_name: str, 
-                                     termination_sip_domain: Optional[str] = None) -> TrunkRecord:
+    async def create_or_update_trunk(
+        self, trunk_id: str, friendly_name: str, termination_sip_domain: str | None = None
+    ) -> TrunkRecord:
         return TrunkRecord(
             trunk_id=trunk_id if trunk_id and trunk_id != "new" else "TKmock123",
             friendly_name=friendly_name,

@@ -1,22 +1,23 @@
 """
 Notifications Agent v1 — production FastAPI application.
 """
+
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.notifications_agent.config import get_settings
 from apps.notifications_agent import metrics
-from apps.notifications_agent.api.notify import router as notify_router
-from apps.notifications_agent.api.templates import router as templates_router
-from apps.notifications_agent.api.routing_rules import router as routing_router
 from apps.notifications_agent.api.audit import router as audit_router
+from apps.notifications_agent.api.notify import router as notify_router
+from apps.notifications_agent.api.routing_rules import router as routing_router
+from apps.notifications_agent.api.templates import router as templates_router
+from apps.notifications_agent.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("notifications_agent_startup", version=settings.service_version)
     # Warm up DB engine
     from apps.notifications_agent.store.postgres import _get_engine
+
     _get_engine()
     yield
     logger.info("notifications_agent_shutdown")
@@ -80,17 +82,19 @@ async def readyz():
     """Check DB + secrets_agent connectivity."""
     try:
         from apps.notifications_agent.store.postgres import _get_engine, _session_factory
+
         _get_engine()
         async with _session_factory() as session:
             await session.execute(__import__("sqlalchemy").text("SELECT 1"))
-    except Exception as exc:
+    except Exception:
         return Response(
-            content=f'{{"status":"not_ready","reason":"db_unavailable"}}',
+            content='{"status":"not_ready","reason":"db_unavailable"}',
             status_code=503,
             media_type="application/json",
         )
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(f"{settings.vault_base_url}/healthz")
         if r.status_code != 200:
@@ -114,7 +118,10 @@ async def capabilities():
     return {
         "channels": ["telegram", "email", "sms", "webhook"],
         "stubs": ["slack", "teams"],
-        "templates": list(__import__("apps.notifications_agent.templates.engine",
-                                     fromlist=["BUILTIN_TEMPLATES"]).BUILTIN_TEMPLATES.keys()),
+        "templates": list(
+            __import__(
+                "apps.notifications_agent.templates.engine", fromlist=["BUILTIN_TEMPLATES"]
+            ).BUILTIN_TEMPLATES.keys()
+        ),
         "version": settings.service_version,
     }

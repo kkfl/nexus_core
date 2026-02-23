@@ -1,65 +1,71 @@
-import uuid
 import datetime
-from typing import Any, List, Optional
+import uuid
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from pydantic import BaseModel
 
-from packages.shared.db import get_db
-from packages.shared.models import MonitoringSource, MonitoringIngest, Secret, AuditEvent
 from apps.nexus_api.dependencies import RequireRole
 from packages.shared.audit import log_audit_event
+from packages.shared.db import get_db
+from packages.shared.models import MonitoringIngest, MonitoringSource, Secret
 
 router = APIRouter()
+
 
 class MonitoringSourceCreate(BaseModel):
     name: str
     kind: str = "nagios"
-    base_url: Optional[str] = None
-    auth_secret: Optional[str] = None
-    tags: List[str] = []
+    base_url: str | None = None
+    auth_secret: str | None = None
+    tags: list[str] = []
     is_active: bool = True
 
+
 class MonitoringSourceUpdate(BaseModel):
-    name: Optional[str] = None
-    kind: Optional[str] = None
-    base_url: Optional[str] = None
-    auth_secret: Optional[str] = None
-    tags: Optional[List[str]] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    kind: str | None = None
+    base_url: str | None = None
+    auth_secret: str | None = None
+    tags: list[str] | None = None
+    is_active: bool | None = None
+
 
 class MonitoringSourceOut(BaseModel):
     id: str
     name: str
     kind: str
-    base_url: Optional[str]
-    tags: List[str]
+    base_url: str | None
+    tags: list[str]
     is_active: bool
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
 
+
 class MonitoringIngestOut(BaseModel):
     id: str
     monitoring_source_id: str
     task_id: int
     received_at: datetime.datetime
-    summary: Optional[dict]
+    summary: dict | None
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
 
+
 @router.post("/sources", response_model=MonitoringSourceOut)
 async def create_monitoring_source(
     req: MonitoringSourceCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator"])),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
-    
+
     secret_id = None
     if req.auth_secret:
         # Store secret
@@ -72,10 +78,10 @@ async def create_monitoring_source(
             owner_id=0,
             purpose="auth_token",
             ciphertext=enc_secret,
-            key_version=1
+            key_version=1,
         )
         db.add(db_secret)
-    
+
     source_id = str(uuid.uuid4())
     db_source = MonitoringSource(
         id=source_id,
@@ -84,20 +90,20 @@ async def create_monitoring_source(
         base_url=req.base_url,
         auth_secret_id=secret_id,
         tags=req.tags,
-        is_active=req.is_active
+        is_active=req.is_active,
     )
     db.add(db_source)
-    
+
     log_audit_event(db, "monitoring_source_create", "monitoring_source", current_user, source_id)
     await db.commit()
     await db.refresh(db_source)
     return db_source
 
 
-@router.get("/sources", response_model=List[MonitoringSourceOut])
+@router.get("/sources", response_model=list[MonitoringSourceOut])
 async def list_monitoring_sources(
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader", "agent"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator", "reader", "agent"])),
 ) -> Any:
     # agents can call this to retrieve targets (if we want them to pull vs push)
     # usually payload contains exactly what they need, but sometimes they want the registry.
@@ -109,7 +115,7 @@ async def list_monitoring_sources(
 async def get_monitoring_source(
     source_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
 ) -> Any:
     res = await db.execute(select(MonitoringSource).where(MonitoringSource.id == source_id))
     source = res.scalars().first()
@@ -123,15 +129,15 @@ async def update_monitoring_source(
     source_id: str,
     req: MonitoringSourceUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator"])),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
-    
+
     res = await db.execute(select(MonitoringSource).where(MonitoringSource.id == source_id))
     source = res.scalars().first()
     if not source:
         raise HTTPException(status_code=404, detail="Monitoring source not found")
-        
+
     for k, v in req.model_dump(exclude_unset=True).items():
         if k == "auth_secret":
             if source.auth_secret_id:
@@ -150,25 +156,26 @@ async def update_monitoring_source(
                     owner_id=0,
                     purpose="auth_token",
                     ciphertext=enc_secret,
-                    key_version=1
+                    key_version=1,
                 )
                 db.add(db_secret)
                 source.auth_secret_id = new_sec_id
         else:
             setattr(source, k, v)
-            
+
     log_audit_event(db, "monitoring_source_update", "monitoring_source", current_user, source_id)
     await db.commit()
     await db.refresh(source)
     return source
 
-@router.get("/ingests", response_model=List[MonitoringIngestOut])
+
+@router.get("/ingests", response_model=list[MonitoringIngestOut])
 async def list_monitoring_ingests(
-    monitoring_source_id: Optional[str] = None,
+    monitoring_source_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
 ) -> Any:
     stmt = select(MonitoringIngest)
     if monitoring_source_id:
@@ -177,11 +184,12 @@ async def list_monitoring_ingests(
     res = await db.execute(stmt)
     return res.scalars().all()
 
+
 @router.get("/ingests/{ingest_id}", response_model=MonitoringIngestOut)
 async def get_monitoring_ingest(
     ingest_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
 ) -> Any:
     res = await db.execute(select(MonitoringIngest).where(MonitoringIngest.id == ingest_id))
     ing = res.scalars().first()

@@ -2,16 +2,22 @@
 Status API — POST /v1/status/{metric}
 Real-time read-only AMI status queries.
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.pbx_agent.store.database import get_db
-from apps.pbx_agent.store import postgres
-from apps.pbx_agent.auth.identity import get_service_identity, ServiceIdentity
-from apps.pbx_agent.schemas import TargetRequest
-from apps.pbx_agent.client.secrets import fetch_secret, SecretsError
-from apps.pbx_agent.ops.status import status_peers, status_registrations, status_channels, status_uptime
 from apps.pbx_agent.adapters.ami import AmiError
+from apps.pbx_agent.auth.identity import ServiceIdentity, get_service_identity
+from apps.pbx_agent.client.secrets import SecretsError, fetch_secret
+from apps.pbx_agent.ops.status import (
+    status_channels,
+    status_peers,
+    status_registrations,
+    status_uptime,
+)
+from apps.pbx_agent.schemas import TargetRequest
+from apps.pbx_agent.store import postgres
+from apps.pbx_agent.store.database import get_db
 
 router = APIRouter(prefix="/v1/status", tags=["status"])
 
@@ -52,7 +58,9 @@ async def get_registrations(
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(get_db),
 ):
-    target, secret = await _get_target_and_secret(db, req, "status.registrations", identity.correlation_id)
+    target, secret = await _get_target_and_secret(
+        db, req, "status.registrations", identity.correlation_id
+    )
     try:
         return await status_registrations(target.host, target.ami_port, target.ami_username, secret)
     except AmiError as e:
@@ -65,7 +73,9 @@ async def get_channels(
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(get_db),
 ):
-    target, secret = await _get_target_and_secret(db, req, "status.channels", identity.correlation_id)
+    target, secret = await _get_target_and_secret(
+        db, req, "status.channels", identity.correlation_id
+    )
     try:
         return await status_channels(target.host, target.ami_port, target.ami_username, secret)
     except AmiError as e:

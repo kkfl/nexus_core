@@ -1,13 +1,13 @@
 """Unit tests for Webhook channel — HMAC signing, retry, URL hash."""
+
 from __future__ import annotations
 
 import hashlib
 import hmac
-import json
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 
 from apps.notifications_agent.channels.webhook import WebhookChannel, _sign_payload
 
@@ -37,7 +37,8 @@ async def test_send_success(channel):
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = _mock_resp(200)
         result = await channel.send(
-            subject="alert", body="test body",
+            subject="alert",
+            body="test body",
             destination="https://example.com/webhook",
             context={"correlation_id": "abc-123"},
         )
@@ -59,14 +60,13 @@ async def test_send_no_url(channel):
 async def test_send_http_error(channel):
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = _mock_resp(500, b"internal error")
-        result = await channel.send(subject="x", body="y",
-                                    destination="https://example.com/wh")
+        result = await channel.send(subject="x", body="y", destination="https://example.com/wh")
     assert result.success is False
     assert result.error_code == "http_500"
 
 
 """Unit tests for template engine."""
-from apps.notifications_agent.templates.engine import render_template, BUILTIN_TEMPLATES
+from apps.notifications_agent.templates.engine import render_template
 
 
 def test_builtin_agent_down():

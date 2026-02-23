@@ -1,6 +1,7 @@
 """016_dns_agent_tables — Create dns_zones, dns_records, dns_change_jobs, dns_audit_events."""
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "016_dns_agent_tables"
@@ -24,14 +25,19 @@ def upgrade() -> None:
     )
     op.create_index("ix_dns_zones_tenant", "dns_zones", ["tenant_id"])
     op.create_index("ix_dns_zones_env", "dns_zones", ["env"])
-    op.create_index("uq_dns_zones_tenant_env_zone", "dns_zones",
-                    ["tenant_id", "env", "zone_name"], unique=True)
+    op.create_index(
+        "uq_dns_zones_tenant_env_zone", "dns_zones", ["tenant_id", "env", "zone_name"], unique=True
+    )
 
     op.create_table(
         "dns_records",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("zone_id", sa.String(36),
-                  sa.ForeignKey("dns_zones.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "zone_id",
+            sa.String(36),
+            sa.ForeignKey("dns_zones.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", sa.String(128), nullable=False),
         sa.Column("env", sa.String(32), nullable=False),
         sa.Column("record_type", sa.String(16), nullable=False),
@@ -47,8 +53,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_dns_records_zone_id", "dns_records", ["zone_id"])
     op.create_index("ix_dns_records_tenant_env", "dns_records", ["tenant_id", "env"])
-    op.create_index("uq_dns_records_zone_type_name", "dns_records",
-                    ["zone_id", "record_type", "name"], unique=True)
+    op.create_index(
+        "uq_dns_records_zone_type_name",
+        "dns_records",
+        ["zone_id", "record_type", "name"],
+        unique=True,
+    )
 
     op.create_table(
         "dns_change_jobs",

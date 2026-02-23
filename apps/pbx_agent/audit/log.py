@@ -1,9 +1,9 @@
 """
 Audit event writer for pbx_agent.
 """
+
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +19,10 @@ async def write_audit_event(
     service_id: str,
     action: str,
     result: str,
-    tenant_id: Optional[str] = None,
-    env: Optional[str] = None,
-    target_id: Optional[str] = None,
-    detail: Optional[str] = None,
+    tenant_id: str | None = None,
+    env: str | None = None,
+    target_id: str | None = None,
+    detail: str | None = None,
 ) -> None:
     event = PbxAuditEvent(
         id=str(uuid.uuid4()),
@@ -34,7 +34,7 @@ async def write_audit_event(
         target_id=target_id,
         result=result,
         detail=detail,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     db.add(event)
     try:

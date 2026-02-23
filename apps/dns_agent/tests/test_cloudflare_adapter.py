@@ -2,18 +2,21 @@
 Unit tests for the Cloudflare DNS adapter.
 Uses httpx mocking to avoid real Cloudflare API calls.
 """
+
 from __future__ import annotations
 
-import pytest
-import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
-from apps.dns_agent.adapters.cloudflare import CloudflareAdapter
+import httpx
+import pytest
+
 from apps.dns_agent.adapters.base import RecordSpec
+from apps.dns_agent.adapters.cloudflare import CloudflareAdapter
 
 
 def _mock_cf_response(payload: dict) -> httpx.Response:
     import json
+
     return httpx.Response(
         200,
         content=json.dumps({"success": True, "result": payload, "errors": [], "messages": []}),
@@ -48,8 +51,14 @@ async def test_list_zones(adapter):
 async def test_list_records(adapter):
     records_data = [
         {"id": "rec-1", "type": "A", "name": "api.example.com", "content": "1.2.3.4", "ttl": 300},
-        {"id": "rec-2", "type": "MX", "name": "example.com", "content": "mail.example.com",
-         "ttl": 300, "priority": 10},
+        {
+            "id": "rec-2",
+            "type": "MX",
+            "name": "example.com",
+            "content": "mail.example.com",
+            "ttl": 300,
+            "priority": 10,
+        },
     ]
     with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_req:
         mock_req.return_value = _mock_cf_response(records_data)
@@ -85,12 +94,11 @@ async def test_upsert_creates_when_not_exists(adapter):
 @pytest.mark.asyncio
 async def test_upsert_patches_when_exists(adapter):
     """Upsert should PATCH an existing record."""
-    existing = {"id": "rec-existing", "type": "A", "name": "api", "content": "1.2.3.4", "ttl": 300}
     updated = {"id": "rec-existing", "type": "A", "name": "api", "content": "5.6.7.8", "ttl": 300}
 
     find_resp = httpx.Response(
         200,
-        content=f'{{"success":true,"result":[{{"id":"rec-existing","type":"A","name":"api","content":"1.2.3.4","ttl":300}}],"errors":[],"messages":[]}}',
+        content='{"success":true,"result":[{"id":"rec-existing","type":"A","name":"api","content":"1.2.3.4","ttl":300}],"errors":[],"messages":[]}',
         headers={"Content-Type": "application/json"},
     )
 
@@ -107,7 +115,6 @@ async def test_upsert_patches_when_exists(adapter):
 @pytest.mark.asyncio
 async def test_rate_limit_retries(adapter):
     """429 response should trigger backoff and retry."""
-    import json
     rate_limit = httpx.Response(
         429,
         content='{"success":false,"errors":[]}',

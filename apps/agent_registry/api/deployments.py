@@ -1,7 +1,6 @@
 """
 Deployments router — GET /v1/deployments, POST /v1/deployments, PATCH /v1/deployments/{id}
 """
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,14 +12,14 @@ from apps.agent_registry.store import postgres as store
 router = APIRouter(prefix="/v1/deployments", tags=["deployments"])
 
 
-@router.get("", response_model=List[DeploymentOut])
+@router.get("", response_model=list[DeploymentOut])
 async def list_deployments(
-    tenant_id: Optional[str] = Query(None),
-    env: Optional[str] = Query(None),
-    agent_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
+    env: str | None = Query(None),
+    agent_id: str | None = Query(None),
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(store.get_db),
-) -> List[DeploymentOut]:
+) -> list[DeploymentOut]:
     """List deployments, optionally filtered by tenant, env, and agent."""
     deps = await store.list_deployments(db, tenant_id=tenant_id, env=env, agent_id=agent_id)
     return [DeploymentOut.model_validate(d) for d in deps]
@@ -35,10 +34,7 @@ async def get_deployment(
     """Get a deployment by ID."""
     dep = await store.get_deployment(db, deployment_id)
     if not dep:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Deployment not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found.")
     return DeploymentOut.model_validate(dep)
 
 
@@ -53,10 +49,10 @@ async def create_deployment(
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent ID '{payload.agent_id}' not found. Cannot create deployment."
+            detail=f"Agent ID '{payload.agent_id}' not found. Cannot create deployment.",
         )
 
-    # Check for conflicts (no strict unique constraint across tenant+env in DB to allow multiple replicas, 
+    # Check for conflicts (no strict unique constraint across tenant+env in DB to allow multiple replicas,
     # but we will conceptually just add the deployment record).
     dep = await store.create_deployment(db, payload)
 
@@ -68,7 +64,7 @@ async def create_deployment(
         env=payload.env,
         action="create_deployment",
         result="success",
-        detail=f"Created deployment for agent {agent.name}"
+        detail=f"Created deployment for agent {agent.name}",
     )
 
     return DeploymentOut.model_validate(dep)
@@ -84,10 +80,7 @@ async def patch_deployment(
     """Update an existing deployment."""
     dep = await store.get_deployment(db, deployment_id)
     if not dep:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Deployment not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found.")
 
     updated = await store.update_deployment(db, dep, payload)
 
@@ -99,7 +92,7 @@ async def patch_deployment(
         env=updated.env,
         action="update_deployment",
         result="success",
-        detail=f"Updated deployment {deployment_id}"
+        detail=f"Updated deployment {deployment_id}",
     )
 
     return DeploymentOut.model_validate(updated)

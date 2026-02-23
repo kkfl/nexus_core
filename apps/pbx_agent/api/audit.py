@@ -1,22 +1,22 @@
 """
 Audit API — GET /v1/audit (admin only).
 """
-from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.pbx_agent.store.database import get_db
-from apps.pbx_agent.store import postgres
-from apps.pbx_agent.auth.identity import get_service_identity, ServiceIdentity
+from apps.pbx_agent.auth.identity import ServiceIdentity, get_service_identity
 from apps.pbx_agent.schemas import PbxAuditOut
+from apps.pbx_agent.store import postgres
+from apps.pbx_agent.store.database import get_db
 
 router = APIRouter(prefix="/v1/audit", tags=["audit"])
 
 
-@router.get("", response_model=List[PbxAuditOut])
+@router.get("", response_model=list[PbxAuditOut])
 async def list_audit(
     tenant_id: str = Query(...),
-    env: Optional[str] = Query(None),
+    env: str | None = Query(None),
     limit: int = Query(100, le=1000),
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(get_db),

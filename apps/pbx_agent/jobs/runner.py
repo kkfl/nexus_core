@@ -2,23 +2,25 @@
 Background async worker that pulls 'pending' jobs from DB,
 runs the mutating AMI command (e.g. reload), and updates job state + audit log.
 """
-import asyncio
-from datetime import datetime, timezone
-import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, exc
 
+import asyncio
+from datetime import UTC, datetime
+
+import structlog
+from sqlalchemy import exc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.pbx_agent.adapters.ami import AmiError, run_ami_action
+from apps.pbx_agent.client.secrets import SecretsError, fetch_secret
+from apps.pbx_agent.models import PbxAuditEvent, PbxJob, PbxJobResult, PbxTarget
 from apps.pbx_agent.store.database import async_session
-from apps.pbx_agent.models import PbxJob, PbxJobResult, PbxAuditEvent, PbxTarget
-from apps.pbx_agent.client.secrets import fetch_secret, SecretsError
-from apps.pbx_agent.adapters.ami import run_ami_action, AmiError
 
 logger = structlog.get_logger(__name__)
 
 
 async def _process_job(db: AsyncSession, job: PbxJob) -> None:
     """Execute a single job and write its result."""
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     logger.info("pbx_job_processing_start", job_id=job.id, action=job.action)
 
     try:
@@ -46,17 +48,17 @@ async def _process_job(db: AsyncSession, job: PbxJob) -> None:
                 port=target.ami_port,
                 username=target.ami_username,
                 secret=secret,
-                action_name="Reload"
+                action_name="Reload",
             )
         else:
             raise NotImplementedError(f"Action '{job.action}' not implemented in runner")
 
         # Success path
-        duration = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        duration = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
         result = PbxJobResult(
             job_id=job.id,
             output_summary={"action": job.action, "output": output},
-            duration_ms=duration
+            duration_ms=duration,
         )
         db.add(result)
         job.status = "succeeded"
@@ -69,7 +71,7 @@ async def _process_job(db: AsyncSession, job: PbxJob) -> None:
             env=job.env,
             action=f"job.{job.action}",
             target_id=target.id,
-            result="success"
+            result="success",
         )
         db.add(audit)
 
@@ -85,13 +87,11 @@ async def _process_job(db: AsyncSession, job: PbxJob) -> None:
     await db.commit()
 
 
-async def _record_failure(db: AsyncSession, job: PbxJob, start_time: datetime, reason: str, is_fatal: bool) -> None:
-    duration = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-    result = PbxJobResult(
-        job_id=job.id,
-        error_redacted=reason,
-        duration_ms=duration
-    )
+async def _record_failure(
+    db: AsyncSession, job: PbxJob, start_time: datetime, reason: str, is_fatal: bool
+) -> None:
+    duration = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
+    result = PbxJobResult(job_id=job.id, error_redacted=reason, duration_ms=duration)
     db.add(result)
     job.status = "failed" if is_fatal else "retry"
 
@@ -103,7 +103,7 @@ async def _record_failure(db: AsyncSession, job: PbxJob, start_time: datetime, r
         action=f"job.{job.action}",
         target_id=job.pbx_target_id,
         result="error",
-        detail=reason
+        detail=reason,
     )
     db.add(audit)
 
@@ -113,10 +113,13 @@ async def poll_jobs() -> None:
     try:
         async with async_session() as db:
             # Atomic subquery lock to get exactly 1 job safely
-            stmt = select(PbxJob).where(PbxJob.status == "pending")\
-                                 .order_by(PbxJob.created_at.asc())\
-                                 .with_for_update(skip_locked=True)\
-                                 .limit(1)
+            stmt = (
+                select(PbxJob)
+                .where(PbxJob.status == "pending")
+                .order_by(PbxJob.created_at.asc())
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
             res = await db.execute(stmt)
             job = res.scalars().first()
 
@@ -126,7 +129,7 @@ async def poll_jobs() -> None:
             job.status = "running"
             job.attempts += 1
             await db.commit()
-            
+
             # Now execute it
             await _process_job(db, job)
 

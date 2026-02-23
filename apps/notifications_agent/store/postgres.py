@@ -2,19 +2,22 @@
 Postgres CRUD store for notifications_agent.
 Job lifecycle, delivery tracking, template and routing rule management.
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from apps.notifications_agent.config import get_settings
 from apps.notifications_agent.models import (
-    Base, NotificationAuditEvent, NotificationDelivery,
-    NotificationJob, NotificationRoutingRule, NotificationTemplate,
+    NotificationAuditEvent,
+    NotificationDelivery,
+    NotificationJob,
+    NotificationRoutingRule,
+    NotificationTemplate,
 )
 
 _engine = None
@@ -32,23 +35,34 @@ def _get_engine():
 
 async def get_db():
     _get_engine()
-    async with _session_factory() as session:
-        async with session.begin():
-            yield session
+    async with _session_factory() as session, session.begin():
+        yield session
 
 
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
 
-async def create_job(db: AsyncSession, *, tenant_id: str, env: str, severity: str,
-                     channels: List[str], idempotency_key: str, correlation_id: str,
-                     created_by_service_id: str, template_id: Optional[str] = None,
-                     subject: Optional[str] = None, body_hash: str,
-                     body_stored: Optional[str], sensitivity: str = "normal",
-                     context: Optional[Dict] = None,
-                     routing_rule_id: Optional[str] = None,
-                     max_attempts: int = 3) -> NotificationJob:
+
+async def create_job(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    env: str,
+    severity: str,
+    channels: list[str],
+    idempotency_key: str,
+    correlation_id: str,
+    created_by_service_id: str,
+    template_id: str | None = None,
+    subject: str | None = None,
+    body_hash: str,
+    body_stored: str | None,
+    sensitivity: str = "normal",
+    context: dict | None = None,
+    routing_rule_id: str | None = None,
+    max_attempts: int = 3,
+) -> NotificationJob:
     settings = get_settings()
     ttl = timedelta(hours=settings.job_idempotency_ttl_hours)
     job = NotificationJob(
@@ -58,7 +72,7 @@ async def create_job(db: AsyncSession, *, tenant_id: str, env: str, severity: st
         severity=severity,
         channels=channels,
         idempotency_key=idempotency_key,
-        idempotency_expires_at=datetime.now(timezone.utc) + ttl,
+        idempotency_expires_at=datetime.now(UTC) + ttl,
         correlation_id=correlation_id,
         created_by_service_id=created_by_service_id,
         template_id=template_id,
@@ -75,8 +89,8 @@ async def create_job(db: AsyncSession, *, tenant_id: str, env: str, severity: st
     return job
 
 
-async def get_job_by_idempotency_key(db: AsyncSession, key: str) -> Optional[NotificationJob]:
-    now = datetime.now(timezone.utc)
+async def get_job_by_idempotency_key(db: AsyncSession, key: str) -> NotificationJob | None:
+    now = datetime.now(UTC)
     result = await db.execute(
         select(NotificationJob)
         .where(NotificationJob.idempotency_key == key)
@@ -85,8 +99,9 @@ async def get_job_by_idempotency_key(db: AsyncSession, key: str) -> Optional[Not
     return result.scalar_one_or_none()
 
 
-async def get_job(db: AsyncSession, job_id: str) -> Optional[NotificationJob]:
+async def get_job(db: AsyncSession, job_id: str) -> NotificationJob | None:
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(NotificationJob)
         .options(selectinload(NotificationJob.deliveries))
@@ -95,8 +110,13 @@ async def get_job(db: AsyncSession, job_id: str) -> Optional[NotificationJob]:
     return result.scalar_one_or_none()
 
 
-async def list_jobs(db: AsyncSession, tenant_id: str, env: Optional[str] = None,
-                    status: Optional[str] = None, limit: int = 50) -> List[NotificationJob]:
+async def list_jobs(
+    db: AsyncSession,
+    tenant_id: str,
+    env: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[NotificationJob]:
     q = select(NotificationJob).where(NotificationJob.tenant_id == tenant_id)
     if env:
         q = q.where(NotificationJob.env == env)
@@ -107,8 +127,9 @@ async def list_jobs(db: AsyncSession, tenant_id: str, env: Optional[str] = None,
     return list(result.scalars().all())
 
 
-async def set_job_status(db: AsyncSession, job_id: str, status: str,
-                         completed_at: Optional[datetime] = None) -> None:
+async def set_job_status(
+    db: AsyncSession, job_id: str, status: str, completed_at: datetime | None = None
+) -> None:
     vals = {"status": status}
     if completed_at:
         vals["completed_at"] = completed_at
@@ -119,8 +140,10 @@ async def set_job_status(db: AsyncSession, job_id: str, status: str,
 # Deliveries
 # ---------------------------------------------------------------------------
 
-async def create_delivery(db: AsyncSession, *, job_id: str, channel: str,
-                           destination_hash: str) -> NotificationDelivery:
+
+async def create_delivery(
+    db: AsyncSession, *, job_id: str, channel: str, destination_hash: str
+) -> NotificationDelivery:
     d = NotificationDelivery(
         id=uuid.uuid4(),
         job_id=job_id,
@@ -134,9 +157,7 @@ async def create_delivery(db: AsyncSession, *, job_id: str, channel: str,
 
 async def update_delivery(db: AsyncSession, delivery_id: str, **kwargs) -> None:
     await db.execute(
-        update(NotificationDelivery)
-        .where(NotificationDelivery.id == delivery_id)
-        .values(**kwargs)
+        update(NotificationDelivery).where(NotificationDelivery.id == delivery_id).values(**kwargs)
     )
 
 
@@ -144,7 +165,8 @@ async def update_delivery(db: AsyncSession, delivery_id: str, **kwargs) -> None:
 # Templates
 # ---------------------------------------------------------------------------
 
-async def get_template(db: AsyncSession, template_id: str) -> Optional[NotificationTemplate]:
+
+async def get_template(db: AsyncSession, template_id: str) -> NotificationTemplate | None:
     result = await db.execute(
         select(NotificationTemplate).where(NotificationTemplate.id == template_id)
     )
@@ -162,7 +184,7 @@ async def upsert_template(db: AsyncSession, **kwargs) -> NotificationTemplate:
     return t
 
 
-async def list_templates(db: AsyncSession, limit: int = 100) -> List[NotificationTemplate]:
+async def list_templates(db: AsyncSession, limit: int = 100) -> list[NotificationTemplate]:
     result = await db.execute(select(NotificationTemplate).limit(limit))
     return list(result.scalars().all())
 
@@ -170,6 +192,7 @@ async def list_templates(db: AsyncSession, limit: int = 100) -> List[Notificatio
 # ---------------------------------------------------------------------------
 # Routing Rules
 # ---------------------------------------------------------------------------
+
 
 async def upsert_routing_rule(db: AsyncSession, **kwargs) -> NotificationRoutingRule:
     result = await db.execute(
@@ -188,8 +211,9 @@ async def upsert_routing_rule(db: AsyncSession, **kwargs) -> NotificationRouting
     return r
 
 
-async def list_routing_rules(db: AsyncSession, tenant_id: str,
-                              env: Optional[str] = None) -> List[NotificationRoutingRule]:
+async def list_routing_rules(
+    db: AsyncSession, tenant_id: str, env: str | None = None
+) -> list[NotificationRoutingRule]:
     q = select(NotificationRoutingRule).where(NotificationRoutingRule.tenant_id == tenant_id)
     if env:
         q = q.where(NotificationRoutingRule.env == env)
@@ -197,8 +221,9 @@ async def list_routing_rules(db: AsyncSession, tenant_id: str,
     return list(result.scalars().all())
 
 
-async def resolve_routing_rule(db: AsyncSession, tenant_id: str, env: str,
-                                severity: str) -> Optional[NotificationRoutingRule]:
+async def resolve_routing_rule(
+    db: AsyncSession, tenant_id: str, env: str, severity: str
+) -> NotificationRoutingRule | None:
     """Find the most specific matching rule (exact severity, then wildcard)."""
     for sev in (severity, "*"):
         result = await db.execute(
@@ -206,7 +231,7 @@ async def resolve_routing_rule(db: AsyncSession, tenant_id: str, env: str,
             .where(NotificationRoutingRule.tenant_id == tenant_id)
             .where(NotificationRoutingRule.env == env)
             .where(NotificationRoutingRule.severity == sev)
-            .where(NotificationRoutingRule.enabled == True)
+            .where(NotificationRoutingRule.enabled is True)
         )
         row = result.scalar_one_or_none()
         if row:
@@ -218,7 +243,10 @@ async def resolve_routing_rule(db: AsyncSession, tenant_id: str, env: str,
 # Audit
 # ---------------------------------------------------------------------------
 
-async def list_audit(db: AsyncSession, tenant_id: str, limit: int = 100) -> List[NotificationAuditEvent]:
+
+async def list_audit(
+    db: AsyncSession, tenant_id: str, limit: int = 100
+) -> list[NotificationAuditEvent]:
     result = await db.execute(
         select(NotificationAuditEvent)
         .where(NotificationAuditEvent.tenant_id == tenant_id)

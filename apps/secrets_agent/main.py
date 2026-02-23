@@ -9,12 +9,13 @@ Registers routes:
   /v1/policies/*          policy management (admin)
   /v1/audit/*             audit log query (admin)
 """
+
 from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -38,6 +39,7 @@ _COUNTERS: dict[str, int] = {
 # ---------------------------------------------------------------------------
 # Lifespan (startup/shutdown)
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -84,9 +86,11 @@ app.add_middleware(
 # Middleware: correlation ID + security headers (no CSP that blocks APIs)
 # ---------------------------------------------------------------------------
 
+
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
     import uuid
+
     correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
     start = time.monotonic()
     _COUNTERS["requests_total"] += 1
@@ -114,9 +118,11 @@ async def request_middleware(request: Request, call_next):
     )
     return response
 
+
 # ---------------------------------------------------------------------------
 # Health + metrics
 # ---------------------------------------------------------------------------
+
 
 @app.get("/healthz", tags=["ops"])
 async def healthz():
@@ -139,6 +145,7 @@ async def readyz():
 async def metrics():
     lines = [f"vault_{k} {v}" for k, v in _COUNTERS.items()]
     return Response(content="\n".join(lines) + "\n", media_type="text/plain")
+
 
 # ---------------------------------------------------------------------------
 # Routers

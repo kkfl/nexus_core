@@ -1,6 +1,7 @@
 """
 Simple in-process metrics counters for notifications_agent.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -29,7 +30,6 @@ def snapshot() -> str:
         for k, v in sorted(_counters.items()):
             lines.append(f"{k} {v}")
         if _latency_ms:
-            import statistics
             sorted_ms = sorted(_latency_ms)
             n = len(sorted_ms)
             p50 = sorted_ms[int(n * 0.5)]

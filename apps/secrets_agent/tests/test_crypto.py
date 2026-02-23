@@ -3,8 +3,10 @@ Unit tests for the Secrets Vault crypto layer.
 
 Tests run without database or Docker — pure in-process crypto.
 """
-import os
+
 import base64
+import os
+
 import pytest
 
 # Set a valid test master key before importing
@@ -12,7 +14,10 @@ _test_key = base64.b64encode(os.urandom(32)).decode()
 os.environ["VAULT_MASTER_KEY"] = _test_key
 
 from apps.secrets_agent.crypto.envelope import (
-    encrypt_secret, decrypt_secret, rotate_secret_dek, EncryptedSecret
+    EncryptedSecret,
+    decrypt_secret,
+    encrypt_secret,
+    rotate_secret_dek,
 )
 
 

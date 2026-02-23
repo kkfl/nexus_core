@@ -7,6 +7,7 @@ Rules:
 - Use redact() wherever a value might inadvertently be included.
 - The SafeValue wrapper makes it impossible to accidentally log the real value.
 """
+
 from __future__ import annotations
 
 import re
@@ -31,6 +32,7 @@ class SafeValue:
     str() and repr() both return [REDACTED].
     Access .unsafe_value ONLY when you intentionally need the plaintext.
     """
+
     __slots__ = ("_value",)
 
     def __init__(self, value: str) -> None:

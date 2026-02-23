@@ -1,11 +1,11 @@
 """Simple in-process metrics counters for the DNS Agent."""
+
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict
 
-_counters: Dict[str, int] = defaultdict(int)
-_latency_buckets: Dict[str, list] = defaultdict(list)
+_counters: dict[str, int] = defaultdict(int)
+_latency_buckets: dict[str, list] = defaultdict(list)
 
 
 def inc(name: str, by: int = 1) -> None:

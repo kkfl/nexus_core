@@ -4,12 +4,12 @@ Audit Sink — write immutable audit events to vault_audit_events.
 INVARIANT: Secret values MUST NEVER be passed to any parameter here.
 Only metadata (alias, tenant_id, env, action, result) is recorded.
 """
+
 from __future__ import annotations
 
 import datetime
-import uuid
 import logging
-from typing import Optional
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,9 +27,9 @@ async def log_event(
     env: str,
     secret_alias: str,
     action: str,
-    result: str,             # "allowed" | "denied" | "error"
-    reason: Optional[str] = None,
-    ip_address: Optional[str] = None,
+    result: str,  # "allowed" | "denied" | "error"
+    reason: str | None = None,
+    ip_address: str | None = None,
 ) -> None:
     """
     Write a vault audit event. Never raises — log failures are caught and
@@ -61,7 +61,7 @@ async def log_event(
                 "service_id": service_id,
                 "tenant_id": tenant_id,
                 "env": env,
-                "alias": secret_alias,     # alias only, never value
+                "alias": secret_alias,  # alias only, never value
                 "action": action,
                 "result": result,
             },

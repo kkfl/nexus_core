@@ -3,14 +3,21 @@ SQLAlchemy models for notifications_agent.
 6 tables: notification_jobs, notification_deliveries, notification_templates,
           notification_routing_rules, notification_audit_events
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint,
-    ForeignKey, func,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -21,7 +28,7 @@ class Base(DeclarativeBase):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class NotificationJob(Base):
@@ -30,11 +37,11 @@ class NotificationJob(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(128), nullable=False, index=True)
     env = Column(String(32), nullable=False)
-    severity = Column(String(16), nullable=False)          # info/warn/error/critical
+    severity = Column(String(16), nullable=False)  # info/warn/error/critical
     template_id = Column(String(128), nullable=True)
     subject = Column(Text, nullable=True)
-    body_hash = Column(String(64), nullable=False)          # sha256 of rendered body
-    body_stored = Column(Text, nullable=True)               # null if sensitivity=sensitive
+    body_hash = Column(String(64), nullable=False)  # sha256 of rendered body
+    body_stored = Column(Text, nullable=True)  # null if sensitivity=sensitive
     sensitivity = Column(String(16), nullable=False, default="normal")
     channels = Column(ARRAY(String), nullable=False)
     routing_rule_id = Column(String(36), nullable=True)
@@ -57,10 +64,14 @@ class NotificationDelivery(Base):
     __tablename__ = "notification_deliveries"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    job_id = Column(String(36), ForeignKey("notification_jobs.id", ondelete="CASCADE"),
-                    nullable=False, index=True)
+    job_id = Column(
+        String(36),
+        ForeignKey("notification_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     channel = Column(String(32), nullable=False)
-    destination_hash = Column(String(64), nullable=False)   # sha256 of phone/email/chat_id
+    destination_hash = Column(String(64), nullable=False)  # sha256 of phone/email/chat_id
     status = Column(String(16), nullable=False, default="pending")
     provider_msg_id = Column(String(256), nullable=True)
     attempt = Column(Integer, nullable=False, default=1)
@@ -91,9 +102,9 @@ class NotificationRoutingRule(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(128), nullable=False)
     env = Column(String(32), nullable=False)
-    severity = Column(String(16), nullable=False)     # info/warn/error/critical or *
+    severity = Column(String(16), nullable=False)  # info/warn/error/critical or *
     channels = Column(ARRAY(String), nullable=False)
-    config = Column(JSONB, nullable=True)             # webhook_url, chat_id overrides, etc.
+    config = Column(JSONB, nullable=True)  # webhook_url, chat_id overrides, etc.
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
@@ -106,11 +117,11 @@ class NotificationAuditEvent(Base):
     service_id = Column(String(128), nullable=False)
     tenant_id = Column(String(128), nullable=False, index=True)
     env = Column(String(32), nullable=False)
-    action = Column(String(64), nullable=False)         # notify/deliver/replay/deny
+    action = Column(String(64), nullable=False)  # notify/deliver/replay/deny
     job_id = Column(String(36), nullable=True)
     delivery_id = Column(String(36), nullable=True)
     channel = Column(String(32), nullable=True)
-    result = Column(String(16), nullable=False)         # ok/failed/denied/dedup
+    result = Column(String(16), nullable=False)  # ok/failed/denied/dedup
     detail = Column(Text, nullable=True)
     ip_address = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now, index=True)

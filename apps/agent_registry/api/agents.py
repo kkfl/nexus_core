@@ -1,7 +1,6 @@
 """
 Agents router — GET /v1/agents, GET /v1/agents/{name}, POST /v1/agents, PATCH /v1/agents/{name}
 """
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,11 +12,11 @@ from apps.agent_registry.store import postgres as store
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
 
 
-@router.get("", response_model=List[AgentOut])
+@router.get("", response_model=list[AgentOut])
 async def list_agents(
     identity: ServiceIdentity = Depends(get_service_identity),
     db: AsyncSession = Depends(store.get_db),
-) -> List[AgentOut]:
+) -> list[AgentOut]:
     """List all registered agents."""
     agents = await store.list_agents(db)
     return [AgentOut.model_validate(a) for a in agents]
@@ -61,7 +60,7 @@ async def create_agent(
         service_id=identity.service_id,
         action="create_agent",
         result="success",
-        detail=f"Created agent {payload.name}"
+        detail=f"Created agent {payload.name}",
     )
 
     return AgentOut.model_validate(agent)
@@ -90,7 +89,7 @@ async def patch_agent(
         service_id=identity.service_id,
         action="update_agent",
         result="success",
-        detail=f"Updated agent {name}"
+        detail=f"Updated agent {name}",
     )
 
     return AgentOut.model_validate(updated)

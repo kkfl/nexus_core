@@ -1,20 +1,32 @@
 """
 PostgreSQL storage backend for agent_registry.
 """
+
 from __future__ import annotations
 
 import os
-from typing import AsyncGenerator, List, Optional
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import selectinload
 
-from apps.agent_registry.models import RegistryAgent, RegistryDeployment, RegistryCapability, RegistryAuditEvent
-from apps.agent_registry.schemas import AgentCreate, AgentUpdate, DeploymentCreate, DeploymentUpdate, CapabilitySpec
+from apps.agent_registry.models import (
+    RegistryAgent,
+    RegistryAuditEvent,
+    RegistryCapability,
+    RegistryDeployment,
+)
+from apps.agent_registry.schemas import (
+    AgentCreate,
+    AgentUpdate,
+    CapabilitySpec,
+    DeploymentCreate,
+    DeploymentUpdate,
+)
 
-
-_DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://nexus:nexus_pass@localhost:5432/nexus_core")
+_DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgresql+asyncpg://nexus:nexus_pass@localhost:5432/nexus_core"
+)
 _engine = create_async_engine(_DATABASE_URL, echo=False, pool_size=5, max_overflow=10)
 _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
@@ -28,17 +40,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 # Agents
 # ---------------------------------------------------------------------------
 
-async def list_agents(db: AsyncSession) -> List[RegistryAgent]:
+
+async def list_agents(db: AsyncSession) -> list[RegistryAgent]:
     result = await db.execute(select(RegistryAgent).order_by(RegistryAgent.name))
     return list(result.scalars().all())
 
 
-async def get_agent_by_name(db: AsyncSession, name: str) -> Optional[RegistryAgent]:
+async def get_agent_by_name(db: AsyncSession, name: str) -> RegistryAgent | None:
     result = await db.execute(select(RegistryAgent).where(RegistryAgent.name == name))
     return result.scalar_one_or_none()
 
 
-async def get_agent_by_id(db: AsyncSession, agent_id: str) -> Optional[RegistryAgent]:
+async def get_agent_by_id(db: AsyncSession, agent_id: str) -> RegistryAgent | None:
     result = await db.execute(select(RegistryAgent).where(RegistryAgent.id == agent_id))
     return result.scalar_one_or_none()
 
@@ -51,7 +64,9 @@ async def create_agent(db: AsyncSession, payload: AgentCreate) -> RegistryAgent:
     return agent
 
 
-async def update_agent(db: AsyncSession, agent: RegistryAgent, payload: AgentUpdate) -> RegistryAgent:
+async def update_agent(
+    db: AsyncSession, agent: RegistryAgent, payload: AgentUpdate
+) -> RegistryAgent:
     update_data = payload.model_dump(exclude_unset=True)
     if update_data:
         for key, value in update_data.items():
@@ -65,7 +80,13 @@ async def update_agent(db: AsyncSession, agent: RegistryAgent, payload: AgentUpd
 # Deployments
 # ---------------------------------------------------------------------------
 
-async def list_deployments(db: AsyncSession, tenant_id: Optional[str] = None, env: Optional[str] = None, agent_id: Optional[str] = None) -> List[RegistryDeployment]:
+
+async def list_deployments(
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    env: str | None = None,
+    agent_id: str | None = None,
+) -> list[RegistryDeployment]:
     stmt = select(RegistryDeployment).order_by(RegistryDeployment.created_at.desc())
     if tenant_id:
         stmt = stmt.where(RegistryDeployment.tenant_id == tenant_id)
@@ -77,14 +98,21 @@ async def list_deployments(db: AsyncSession, tenant_id: Optional[str] = None, en
     return list(result.scalars().all())
 
 
-async def get_deployment(db: AsyncSession, deployment_id: str) -> Optional[RegistryDeployment]:
-    result = await db.execute(select(RegistryDeployment).where(RegistryDeployment.id == deployment_id))
+async def get_deployment(db: AsyncSession, deployment_id: str) -> RegistryDeployment | None:
+    result = await db.execute(
+        select(RegistryDeployment).where(RegistryDeployment.id == deployment_id)
+    )
     return result.scalar_one_or_none()
 
 
-async def get_deployment_by_agent_and_env(db: AsyncSession, agent_id: str,
-                                          tenant_id: Optional[str], env: str) -> Optional[RegistryDeployment]:
-    stmt = select(RegistryDeployment).where(RegistryDeployment.agent_id == agent_id).where(RegistryDeployment.env == env)
+async def get_deployment_by_agent_and_env(
+    db: AsyncSession, agent_id: str, tenant_id: str | None, env: str
+) -> RegistryDeployment | None:
+    stmt = (
+        select(RegistryDeployment)
+        .where(RegistryDeployment.agent_id == agent_id)
+        .where(RegistryDeployment.env == env)
+    )
     if tenant_id:
         stmt = stmt.where(RegistryDeployment.tenant_id == tenant_id)
     else:
@@ -102,7 +130,9 @@ async def create_deployment(db: AsyncSession, payload: DeploymentCreate) -> Regi
     return dep
 
 
-async def update_deployment(db: AsyncSession, dep: RegistryDeployment, payload: DeploymentUpdate) -> RegistryDeployment:
+async def update_deployment(
+    db: AsyncSession, dep: RegistryDeployment, payload: DeploymentUpdate
+) -> RegistryDeployment:
     update_data = payload.model_dump(exclude_unset=True)
     if update_data:
         for key, value in update_data.items():
@@ -116,19 +146,19 @@ async def update_deployment(db: AsyncSession, dep: RegistryDeployment, payload: 
 # Capabilities
 # ---------------------------------------------------------------------------
 
-async def override_capabilities(db: AsyncSession, agent_id: str, capabilities: List[CapabilitySpec]) -> None:
+
+async def override_capabilities(
+    db: AsyncSession, agent_id: str, capabilities: list[CapabilitySpec]
+) -> None:
     """Overwrites all capabilities for a given agent with the provided slice."""
     # 1. Delete existing capabilities for this agent
     await db.execute(delete(RegistryCapability).where(RegistryCapability.agent_id == agent_id))
-    
+
     # 2. Insert new
     if capabilities:
-        new_caps = [
-            RegistryCapability(agent_id=agent_id, **c.model_dump())
-            for c in capabilities
-        ]
+        new_caps = [RegistryCapability(agent_id=agent_id, **c.model_dump()) for c in capabilities]
         db.add_all(new_caps)
-        
+
     await db.commit()
 
 
@@ -136,15 +166,16 @@ async def override_capabilities(db: AsyncSession, agent_id: str, capabilities: L
 # Audit
 # ---------------------------------------------------------------------------
 
+
 async def log_audit(
     db: AsyncSession,
     correlation_id: str,
     service_id: str,
     action: str,
     result: str,
-    tenant_id: Optional[str] = None,
-    env: Optional[str] = None,
-    detail: Optional[str] = None,
+    tenant_id: str | None = None,
+    env: str | None = None,
+    detail: str | None = None,
 ) -> None:
     event = RegistryAuditEvent(
         correlation_id=correlation_id,

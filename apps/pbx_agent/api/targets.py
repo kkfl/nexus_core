@@ -1,15 +1,15 @@
 """
 Target management API — GET/POST/PATCH /v1/targets
 """
-from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.pbx_agent.store.database import get_db
-from apps.pbx_agent.store import postgres
-from apps.pbx_agent.auth.identity import get_service_identity, ServiceIdentity
-from apps.pbx_agent.schemas import PbxTargetCreate, PbxTargetUpdate, PbxTargetOut
 from apps.pbx_agent.audit.log import write_audit_event
+from apps.pbx_agent.auth.identity import ServiceIdentity, get_service_identity
+from apps.pbx_agent.schemas import PbxTargetCreate, PbxTargetOut, PbxTargetUpdate
+from apps.pbx_agent.store import postgres
+from apps.pbx_agent.store.database import get_db
 
 router = APIRouter(prefix="/v1/targets", tags=["targets"])
 
@@ -23,15 +23,22 @@ async def create_target(
     if identity.read_only:
         raise HTTPException(status_code=403, detail="Read-only service cannot create targets")
     target = await postgres.create_target(db, payload)
-    await write_audit_event(db, identity.correlation_id, identity.service_id,
-                            "create_target", "success",
-                            tenant_id=payload.tenant_id, env=payload.env, target_id=target.id)
+    await write_audit_event(
+        db,
+        identity.correlation_id,
+        identity.service_id,
+        "create_target",
+        "success",
+        tenant_id=payload.tenant_id,
+        env=payload.env,
+        target_id=target.id,
+    )
     await db.commit()
     await db.refresh(target)
     return PbxTargetOut.model_validate(target)
 
 
-@router.get("", response_model=List[PbxTargetOut])
+@router.get("", response_model=list[PbxTargetOut])
 async def list_targets(
     tenant_id: str = Query(...),
     env: str = Query("prod"),
@@ -71,9 +78,16 @@ async def update_target(
     target = await postgres.update_target(db, target_id, tenant_id, env, payload)
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
-    await write_audit_event(db, identity.correlation_id, identity.service_id,
-                            "update_target", "success",
-                            tenant_id=tenant_id, env=env, target_id=target_id)
+    await write_audit_event(
+        db,
+        identity.correlation_id,
+        identity.service_id,
+        "update_target",
+        "success",
+        tenant_id=tenant_id,
+        env=env,
+        target_id=target_id,
+    )
     await db.commit()
     await db.refresh(target)
     return PbxTargetOut.model_validate(target)

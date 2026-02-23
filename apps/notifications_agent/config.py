@@ -2,9 +2,10 @@
 notifications_agent — pydantic-settings config.
 All runtime values come from environment variables; no hardcoded secrets.
 """
+
 from __future__ import annotations
+
 from functools import lru_cache
-from typing import Dict
 
 from pydantic_settings import BaseSettings
 
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://nexus:nexus_pass@postgres:5432/nexus_core"
 
     # Auth — callers of notifications_agent
-    notifications_agent_keys: str = "{}"   # JSON map: {"nexus": "key", "admin": "admin-key"}
+    notifications_agent_keys: str = "{}"  # JSON map: {"nexus": "key", "admin": "admin-key"}
 
     # Vault (secrets_agent)
     vault_base_url: str = "http://secrets-agent:8007"
@@ -33,8 +34,9 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "extra": "ignore", "case_sensitive": False}
 
-    def get_agent_keys(self) -> Dict[str, str]:
+    def get_agent_keys(self) -> dict[str, str]:
         import json
+
         try:
             return json.loads(self.notifications_agent_keys)
         except Exception:

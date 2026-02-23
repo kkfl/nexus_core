@@ -1,6 +1,7 @@
 """
 Agent Registry V1 — FastAPI application.
 """
+
 from __future__ import annotations
 
 import os
@@ -11,7 +12,7 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.agent_registry.api import agents, deployments, capabilities, audit
+from apps.agent_registry.api import agents, audit, capabilities, deployments
 from apps.agent_registry.config import get_settings
 from apps.agent_registry.models import Base
 from apps.agent_registry.store.postgres import _engine
@@ -27,9 +28,9 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
     except Exception as exc:
         logger.warning("registry_table_create_skipped", error=str(exc))
-    
+
     yield
-    
+
     logger.info("agent_registry_shutdown")
 
 
@@ -58,6 +59,7 @@ app.add_middleware(
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
     import uuid
+
     correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
     start = time.monotonic()
 
@@ -88,6 +90,7 @@ async def request_middleware(request: Request, call_next):
 # Ops
 # ---------------------------------------------------------------------------
 
+
 @app.get("/healthz", tags=["ops"])
 async def healthz():
     return {"status": "ok", "service": "agent-registry", "version": "1.0.0"}
@@ -99,6 +102,7 @@ async def readyz():
         return Response(content='{"status":"not_ready","reason":"no database"}', status_code=503)
     try:
         from sqlalchemy import text
+
         async with _engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return {"status": "ready"}

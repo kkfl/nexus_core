@@ -13,6 +13,7 @@ Env vars (default to localhost):
     NOTIF_SERVICE_ID — X-Service-ID header value (default: admin)
     NOTIF_API_KEY    — X-Agent-Key value (default: admin-notif-key-change-me)
 """
+
 from __future__ import annotations
 
 import os
@@ -43,17 +44,19 @@ ENV = "prod"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def check(condition: bool, label: str):
     icon = "✅" if condition else "❌"
     print(f"  {icon} {label}")
     if not condition:
-        print(f"       FAILURE — aborting e2e test")
+        print("       FAILURE — aborting e2e test")
         sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
+
 
 def step_healthz(client: httpx.Client):
     print("\n[1] Health check — GET /healthz")
@@ -118,11 +121,15 @@ def step_get_job(client: httpx.Client, job_id: str):
     data = r.json()
     check(data.get("id") == job_id, "job_id matches")
     check(data.get("tenant_id") == TENANT_ID, f"tenant_id == {TENANT_ID}")
-    print(f"       job status = {data.get('status')}, deliveries = {len(data.get('deliveries', []))}")
+    print(
+        f"       job status = {data.get('status')}, deliveries = {len(data.get('deliveries', []))}"
+    )
     # Note: delivery to telegram may fail if vault secrets aren't seeded —
     # that is expected in integration mode without live credentials.
-    check(data.get("status") in ("pending", "running", "succeeded", "partial", "failed"),
-          f"Status is a valid terminal value (got {data.get('status')})")
+    check(
+        data.get("status") in ("pending", "running", "succeeded", "partial", "failed"),
+        f"Status is a valid terminal value (got {data.get('status')})",
+    )
 
 
 def step_replay_non_failed_job(client: httpx.Client, job_id: str):
@@ -166,6 +173,7 @@ def step_templates_api(client: httpx.Client):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     print("=" * 60)

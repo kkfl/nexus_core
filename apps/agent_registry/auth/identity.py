@@ -1,8 +1,8 @@
 """
 Service identity and authentication for agent_registry.
 """
+
 import uuid
-from typing import Optional
 
 import structlog
 from fastapi import Header, HTTPException, Request, status
@@ -16,7 +16,7 @@ logger = structlog.get_logger(__name__)
 class ServiceIdentity(BaseModel):
     service_id: str
     is_admin: bool
-    ip_address: Optional[str]
+    ip_address: str | None
     request_id: str
     correlation_id: str
 
@@ -25,8 +25,8 @@ def get_service_identity(
     request: Request,
     x_service_id: str = Header(..., alias="X-Service-ID"),
     x_agent_key: str = Header(..., alias="X-Agent-Key"),
-    x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID"),
-    x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+    x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
+    x_request_id: str | None = Header(None, alias="X-Request-ID"),
 ) -> ServiceIdentity:
     """Validate X-Service-ID and X-Agent-Key against AGENT_REGISTRY_KEYS."""
     settings = get_settings()
@@ -45,12 +45,10 @@ def get_service_identity(
         )
 
     correlation_id = x_correlation_id or x_request_id or str(uuid.uuid4())
-    
+
     import structlog as sl
-    sl.contextvars.bind_contextvars(
-        service_id=x_service_id, 
-        correlation_id=correlation_id
-    )
+
+    sl.contextvars.bind_contextvars(service_id=x_service_id, correlation_id=correlation_id)
 
     return ServiceIdentity(
         service_id=x_service_id,

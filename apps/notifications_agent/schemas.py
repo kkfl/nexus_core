@@ -1,34 +1,34 @@
 """
 Pydantic schemas for notifications_agent API.
 """
+
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Notify request / response
 # ---------------------------------------------------------------------------
 
+
 class NotifyRequest(BaseModel):
     tenant_id: str
     env: str = "prod"
     severity: str = Field(..., pattern="^(info|warn|error|critical)$")
-    channels: Optional[List[str]] = None         # explicit channels
-    routing_rule_id: Optional[str] = None        # or resolve via routing rule
-    template_id: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None                   # raw body if no template
-    context: Optional[Dict[str, Any]] = None     # template variables
+    channels: list[str] | None = None  # explicit channels
+    routing_rule_id: str | None = None  # or resolve via routing rule
+    template_id: str | None = None
+    subject: str | None = None
+    body: str | None = None  # raw body if no template
+    context: dict[str, Any] | None = None  # template variables
     idempotency_key: str = Field(..., min_length=1, max_length=256)
-    correlation_id: Optional[str] = None
+    correlation_id: str | None = None
     sensitivity: str = Field(default="normal", pattern="^(normal|sensitive)$")
     # per-channel destination overrides (optional)
-    destinations: Optional[Dict[str, str]] = None  # e.g. {"email": "ops@example.com"}
+    destinations: dict[str, str] | None = None  # e.g. {"email": "ops@example.com"}
 
     @field_validator("channels", mode="before")
     @classmethod
@@ -52,15 +52,16 @@ class NotifyResponse(BaseModel):
 # Job / delivery output
 # ---------------------------------------------------------------------------
 
+
 class DeliveryOut(BaseModel):
     id: str
     channel: str
     status: str
     destination_hash: str
-    provider_msg_id: Optional[str]
+    provider_msg_id: str | None
     attempt: int
-    error_code: Optional[str]
-    sent_at: Optional[datetime]
+    error_code: str | None
+    sent_at: datetime | None
 
 
 class JobOut(BaseModel):
@@ -69,25 +70,26 @@ class JobOut(BaseModel):
     env: str
     severity: str
     status: str
-    channels: List[str]
-    template_id: Optional[str]
+    channels: list[str]
+    template_id: str | None
     sensitivity: str
     attempts: int
     correlation_id: str
     created_at: datetime
-    completed_at: Optional[datetime]
-    deliveries: List[DeliveryOut] = []
+    completed_at: datetime | None
+    deliveries: list[DeliveryOut] = []
 
 
 # ---------------------------------------------------------------------------
 # Templates
 # ---------------------------------------------------------------------------
 
+
 class TemplateCreate(BaseModel):
     id: str = Field(..., description="slug e.g. 'agent_down'")
     name: str
     channel: str = "all"
-    subject_template: Optional[str] = None
+    subject_template: str | None = None
     body_template: str
     storage_policy: str = Field(default="store", pattern="^(store|hash_only)$")
 
@@ -96,7 +98,7 @@ class TemplateOut(BaseModel):
     id: str
     name: str
     channel: str
-    subject_template: Optional[str]
+    subject_template: str | None
     body_template: str
     storage_policy: str
     created_at: datetime
@@ -106,12 +108,13 @@ class TemplateOut(BaseModel):
 # Routing rules
 # ---------------------------------------------------------------------------
 
+
 class RoutingRuleCreate(BaseModel):
     tenant_id: str
     env: str = "prod"
     severity: str = Field(..., pattern="^(info|warn|error|critical|\\*)$")
-    channels: List[str]
-    config: Optional[Dict[str, Any]] = None
+    channels: list[str]
+    config: dict[str, Any] | None = None
     enabled: bool = True
 
 
@@ -120,8 +123,8 @@ class RoutingRuleOut(BaseModel):
     tenant_id: str
     env: str
     severity: str
-    channels: List[str]
-    config: Optional[Dict[str, Any]]
+    channels: list[str]
+    config: dict[str, Any] | None
     enabled: bool
     created_at: datetime
 
@@ -130,6 +133,7 @@ class RoutingRuleOut(BaseModel):
 # Audit
 # ---------------------------------------------------------------------------
 
+
 class AuditEventOut(BaseModel):
     id: str
     correlation_id: str
@@ -137,8 +141,8 @@ class AuditEventOut(BaseModel):
     tenant_id: str
     env: str
     action: str
-    job_id: Optional[str]
-    channel: Optional[str]
+    job_id: str | None
+    channel: str | None
     result: str
-    detail: Optional[str]
+    detail: str | None
     created_at: datetime

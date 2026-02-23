@@ -4,14 +4,15 @@ DnsVaultClient — thin wrapper around the shared VaultClient for the dns_agent.
 Imports the VaultClient from secrets_agent package for reuse.
 Provides a convenience factory from DNS_AGENT-specific env vars.
 """
+
 from __future__ import annotations
 
 import os
 
 # Re-use the VaultClient directly from the secrets_agent package
 from apps.secrets_agent.client.vault_client import (
-    VaultClient,
     VaultAccessDenied,
+    VaultClient,
     VaultError,
     VaultNotFound,
 )
@@ -24,6 +25,7 @@ class DnsVaultClient(VaultClient):
     VaultClient specialized for the dns_agent.
     Same API as VaultClient — secret values never logged.
     """
+
     pass
 
 

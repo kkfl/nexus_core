@@ -2,8 +2,10 @@
 Notifications client for pbx_agent.
 Sends alerts via notifications-agent (non-blocking).
 """
+
 import httpx
 import structlog
+
 from apps.pbx_agent.config import config
 
 logger = structlog.get_logger(__name__)

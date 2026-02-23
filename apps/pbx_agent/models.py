@@ -1,21 +1,19 @@
 """
 SQLAlchemy ORM models for pbx_agent.
 """
-import uuid
-from datetime import datetime, timezone
 
-from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey,
-    Integer, String, Text
-)
+import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _uuid():
@@ -24,6 +22,7 @@ def _uuid():
 
 class PbxTarget(Base):
     """Registered PBX system — stores connection config + secret aliases (never secrets)."""
+
     __tablename__ = "pbx_targets"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -32,8 +31,8 @@ class PbxTarget(Base):
     name = Column(String(255), nullable=False)
     host = Column(String(256), nullable=False)
     ami_port = Column(Integer, nullable=False, default=5038)
-    ami_username = Column(String(128), nullable=False)          # plaintext username, not secret
-    ami_secret_alias = Column(String(255), nullable=False)      # e.g. pbx.target1.ami.secret
+    ami_username = Column(String(128), nullable=False)  # plaintext username, not secret
+    ami_secret_alias = Column(String(255), nullable=False)  # e.g. pbx.target1.ami.secret
     status = Column(String(32), nullable=False, default="active")
     metadata_ = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
@@ -44,14 +43,17 @@ class PbxTarget(Base):
 
 class PbxJob(Base):
     """DB-backed job queue for mutating PBX actions (reload, etc.)."""
+
     __tablename__ = "pbx_jobs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
     tenant_id = Column(String(128), nullable=False, index=True)
     env = Column(String(64), nullable=False)
-    pbx_target_id = Column(String(36), ForeignKey("pbx_targets.id", ondelete="SET NULL"), nullable=True)
-    action = Column(String(128), nullable=False)                   # e.g. "reload", "status.peers"
-    payload_redacted = Column(JSONB, nullable=True)               # input with secrets stripped
+    pbx_target_id = Column(
+        String(36), ForeignKey("pbx_targets.id", ondelete="SET NULL"), nullable=True
+    )
+    action = Column(String(128), nullable=False)  # e.g. "reload", "status.peers"
+    payload_redacted = Column(JSONB, nullable=True)  # input with secrets stripped
     status = Column(String(32), nullable=False, default="pending", index=True)
     attempts = Column(Integer, nullable=False, default=0)
     max_attempts = Column(Integer, nullable=False, default=3)
@@ -65,6 +67,7 @@ class PbxJob(Base):
 
 class PbxJobResult(Base):
     """Stored result for a completed (or failed) job."""
+
     __tablename__ = "pbx_job_results"
 
     job_id = Column(String(36), ForeignKey("pbx_jobs.id", ondelete="CASCADE"), primary_key=True)
@@ -78,6 +81,7 @@ class PbxJobResult(Base):
 
 class PbxAuditEvent(Base):
     """Immutable audit log — who called what, when, with what result."""
+
     __tablename__ = "pbx_audit_events"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -87,6 +91,6 @@ class PbxAuditEvent(Base):
     env = Column(String(64), nullable=True)
     action = Column(String(128), nullable=False)
     target_id = Column(String(36), nullable=True)
-    result = Column(String(32), nullable=False)      # success / denied / error
+    result = Column(String(32), nullable=False)  # success / denied / error
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now, index=True)

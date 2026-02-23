@@ -12,18 +12,19 @@ V2: replace with mTLS client certificate validation.
 Admin operations additionally require role=admin from the VAULT_ADMIN_KEYS
 environment variable.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import uuid
-from typing import AsyncGenerator, Optional, Tuple
+from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from apps.secrets_agent.models import VaultBase, VaultPolicy
+from apps.secrets_agent.models import VaultPolicy
 from apps.secrets_agent.policy.engine import PolicyEngine
 
 # ---------------------------------------------------------------------------
@@ -34,8 +35,10 @@ _DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if _DATABASE_URL and _DATABASE_URL.startswith("postgresql://"):
     _DATABASE_URL = _DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-_engine = create_async_engine(_DATABASE_URL, echo=False, pool_pre_ping=True) if _DATABASE_URL else None
-_SessionLocal: Optional[async_sessionmaker] = (
+_engine = (
+    create_async_engine(_DATABASE_URL, echo=False, pool_pre_ping=True) if _DATABASE_URL else None
+)
+_SessionLocal: async_sessionmaker | None = (
     async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False) if _engine else None
 )
 
@@ -55,6 +58,7 @@ async def get_vault_db() -> AsyncGenerator[AsyncSession, None]:
 # ---------------------------------------------------------------------------
 # Service identity (AuthN)
 # ---------------------------------------------------------------------------
+
 
 def _load_agent_keys() -> dict[str, str]:
     """
@@ -80,7 +84,7 @@ def _load_admin_keys() -> dict[str, str]:
 class ServiceIdentity:
     __slots__ = ("service_id", "is_admin", "request_id", "ip_address")
 
-    def __init__(self, service_id: str, is_admin: bool, request_id: str, ip_address: Optional[str]):
+    def __init__(self, service_id: str, is_admin: bool, request_id: str, ip_address: str | None):
         self.service_id = service_id
         self.is_admin = is_admin
         self.request_id = request_id
@@ -89,10 +93,12 @@ class ServiceIdentity:
 
 async def get_service_identity(
     request: Request,
-    x_service_id: str = Header(..., alias="X-Service-ID",
-                               description="Caller's service name, e.g. 'pbx-agent'"),
-    x_agent_key: str = Header(..., alias="X-Agent-Key",
-                               description="API key issued to the service"),
+    x_service_id: str = Header(
+        ..., alias="X-Service-ID", description="Caller's service name, e.g. 'pbx-agent'"
+    ),
+    x_agent_key: str = Header(
+        ..., alias="X-Agent-Key", description="API key issued to the service"
+    ),
 ) -> ServiceIdentity:
     """
     Validate service identity from headers. 401 if not recognised.
@@ -113,7 +119,9 @@ async def get_service_identity(
 
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     ip = request.client.host if request.client else None
-    return ServiceIdentity(service_id=x_service_id, is_admin=is_admin, request_id=request_id, ip_address=ip)
+    return ServiceIdentity(
+        service_id=x_service_id, is_admin=is_admin, request_id=request_id, ip_address=ip
+    )
 
 
 def require_admin(identity: ServiceIdentity = Depends(get_service_identity)) -> ServiceIdentity:
@@ -125,6 +133,7 @@ def require_admin(identity: ServiceIdentity = Depends(get_service_identity)) -> 
 # ---------------------------------------------------------------------------
 # Policy engine (loaded fresh per request — small table, safe for V1)
 # ---------------------------------------------------------------------------
+
 
 async def get_policy_engine(db: AsyncSession = Depends(get_vault_db)) -> PolicyEngine:
     result = await db.execute(select(VaultPolicy).where(VaultPolicy.is_active.is_(True)))

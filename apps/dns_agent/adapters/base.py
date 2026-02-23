@@ -2,11 +2,11 @@
 Abstract base class for DNS provider adapters.
 All providers implement this interface — enables easy swap/extension.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
 
 
 @dataclass
@@ -23,7 +23,7 @@ class RecordMeta:
     name: str
     value: str
     ttl: int
-    priority: Optional[int] = None
+    priority: int | None = None
 
 
 @dataclass
@@ -32,7 +32,7 @@ class RecordSpec:
     name: str
     value: str
     ttl: int = 300
-    priority: Optional[int] = None
+    priority: int | None = None
 
 
 class DnsProviderAdapter(ABC):
@@ -43,12 +43,12 @@ class DnsProviderAdapter(ABC):
     """
 
     @abstractmethod
-    async def list_zones(self, name_filter: Optional[str] = None) -> List[ZoneMeta]:
+    async def list_zones(self, name_filter: str | None = None) -> list[ZoneMeta]:
         """List zones available to the authenticated token."""
         ...
 
     @abstractmethod
-    async def list_records(self, provider_zone_id: str) -> List[RecordMeta]:
+    async def list_records(self, provider_zone_id: str) -> list[RecordMeta]:
         """List all records for a zone by provider zone ID."""
         ...
 
@@ -74,7 +74,8 @@ class DnsProviderAdapter(ABC):
         ...
 
     @abstractmethod
-    async def find_record(self, provider_zone_id: str, record_type: str,
-                          name: str) -> Optional[RecordMeta]:
+    async def find_record(
+        self, provider_zone_id: str, record_type: str, name: str
+    ) -> RecordMeta | None:
         """Find a specific record by type and name. Returns None if not found."""
         ...

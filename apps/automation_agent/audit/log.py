@@ -1,9 +1,10 @@
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+
 from apps.automation_agent.models import AutomationAuditEvent
 
 logger = structlog.get_logger(__name__)
+
 
 async def write_audit_event(
     db: AsyncSession,
@@ -11,11 +12,11 @@ async def write_audit_event(
     service_id: str,
     action: str,
     result: str,
-    tenant_id: Optional[str] = None,
-    env: Optional[str] = None,
-    automation_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    detail: Optional[str] = None
+    tenant_id: str | None = None,
+    env: str | None = None,
+    automation_id: str | None = None,
+    run_id: str | None = None,
+    detail: str | None = None,
 ):
     """
     Persist an audit event to the database.
@@ -30,16 +31,12 @@ async def write_audit_event(
         result=result,
         automation_id=automation_id,
         run_id=run_id,
-        detail=detail
+        detail=detail,
     )
     db.add(event)
-    
+
     # Also log it for operational visibility
     log_func = logger.info if result == "success" else logger.warning
     log_func(
-        "audit_event",
-        action=action,
-        result=result,
-        automation_id=automation_id,
-        run_id=run_id
+        "audit_event", action=action, result=result, automation_id=automation_id, run_id=run_id
     )

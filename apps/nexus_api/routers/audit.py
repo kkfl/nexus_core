@@ -1,40 +1,43 @@
-from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, Query
+import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from pydantic import BaseModel
-import datetime
 
+from apps.nexus_api.dependencies import RequireRole
 from packages.shared.db import get_db
 from packages.shared.models import AuditEvent
-from apps.nexus_api.dependencies import RequireRole
 
 router = APIRouter()
 
+
 class AuditEventOut(BaseModel):
     id: int
-    actor_id: Optional[int]
-    actor_type: Optional[str]
+    actor_id: int | None
+    actor_type: str | None
     action: str
     resource_type: str
-    resource_id: Optional[str]
-    meta_data: Optional[dict]
+    resource_id: str | None
+    meta_data: dict | None
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
 
-@router.get("/", response_model=List[AuditEventOut])
+
+@router.get("/", response_model=list[AuditEventOut])
 async def read_audit_events(
-    actor_type: Optional[str] = None,
-    actor_id: Optional[int] = None,
-    action: Optional[str] = None,
-    since: Optional[datetime.datetime] = None,
-    until: Optional[datetime.datetime] = None,
+    actor_type: str | None = None,
+    actor_id: int | None = None,
+    action: str | None = None,
+    since: datetime.datetime | None = None,
+    until: datetime.datetime | None = None,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"]))
+    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
 ) -> Any:
     stmt = select(AuditEvent)
     if actor_type:
@@ -47,7 +50,7 @@ async def read_audit_events(
         stmt = stmt.where(AuditEvent.created_at >= since)
     if until:
         stmt = stmt.where(AuditEvent.created_at <= until)
-        
+
     stmt = stmt.order_by(AuditEvent.created_at.desc()).offset(offset).limit(limit)
     res = await db.execute(stmt)
     return res.scalars().all()

@@ -3,8 +3,8 @@ pbx_agent configuration — pydantic-settings.
 All sensitive values (AMI secrets, SSH keys) are fetched at runtime from secrets-agent.
 Only non-sensitive config + alias names live here.
 """
+
 from pydantic_settings import BaseSettings
-from pydantic import Field
 
 
 class Config(BaseSettings):
@@ -28,11 +28,11 @@ class Config(BaseSettings):
     # Secrets Agent (pbx-agent calls secrets to retrieve AMI creds at runtime)
     vault_base_url: str = "http://secrets-agent:8007"
     vault_service_id: str = "pbx-agent"
-    pbx_vault_agent_key: str = ""          # key pbx-agent uses to call secrets-agent
+    pbx_vault_agent_key: str = ""  # key pbx-agent uses to call secrets-agent
 
     # Notifications Agent
     notifications_base_url: str = "http://notifications-agent:8008"
-    pbx_notif_agent_key: str = ""         # key pbx-agent uses to call notifications-agent
+    pbx_notif_agent_key: str = ""  # key pbx-agent uses to call notifications-agent
 
     # Mock mode — serve fixtures instead of live AMI
     pbx_mock: bool = False

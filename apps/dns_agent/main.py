@@ -14,12 +14,13 @@ Routes:
   GET  /v1/jobs/{job_id}
   GET  /v1/jobs
 """
+
 from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -73,6 +74,7 @@ app.add_middleware(
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
     import uuid
+
     correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
     start = time.monotonic()
     inc("requests_total")
@@ -107,6 +109,7 @@ async def request_middleware(request: Request, call_next):
 # Health / Ops
 # ---------------------------------------------------------------------------
 
+
 @app.get("/healthz", tags=["ops"])
 async def healthz():
     return {"status": "ok", "service": "dns-agent", "version": "2.0.0"}
@@ -115,10 +118,12 @@ async def healthz():
 @app.get("/readyz", tags=["ops"])
 async def readyz():
     from apps.dns_agent.store.postgres import _engine
+
     if _engine is None:
         return Response(content='{"status":"not_ready","reason":"no database"}', status_code=503)
     try:
         from sqlalchemy import text
+
         async with _engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return {"status": "ready"}

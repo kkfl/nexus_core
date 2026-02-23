@@ -11,11 +11,11 @@ Rate limits: 1200 requests/5 minutes per token.
 
 INVARIANT: The API token is NEVER logged in any function in this module.
 """
+
 from __future__ import annotations
 
 import asyncio
 import random
-from typing import List, Optional
 
 import httpx
 import structlog
@@ -37,8 +37,9 @@ def _safe_headers(token: str) -> dict:
     }
 
 
-async def _cf_request(client: httpx.AsyncClient, method: str, path: str,
-                      token: str, **kwargs) -> dict:
+async def _cf_request(
+    client: httpx.AsyncClient, method: str, path: str, token: str, **kwargs
+) -> dict:
     """
     Perform a Cloudflare API request with retry + exponential backoff.
     Strips token from any error messages before propagating.
@@ -50,23 +51,31 @@ async def _cf_request(client: httpx.AsyncClient, method: str, path: str,
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
             resp = await client.request(
-                method, url,
+                method,
+                url,
                 headers=_safe_headers(token),
                 **kwargs,
             )
 
             if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", _BASE_DELAY * (2 ** attempt)))
+                retry_after = float(resp.headers.get("Retry-After", _BASE_DELAY * (2**attempt)))
                 jitter = random.uniform(0, 0.5)
                 wait = retry_after + jitter
-                logger.warning("cloudflare_rate_limited", path=path, wait_s=round(wait, 2), attempt=attempt)
+                logger.warning(
+                    "cloudflare_rate_limited", path=path, wait_s=round(wait, 2), attempt=attempt
+                )
                 await asyncio.sleep(wait)
                 continue
 
             if resp.status_code >= 500:
                 delay = _BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.3)
-                logger.warning("cloudflare_server_error", status=resp.status_code, path=path,
-                               attempt=attempt, retry_in=round(delay, 2))
+                logger.warning(
+                    "cloudflare_server_error",
+                    status=resp.status_code,
+                    path=path,
+                    attempt=attempt,
+                    retry_in=round(delay, 2),
+                )
                 if attempt < _MAX_RETRIES:
                     await asyncio.sleep(delay)
                     continue
@@ -82,7 +91,9 @@ async def _cf_request(client: httpx.AsyncClient, method: str, path: str,
 
         except httpx.TimeoutException as exc:
             delay = _BASE_DELAY * (2 ** (attempt - 1))
-            logger.warning("cloudflare_timeout", path=path, attempt=attempt, retry_in=round(delay, 2))
+            logger.warning(
+                "cloudflare_timeout", path=path, attempt=attempt, retry_in=round(delay, 2)
+            )
             last_exc = exc
             if attempt < _MAX_RETRIES:
                 await asyncio.sleep(delay)
@@ -112,6 +123,7 @@ class CloudflareAdapter(DnsProviderAdapter):
     The token is stored as a private attribute and NEVER appears in logs,
     repr(), or exception messages.
     """
+
     def __init__(self, api_token: str) -> None:
         # Private — underscore prevents accidental serialization in most frameworks
         self.__api_token = api_token
@@ -120,26 +132,36 @@ class CloudflareAdapter(DnsProviderAdapter):
     def __repr__(self) -> str:
         return "CloudflareAdapter(token=[REDACTED])"
 
-    async def list_zones(self, name_filter: Optional[str] = None) -> List[ZoneMeta]:
+    async def list_zones(self, name_filter: str | None = None) -> list[ZoneMeta]:
         params = {"per_page": 100}
         if name_filter:
             params["name"] = name_filter
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _cf_request(client, "GET", "/zones", self.__api_token, params=params)
-        return [ZoneMeta(provider_zone_id=z["id"], zone_name=z["name"], status=z["status"])
-                for z in data.get("result", [])]
+        return [
+            ZoneMeta(provider_zone_id=z["id"], zone_name=z["name"], status=z["status"])
+            for z in data.get("result", [])
+        ]
 
-    async def list_records(self, provider_zone_id: str) -> List[RecordMeta]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            data = await _cf_request(client, "GET", f"/zones/{provider_zone_id}/dns_records",
-                                     self.__api_token, params={"per_page": 1000})
-        return [_parse_cf_record(r) for r in data.get("result", [])]
-
-    async def find_record(self, provider_zone_id: str, record_type: str,
-                          name: str) -> Optional[RecordMeta]:
+    async def list_records(self, provider_zone_id: str) -> list[RecordMeta]:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             data = await _cf_request(
-                client, "GET", f"/zones/{provider_zone_id}/dns_records",
+                client,
+                "GET",
+                f"/zones/{provider_zone_id}/dns_records",
+                self.__api_token,
+                params={"per_page": 1000},
+            )
+        return [_parse_cf_record(r) for r in data.get("result", [])]
+
+    async def find_record(
+        self, provider_zone_id: str, record_type: str, name: str
+    ) -> RecordMeta | None:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            data = await _cf_request(
+                client,
+                "GET",
+                f"/zones/{provider_zone_id}/dns_records",
                 self.__api_token,
                 params={"type": record_type, "name": name, "per_page": 10},
             )
@@ -162,22 +184,27 @@ class CloudflareAdapter(DnsProviderAdapter):
             if existing:
                 # Update in place — PATCH to avoid clobbering other fields
                 data = await _cf_request(
-                    client, "PATCH",
+                    client,
+                    "PATCH",
                     f"/zones/{provider_zone_id}/dns_records/{existing.provider_record_id}",
-                    self.__api_token, json=payload,
+                    self.__api_token,
+                    json=payload,
                 )
             else:
                 data = await _cf_request(
-                    client, "POST",
+                    client,
+                    "POST",
                     f"/zones/{provider_zone_id}/dns_records",
-                    self.__api_token, json=payload,
+                    self.__api_token,
+                    json=payload,
                 )
         return _parse_cf_record(data["result"])
 
     async def delete_record(self, provider_zone_id: str, provider_record_id: str) -> None:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             await _cf_request(
-                client, "DELETE",
+                client,
+                "DELETE",
                 f"/zones/{provider_zone_id}/dns_records/{provider_record_id}",
                 self.__api_token,
             )

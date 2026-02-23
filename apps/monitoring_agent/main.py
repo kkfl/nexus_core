@@ -1,21 +1,22 @@
 """
 Monitoring Agent v1 — production FastAPI application.
 """
+
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.monitoring_agent.config import get_settings
 from apps.monitoring_agent import metrics
-from apps.monitoring_agent.api.targets import router as targets_router
 from apps.monitoring_agent.api.checks import router as checks_router
 from apps.monitoring_agent.api.status import router as status_router
+from apps.monitoring_agent.api.targets import router as targets_router
+from apps.monitoring_agent.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -24,13 +25,14 @@ logger = structlog.get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("monitoring_agent_startup", version=settings.service_version)
-    
+
     # Warm up DB engine
     from apps.monitoring_agent.store.postgres import _get_engine
+
     _get_engine()
-    
+
     yield
-    
+
     logger.info("monitoring_agent_shutdown")
 
 
@@ -80,17 +82,19 @@ async def readyz():
     """Check DB + agent_registry connectivity."""
     try:
         from apps.monitoring_agent.store.postgres import _get_engine, _session_factory
+
         _get_engine()
         async with _session_factory() as session:
             await session.execute(__import__("sqlalchemy").text("SELECT 1"))
-    except Exception as exc:
+    except Exception:
         return Response(
-            content=f'{{"status":"not_ready","reason":"db_unavailable"}}',
+            content='{"status":"not_ready","reason":"db_unavailable"}',
             status_code=503,
             media_type="application/json",
         )
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(f"{settings.registry_base_url}/healthz")
         if r.status_code != 200:
@@ -107,6 +111,7 @@ async def readyz():
 @app.get("/metrics", tags=["ops"])
 async def get_metrics():
     return Response(content=metrics.snapshot(), media_type="text/plain")
+
 
 @app.get("/capabilities", tags=["ops"])
 async def capabilities():

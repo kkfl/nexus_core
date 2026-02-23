@@ -10,11 +10,12 @@ Evaluation order:
 
 Glob matching: uses fnmatch for both service_id and alias_pattern fields.
 """
+
 from __future__ import annotations
 
 import fnmatch
 import logging
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
 
 from apps.secrets_agent.models import VaultPolicy
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AccessDecision:
     __slots__ = ("allowed", "reason", "policy_id")
 
-    def __init__(self, allowed: bool, reason: str, policy_id: Optional[str] = None):
+    def __init__(self, allowed: bool, reason: str, policy_id: str | None = None):
         self.allowed = allowed
         self.reason = reason
         self.policy_id = policy_id
@@ -41,7 +42,7 @@ class PolicyEngine:
 
     def __init__(self, policies: Sequence[VaultPolicy]) -> None:
         # Sort by priority descending so higher-priority policies are checked first
-        self._policies: List[VaultPolicy] = sorted(policies, key=lambda p: -p.priority)
+        self._policies: list[VaultPolicy] = sorted(policies, key=lambda p: -p.priority)
 
     def check(
         self,
@@ -94,5 +95,5 @@ class PolicyEngine:
         return AccessDecision(
             allowed=False,
             reason=f"No policy grants service '{service_id}' action '{action}' on alias '{secret_alias}' "
-                   f"(tenant={tenant_id}, env={env}). Default deny.",
+            f"(tenant={tenant_id}, env={env}). Default deny.",
         )

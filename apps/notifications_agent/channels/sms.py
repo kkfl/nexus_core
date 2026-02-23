@@ -7,11 +7,11 @@ Secrets (from vault):
 
 If vault aliases are not configured, returns ChannelNotConfigured gracefully.
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
-from typing import Optional
 
 import httpx
 import structlog
@@ -34,13 +34,19 @@ class SmsChannel(NotificationChannel):
     def __repr__(self) -> str:
         return "SmsChannel(provider=twilio, from=[REDACTED])"
 
-    async def send(self, *, subject: Optional[str], body: str,
-                   destination: Optional[str] = None,
-                   context: dict | None = None) -> SendResult:
+    async def send(
+        self,
+        *,
+        subject: str | None,
+        body: str,
+        destination: str | None = None,
+        context: dict | None = None,
+    ) -> SendResult:
         to_number = destination
         if not to_number:
-            return SendResult(success=False, error_code="no_destination",
-                              error_detail="No phone number provided")
+            return SendResult(
+                success=False, error_code="no_destination", error_detail="No phone number provided"
+            )
 
         dest_hash = hashlib.sha256(to_number.encode()).hexdigest()
         # SMS: no HTML, no subject, max 1600 chars (multi-part SMS handled by Twilio)
@@ -60,27 +66,40 @@ class SmsChannel(NotificationChannel):
             if resp.status_code >= 400:
                 err = data.get("message", resp.text[:200])
                 # Twilio error messages are safe — no credentials in them
-                return SendResult(success=False, destination_hash=dest_hash,
-                                  error_code=str(data.get("code", "twilio_error")),
-                                  error_detail=err[:500])
+                return SendResult(
+                    success=False,
+                    destination_hash=dest_hash,
+                    error_code=str(data.get("code", "twilio_error")),
+                    error_detail=err[:500],
+                )
             msg_sid = data.get("sid", "")
             logger.info("sms_sent", to_hash=dest_hash[:12], sid=msg_sid)
             return SendResult(success=True, provider_msg_id=msg_sid, destination_hash=dest_hash)
         except Exception as exc:
-            safe = re.sub(r'[A-Za-z0-9+/=]{32,}', '[REDACTED]', str(exc))[:500]
+            safe = re.sub(r"[A-Za-z0-9+/=]{32,}", "[REDACTED]", str(exc))[:500]
             logger.error("sms_send_failed", error=safe)
-            return SendResult(success=False, destination_hash=dest_hash,
-                              error_code="sms_error", error_detail=safe)
+            return SendResult(
+                success=False, destination_hash=dest_hash, error_code="sms_error", error_detail=safe
+            )
 
 
 class SmsChannelNotConfigured(NotificationChannel):
     """Returned when SMS vault secrets are not registered."""
+
     channel_name = "sms"
 
-    async def send(self, *, subject: Optional[str], body: str,
-                   destination: Optional[str] = None,
-                   context: dict | None = None) -> SendResult:
+    async def send(
+        self,
+        *,
+        subject: str | None,
+        body: str,
+        destination: str | None = None,
+        context: dict | None = None,
+    ) -> SendResult:
         logger.warning("sms_channel_not_configured")
-        return SendResult(success=False, error_code="channel_not_configured",
-                          error_detail="SMS provider (Twilio) credentials not registered in vault",
-                          destination_hash="")
+        return SendResult(
+            success=False,
+            error_code="channel_not_configured",
+            error_detail="SMS provider (Twilio) credentials not registered in vault",
+            destination_hash="",
+        )

@@ -1,10 +1,12 @@
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, PostgresDsn, HttpUrl, SecretStr
-from typing import Optional, List, Union
+
 
 class Settings(BaseSettings):
     # Core Security
-    NEXUS_MASTER_KEY: SecretStr = Field(..., min_length=40, description="AES-GCM Master Key (Base64 encoded 32 bytes)")
+    NEXUS_MASTER_KEY: SecretStr = Field(
+        ..., min_length=40, description="AES-GCM Master Key (Base64 encoded 32 bytes)"
+    )
     # NOTE: Env var names match .env / .env.example — do NOT prefix with JWT_
     SECRET_KEY: str = Field(..., min_length=32)
     ALGORITHM: str = "HS256"
@@ -17,9 +19,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(...)
 
     # Storage
-    S3_ENDPOINT: Optional[str] = None
-    S3_ACCESS_KEY: Optional[str] = None
-    S3_SECRET_KEY: Optional[SecretStr] = None
+    S3_ENDPOINT: str | None = None
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_KEY: SecretStr | None = None
     S3_USE_SSL: bool = True
 
     # Feature Flags / Toggles
@@ -34,5 +36,6 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(..., description="Redis connection URL for async workers")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
 
 settings = Settings()

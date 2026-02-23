@@ -5,20 +5,21 @@ Port: 8011
 Authentication: X-Service-ID + X-Agent-Key
 Integration: AMI (Asterisk Manager Interface)
 """
+
 import asyncio
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, Response
 
-from apps.pbx_agent.config import config
-from apps.pbx_agent.api.targets import router as targets_router
-from apps.pbx_agent.api.diagnostics import router as diagnostics_router
-from apps.pbx_agent.api.status import router as status_router
-from apps.pbx_agent.api.jobs import router as jobs_router
 from apps.pbx_agent.api.audit import router as audit_router
+from apps.pbx_agent.api.diagnostics import router as diagnostics_router
+from apps.pbx_agent.api.jobs import router as jobs_router
+from apps.pbx_agent.api.status import router as status_router
+from apps.pbx_agent.api.targets import router as targets_router
+from apps.pbx_agent.config import config
 from apps.pbx_agent.jobs.runner import run_worker_loop
 
 logger = structlog.get_logger(__name__)
@@ -79,8 +80,10 @@ async def healthz():
 async def readyz():
     # Check DB connectivity
     try:
-        from apps.pbx_agent.store.database import async_session
         from sqlalchemy import text
+
+        from apps.pbx_agent.store.database import async_session
+
         async with async_session() as db:
             await db.execute(text("SELECT 1"))
         return {"status": "ready"}

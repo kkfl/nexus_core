@@ -2,17 +2,17 @@
 Template engine with built-in library for common Nexus events.
 Supports simple {variable} substitution.
 """
+
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional
-
+from datetime import UTC
 
 # ---------------------------------------------------------------------------
 # Built-in template library
 # ---------------------------------------------------------------------------
 
-BUILTIN_TEMPLATES: Dict[str, Dict[str, str]] = {
+BUILTIN_TEMPLATES: dict[str, dict[str, str]] = {
     "agent_down": {
         "subject": "🚨 Agent Down: {agent}",
         "body": "NEXUS ALERT — Agent Down\n\nAgent: {agent}\nReason: {reason}\nEnvironment: {env}\nTime: {timestamp}\n\nImmediate action required.",
@@ -44,23 +44,26 @@ BUILTIN_TEMPLATES: Dict[str, Dict[str, str]] = {
 # Engine
 # ---------------------------------------------------------------------------
 
-def _substitute(template: str, context: Dict[str, str]) -> str:
+
+def _substitute(template: str, context: dict[str, str]) -> str:
     """Simple {key} substitution. Unknown keys are left as-is."""
+
     def replace(m):
         key = m.group(1)
         return str(context.get(key, m.group(0)))
-    return re.sub(r'\{(\w+)\}', replace, template)
+
+    return re.sub(r"\{(\w+)\}", replace, template)
 
 
 def render_template(
     template_id: str,
-    context: Dict | None = None,
+    context: dict | None = None,
     *,
-    subject_override: Optional[str] = None,
-    body_override: Optional[str] = None,
-    db_template_subject: Optional[str] = None,
-    db_template_body: Optional[str] = None,
-) -> tuple[Optional[str], str]:
+    subject_override: str | None = None,
+    body_override: str | None = None,
+    db_template_subject: str | None = None,
+    db_template_body: str | None = None,
+) -> tuple[str | None, str]:
     """
     Render subject + body for a notification.
     Priority: db template > builtin template > raw override.
@@ -69,9 +72,10 @@ def render_template(
     ctx = context or {}
 
     # Inject timestamp if not provided
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     if "timestamp" not in ctx:
-        ctx = {**ctx, "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
+        ctx = {**ctx, "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}
 
     if db_template_body:
         subject_tpl = db_template_subject or ""

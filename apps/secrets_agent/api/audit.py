@@ -1,7 +1,6 @@
 """Audit router — admin-only access to vault audit events."""
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -14,19 +13,19 @@ from apps.secrets_agent.schemas import AuditEventOut
 router = APIRouter(prefix="/v1/audit", tags=["audit"])
 
 
-@router.get("", response_model=List[AuditEventOut])
+@router.get("", response_model=list[AuditEventOut])
 async def query_audit(
-    service_id: Optional[str] = Query(None),
-    tenant_id: Optional[str] = Query(None),
-    env: Optional[str] = Query(None),
-    secret_alias: Optional[str] = Query(None),
-    action: Optional[str] = Query(None),
-    result: Optional[str] = Query(None),
+    service_id: str | None = Query(None),
+    tenant_id: str | None = Query(None),
+    env: str | None = Query(None),
+    secret_alias: str | None = Query(None),
+    action: str | None = Query(None),
+    result: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     _: ServiceIdentity = Depends(require_admin),
     db: AsyncSession = Depends(get_vault_db),
-) -> List[AuditEventOut]:
+) -> list[AuditEventOut]:
     """
     Query vault audit events. Admin only.
     Secret values are NEVER present in audit records — only aliases and metadata.

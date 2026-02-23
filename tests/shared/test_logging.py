@@ -1,5 +1,5 @@
-import pytest
 from packages.shared.logging import redact_dict
+
 
 def test_log_redaction():
     # Setup
@@ -7,12 +7,8 @@ def test_log_redaction():
         "user": "admin",
         "password": "supersecretpassword",
         "api_key": "sk-1234567890",
-        "nested": {
-            "token": "bearer xyz",
-            "Authorization": "Basic 123",
-            "safe_value": 42
-        },
-        "set-cookie": "session=invalid"
+        "nested": {"token": "bearer xyz", "Authorization": "Basic 123", "safe_value": 42},
+        "set-cookie": "session=invalid",
     }
 
     # Execute
@@ -27,15 +23,11 @@ def test_log_redaction():
     assert redacted["nested"]["safe_value"] == 42
     assert redacted["set-cookie"] == "***REDACTED***"
 
+
 def test_log_redaction_lists():
-    payload = {
-        "items": [
-            {"secret": "hide_me"},
-            {"public": "show_me"}
-        ]
-    }
-    
+    payload = {"items": [{"secret": "hide_me"}, {"public": "show_me"}]}
+
     redacted = redact_dict(payload)
-    
+
     assert redacted["items"][0]["secret"] == "***REDACTED***"
     assert redacted["items"][1]["public"] == "show_me"

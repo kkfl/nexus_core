@@ -3,14 +3,14 @@ Webhook channel — HMAC-SHA256 signed POST to a URL.
 Signing secret stored in vault as: webhook.<tenant_id>.signing_secret
 Webhook URL is stored in routing_rules.config (non-secret; not a credential).
 """
+
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -33,13 +33,19 @@ class WebhookChannel(NotificationChannel):
     def __repr__(self) -> str:
         return "WebhookChannel(signing_secret=[REDACTED])"
 
-    async def send(self, *, subject: Optional[str], body: str,
-                   destination: Optional[str] = None,
-                   context: dict | None = None) -> SendResult:
+    async def send(
+        self,
+        *,
+        subject: str | None,
+        body: str,
+        destination: str | None = None,
+        context: dict | None = None,
+    ) -> SendResult:
         url = destination
         if not url:
-            return SendResult(success=False, error_code="no_destination",
-                              error_detail="No webhook URL configured")
+            return SendResult(
+                success=False, error_code="no_destination", error_detail="No webhook URL configured"
+            )
 
         dest_hash = hashlib.sha256(url.encode()).hexdigest()
         correlation_id = (context or {}).get("correlation_id", "")
@@ -50,7 +56,7 @@ class WebhookChannel(NotificationChannel):
             "severity": (context or {}).get("severity", "info"),
             "tenant_id": (context or {}).get("tenant_id", ""),
             "correlation_id": correlation_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         payload_bytes = json.dumps(payload).encode()
         signature = _sign_payload(self.__signing_secret, payload_bytes)
@@ -68,14 +74,22 @@ class WebhookChannel(NotificationChannel):
                 )
             if resp.status_code >= 400:
                 safe_err = resp.text[:300]
-                return SendResult(success=False, destination_hash=dest_hash,
-                                  error_code=f"http_{resp.status_code}",
-                                  error_detail=safe_err)
+                return SendResult(
+                    success=False,
+                    destination_hash=dest_hash,
+                    error_code=f"http_{resp.status_code}",
+                    error_detail=safe_err,
+                )
             logger.info("webhook_sent", url_hash=dest_hash[:12], status=resp.status_code)
-            return SendResult(success=True, provider_msg_id=str(resp.status_code),
-                              destination_hash=dest_hash)
+            return SendResult(
+                success=True, provider_msg_id=str(resp.status_code), destination_hash=dest_hash
+            )
         except Exception as exc:
-            safe = re.sub(r'[A-Za-z0-9+/=]{32,}', '[REDACTED]', str(exc))[:500]
+            safe = re.sub(r"[A-Za-z0-9+/=]{32,}", "[REDACTED]", str(exc))[:500]
             logger.error("webhook_send_failed", error=safe)
-            return SendResult(success=False, destination_hash=dest_hash,
-                              error_code="webhook_error", error_detail=safe)
+            return SendResult(
+                success=False,
+                destination_hash=dest_hash,
+                error_code="webhook_error",
+                error_detail=safe,
+            )

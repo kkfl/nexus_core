@@ -4,13 +4,13 @@ Pydantic schemas for the DNS Agent API.
 INVARIANT: No provider credentials appear in any schema.
            No plaintext API tokens, API keys, or secrets.
 """
+
 from __future__ import annotations
 
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
-
 
 _VALID_PROVIDERS = {"cloudflare", "dnsmadeeasy"}
 _VALID_ENVS = {"dev", "stage", "prod"}
@@ -21,6 +21,7 @@ _VALID_JOB_STATUSES = {"pending", "running", "succeeded", "failed"}
 # ---------------------------------------------------------------------------
 # Zone schemas
 # ---------------------------------------------------------------------------
+
 
 class ZoneCreate(BaseModel):
     tenant_id: str = Field(..., min_length=1, max_length=128)
@@ -47,7 +48,7 @@ class ZoneOut(BaseModel):
     env: str
     zone_name: str
     provider: str
-    provider_zone_id: Optional[str] = None
+    provider_zone_id: str | None = None
     is_active: bool
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -59,14 +60,18 @@ class ZoneOut(BaseModel):
 # Record schemas
 # ---------------------------------------------------------------------------
 
+
 class RecordSpec(BaseModel):
     """A single DNS record specification."""
+
     record_type: str = Field(..., description="A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|CAA")
-    name: str = Field(..., min_length=1, max_length=255, description="Relative name e.g. '@', 'api', 'mail'")
+    name: str = Field(
+        ..., min_length=1, max_length=255, description="Relative name e.g. '@', 'api', 'mail'"
+    )
     value: str = Field(..., min_length=1, description="Record value. Never a credential.")
     ttl: int = Field(300, ge=60, le=86400)
-    priority: Optional[int] = Field(None, ge=0, le=65535, description="For MX/SRV only")
-    tags: Optional[Dict[str, Any]] = None
+    priority: int | None = Field(None, ge=0, le=65535, description="For MX/SRV only")
+    tags: dict[str, Any] | None = None
 
     @field_validator("record_type")
     @classmethod
@@ -91,10 +96,10 @@ class RecordOut(BaseModel):
     name: str
     value: str
     ttl: int
-    priority: Optional[int] = None
-    tags: Optional[Dict[str, Any]] = None
-    provider_record_id: Optional[str] = None
-    last_synced_at: Optional[datetime.datetime] = None
+    priority: int | None = None
+    tags: dict[str, Any] | None = None
+    provider_record_id: str | None = None
+    last_synced_at: datetime.datetime | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -105,11 +110,12 @@ class RecordOut(BaseModel):
 # Upsert / Delete batch requests
 # ---------------------------------------------------------------------------
 
+
 class BatchUpsertRequest(BaseModel):
     tenant_id: str = Field(..., min_length=1)
     env: str = Field(..., pattern=r"^(dev|stage|prod)$")
     zone: str = Field(..., description="Zone name e.g. example.com")
-    records: List[RecordSpec] = Field(..., min_length=1, max_length=100)
+    records: list[RecordSpec] = Field(..., min_length=1, max_length=100)
     dry_run: bool = Field(False, description="If true, validate but do not apply")
 
     @field_validator("zone")
@@ -122,7 +128,7 @@ class BatchDeleteRequest(BaseModel):
     tenant_id: str
     env: str = Field(..., pattern=r"^(dev|stage|prod)$")
     zone: str
-    records: List[RecordSpec] = Field(..., min_length=1)
+    records: list[RecordSpec] = Field(..., min_length=1)
 
     @field_validator("zone")
     @classmethod
@@ -134,6 +140,7 @@ class BatchDeleteRequest(BaseModel):
 # Job schemas
 # ---------------------------------------------------------------------------
 
+
 class JobOut(BaseModel):
     id: str
     tenant_id: str
@@ -142,11 +149,11 @@ class JobOut(BaseModel):
     operation: str
     status: str
     attempts: int
-    last_error: Optional[str] = None
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
+    last_error: str | None = None
+    started_at: datetime.datetime | None = None
+    completed_at: datetime.datetime | None = None
     created_by_service_id: str
-    correlation_id: Optional[str] = None
+    correlation_id: str | None = None
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -162,6 +169,7 @@ class JobCreateResponse(BaseModel):
 # Sync
 # ---------------------------------------------------------------------------
 
+
 class SyncRequest(BaseModel):
     tenant_id: str
     env: str = Field(..., pattern=r"^(dev|stage|prod)$")
@@ -172,8 +180,8 @@ class SyncRequest(BaseModel):
 class DriftRecord(BaseModel):
     record_type: str
     name: str
-    expected: Optional[str]   # None if record should not exist
-    actual: Optional[str]     # None if record does not exist in provider
+    expected: str | None  # None if record should not exist
+    actual: str | None  # None if record does not exist in provider
 
 
 class SyncResult(BaseModel):
@@ -182,14 +190,15 @@ class SyncResult(BaseModel):
     env: str
     provider: str
     drift_count: int
-    drift: List[DriftRecord]
+    drift: list[DriftRecord]
     reconciled: bool
-    job_id: Optional[str] = None   # set if reconcile=true
+    job_id: str | None = None  # set if reconcile=true
 
 
 # ---------------------------------------------------------------------------
 # Audit
 # ---------------------------------------------------------------------------
+
 
 class AuditEventOut(BaseModel):
     id: str
@@ -198,12 +207,12 @@ class AuditEventOut(BaseModel):
     tenant_id: str
     env: str
     action: str
-    zone_name: Optional[str]
-    record_type: Optional[str]
-    record_name: Optional[str]
+    zone_name: str | None
+    record_type: str | None
+    record_name: str | None
     result: str
-    reason: Optional[str]
-    ip_address: Optional[str]
+    reason: str | None
+    ip_address: str | None
     ts: datetime.datetime
 
     model_config = {"from_attributes": True}

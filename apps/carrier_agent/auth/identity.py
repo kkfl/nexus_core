@@ -1,8 +1,11 @@
 import json
 import uuid
 from dataclasses import dataclass
+
 from fastapi import HTTPException, Request
+
 from apps.carrier_agent.config import config
+
 
 @dataclass
 class ServiceIdentity:
@@ -11,13 +14,16 @@ class ServiceIdentity:
     correlation_id: str
     read_only: bool = False
 
+
 def _load_keys() -> dict:
     try:
         return json.loads(config.carrier_agent_keys)
     except Exception:
         return {}
 
+
 READ_ONLY_SERVICES = {"monitoring-agent"}
+
 
 def get_service_identity(request: Request) -> ServiceIdentity:
     keys = _load_keys()
@@ -30,7 +36,9 @@ def get_service_identity(request: Request) -> ServiceIdentity:
 
     expected = keys.get(service_id)
     if not expected or expected != agent_key:
-        raise HTTPException(status_code=403, detail=f"Invalid credentials for service '{service_id}'")
+        raise HTTPException(
+            status_code=403, detail=f"Invalid credentials for service '{service_id}'"
+        )
 
     return ServiceIdentity(
         service_id=service_id,

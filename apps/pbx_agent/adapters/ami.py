@@ -13,9 +13,9 @@ AMI protocol overview:
   Server responds with key: value\\r\\n blocks terminated by \\r\\n\\r\\n (double CRLF)
   Command responses end with Output: ...\\r\\n--END COMMAND--\\r\\n
 """
+
 import asyncio
 import re
-from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
@@ -54,7 +54,7 @@ async def _read_response(reader: asyncio.StreamReader, timeout: float = CMD_TIME
             # AMI responses terminate with \r\n\r\n
             if b"\r\n\r\n" in buf:
                 break
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise AmiTimeoutError("Timed out reading AMI response")
     return buf.decode("utf-8", errors="replace")
 
@@ -68,28 +68,28 @@ async def _read_command_output(reader: asyncio.StreamReader, timeout: float = CM
             if not chunk:
                 break
             buf += chunk
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise AmiTimeoutError("Timed out reading AMI command output")
     return buf.decode("utf-8", errors="replace")
 
 
 async def _ami_connect(
     host: str, port: int, username: str, secret: str
-) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """Open TCP connection and authenticate with AMI."""
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port), timeout=CONNECT_TIMEOUT
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise AmiTimeoutError(f"Connection to {host}:{port} timed out")
     except OSError as e:
         raise AmiError(f"Cannot connect to {host}:{port}: {type(e).__name__}") from None
 
     # Read AMI banner (e.g. "Asterisk Call Manager/5.0.0")
     try:
-        banner = await asyncio.wait_for(reader.readline(), timeout=AUTH_TIMEOUT)
-    except asyncio.TimeoutError:
+        await asyncio.wait_for(reader.readline(), timeout=AUTH_TIMEOUT)
+    except TimeoutError:
         writer.close()
         raise AmiTimeoutError("Timed out reading AMI banner")
 
@@ -149,7 +149,7 @@ async def run_ami_action(
     username: str,
     secret: str,
     action_name: str,
-    fields: Optional[Dict[str, str]] = None,
+    fields: dict[str, str] | None = None,
 ) -> str:
     """
     Run a structured AMI Action (not a CLI command).
@@ -181,17 +181,17 @@ async def check_connectivity(host: str, port: int, timeout: float = 5.0) -> bool
         return False
 
 
-def parse_ami_response(raw: str) -> List[Dict[str, str]]:
+def parse_ami_response(raw: str) -> list[dict[str, str]]:
     """
     Parse an AMI response string into a list of key-value dicts.
     Each block is separated by \\r\\n\\r\\n.
     """
-    blocks = re.split(r'\r?\n\r?\n', raw.strip())
+    blocks = re.split(r"\r?\n\r?\n", raw.strip())
     result = []
     for block in blocks:
         if not block.strip():
             continue
-        d: Dict[str, str] = {}
+        d: dict[str, str] = {}
         for line in block.split("\n"):
             if ": " in line:
                 k, _, v = line.partition(": ")

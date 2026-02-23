@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+
 
 class EmbeddingProvider(ABC):
     @property
@@ -13,5 +13,5 @@ class EmbeddingProvider(ABC):
         pass
 
     @abstractmethod
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         pass

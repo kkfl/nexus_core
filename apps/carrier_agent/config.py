@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     nexus_base_url: str = "http://nexus-api:8000"
     nexus_agent_key: str = ""
@@ -12,5 +13,6 @@ class Settings(BaseSettings):
     carrier_agent_keys: str = "{}"
 
     model_config = {"env_file": ".env", "extra": "ignore", "case_sensitive": False}
+
 
 config = Settings()

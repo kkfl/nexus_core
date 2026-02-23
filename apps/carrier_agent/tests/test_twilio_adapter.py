@@ -2,13 +2,14 @@
 Unit tests for the Twilio carrier adapter.
 Mocks HTTP — no real Twilio API calls.
 """
+
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 
 from apps.carrier_agent.adapters.twilio import TwilioAdapter
 
@@ -55,8 +56,10 @@ async def test_list_dids(adapter):
     payload = {
         "incoming_phone_numbers": [
             {
-                "sid": "PN123", "phone_number": "+15005550001",
-                "iso_country": "US", "region": "CA",
+                "sid": "PN123",
+                "phone_number": "+15005550001",
+                "iso_country": "US",
+                "region": "CA",
                 "capabilities": {"voice": True, "SMS": True, "MMS": False},
                 "voice_application_sid": None,
             },
@@ -85,7 +88,11 @@ async def test_get_did_not_found(adapter):
 async def test_list_trunks(adapter):
     payload = {
         "trunks": [
-            {"sid": "TK123", "friendly_name": "Main Trunk", "domain_name": "mytrunk.pstn.twilio.com"},
+            {
+                "sid": "TK123",
+                "friendly_name": "Main Trunk",
+                "domain_name": "mytrunk.pstn.twilio.com",
+            },
         ]
     }
     with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_req:
@@ -100,7 +107,8 @@ async def test_list_trunks(adapter):
 async def test_rate_limit_retry(adapter):
     """429 should trigger backoff and retry."""
     rate_limit = httpx.Response(
-        429, content=b'{"error":"too many requests"}',
+        429,
+        content=b'{"error":"too many requests"}',
         headers={"Retry-After": "0.1", "Content-Type": "application/json"},
     )
     success = _mock_resp({"incoming_phone_numbers": []})

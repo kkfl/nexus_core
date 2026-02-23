@@ -2,6 +2,7 @@
 Unit tests for SMTP email channel.
 Covers: send success, no destination guard, credential redaction, MIME multipart structure.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -54,7 +55,6 @@ async def test_send_success(channel):
 @pytest.mark.asyncio
 async def test_send_success_mime_structure(channel):
     """Verify aiosmtplib.send is called with a MIMEMultipart message."""
-    import email.mime.multipart
     captured = {}
 
     async def fake_send(msg, **kwargs):
@@ -82,7 +82,7 @@ async def test_send_failure_redacts_password(channel):
 
     async def raise_smtp(*args, **kwargs):
         raise aiosmtplib.SMTPAuthenticationError(
-            535, f"Authentication failed: super_secret_password_xyz"
+            535, "Authentication failed: super_secret_password_xyz"
         )
 
     with patch("aiosmtplib.send", new_callable=AsyncMock, side_effect=raise_smtp):
@@ -98,6 +98,7 @@ async def test_send_failure_redacts_password(channel):
 async def test_destination_hash_is_sha256(channel):
     """destination_hash must be sha256 of the email address."""
     import hashlib
+
     with patch("aiosmtplib.send", new_callable=AsyncMock):
         result = await channel.send(subject="X", body="Y", destination="test@example.com")
     expected_hash = hashlib.sha256(b"test@example.com").hexdigest()

@@ -2,6 +2,7 @@
 Unit tests for notifications_agent queue runner.
 Covers: dispatch, retry, succeeded/partial status finalisation.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,13 +13,14 @@ import pytest
 from apps.notifications_agent.channels.base import SendResult
 from apps.notifications_agent.queue.runner import _deliver_channel, dispatch_job
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _mock_db_ctx():
     """Return an async generator that yields a mock DB session."""
+
     async def _gen():
         db = AsyncMock()
         delivery = MagicMock()
@@ -26,19 +28,23 @@ def _mock_db_ctx():
         db.__aenter__ = AsyncMock(return_value=db)
         db.__aexit__ = AsyncMock(return_value=False)
         yield db
+
     return _gen()
 
 
 def _patch_get_db(db_mock):
     """Patch get_db to yield a single mock session."""
+
     async def _get_db():
         yield db_mock
+
     return patch("apps.notifications_agent.queue.runner.get_db", return_value=_get_db())
 
 
 # ---------------------------------------------------------------------------
 # _deliver_channel tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_deliver_channel_success_sets_sent_status():
@@ -49,25 +55,39 @@ async def test_deliver_channel_success_sets_sent_status():
 
     with (
         patch("apps.notifications_agent.queue.runner.build_channel", new=AsyncMock()) as mock_build,
-        patch("apps.notifications_agent.queue.runner.create_delivery", new=AsyncMock(return_value=fake_delivery)),
-        patch("apps.notifications_agent.queue.runner.update_delivery", new=AsyncMock()) as mock_update,
+        patch(
+            "apps.notifications_agent.queue.runner.create_delivery",
+            new=AsyncMock(return_value=fake_delivery),
+        ),
+        patch(
+            "apps.notifications_agent.queue.runner.update_delivery", new=AsyncMock()
+        ) as mock_update,
         patch("apps.notifications_agent.queue.runner.get_db") as mock_get_db,
     ):
         mock_channel = AsyncMock()
-        mock_channel.send = AsyncMock(return_value=SendResult(
-            success=True, provider_msg_id="tg-msg-42", destination_hash="abc123"
-        ))
+        mock_channel.send = AsyncMock(
+            return_value=SendResult(
+                success=True, provider_msg_id="tg-msg-42", destination_hash="abc123"
+            )
+        )
         mock_build.return_value = mock_channel
 
         async def _yield_db():
             yield db
+
         mock_get_db.return_value = _yield_db()
 
         await _deliver_channel(
-            job_id="job-1", channel_name="telegram",
-            subject="Alert", body="Something broke",
-            destination=None, tenant_id="nexus", env="prod",
-            correlation_id="corr-123", channel_config={}, max_attempts=3,
+            job_id="job-1",
+            channel_name="telegram",
+            subject="Alert",
+            body="Something broke",
+            destination=None,
+            tenant_id="nexus",
+            env="prod",
+            correlation_id="corr-123",
+            channel_config={},
+            max_attempts=3,
         )
 
         mock_update.assert_called_once()
@@ -85,27 +105,43 @@ async def test_deliver_channel_failure_sets_failed_status():
 
     with (
         patch("apps.notifications_agent.queue.runner.build_channel", new=AsyncMock()) as mock_build,
-        patch("apps.notifications_agent.queue.runner.create_delivery", new=AsyncMock(return_value=fake_delivery)),
-        patch("apps.notifications_agent.queue.runner.update_delivery", new=AsyncMock()) as mock_update,
+        patch(
+            "apps.notifications_agent.queue.runner.create_delivery",
+            new=AsyncMock(return_value=fake_delivery),
+        ),
+        patch(
+            "apps.notifications_agent.queue.runner.update_delivery", new=AsyncMock()
+        ) as mock_update,
         patch("apps.notifications_agent.queue.runner.get_db") as mock_get_db,
         patch("asyncio.sleep", new=AsyncMock()),
     ):
         mock_channel = AsyncMock()
-        mock_channel.send = AsyncMock(return_value=SendResult(
-            success=False, error_code="telegram_error",
-            error_detail="chat not found", destination_hash="xyz"
-        ))
+        mock_channel.send = AsyncMock(
+            return_value=SendResult(
+                success=False,
+                error_code="telegram_error",
+                error_detail="chat not found",
+                destination_hash="xyz",
+            )
+        )
         mock_build.return_value = mock_channel
 
         async def _yield_db():
             yield db
+
         mock_get_db.return_value = _yield_db()
 
         await _deliver_channel(
-            job_id="job-2", channel_name="telegram",
-            subject="X", body="Y",
-            destination=None, tenant_id="nexus", env="prod",
-            correlation_id="corr-999", channel_config={}, max_attempts=1,
+            job_id="job-2",
+            channel_name="telegram",
+            subject="X",
+            body="Y",
+            destination=None,
+            tenant_id="nexus",
+            env="prod",
+            correlation_id="corr-999",
+            channel_config={},
+            max_attempts=1,
         )
 
         mock_update.assert_called_once()
@@ -127,31 +163,45 @@ async def test_deliver_channel_retries_on_failure():
         ch = AsyncMock()
         call_count["n"] += 1
         if call_count["n"] == 1:
-            ch.send = AsyncMock(return_value=SendResult(
-                success=False, error_code="timeout", destination_hash="abc"
-            ))
+            ch.send = AsyncMock(
+                return_value=SendResult(success=False, error_code="timeout", destination_hash="abc")
+            )
         else:
-            ch.send = AsyncMock(return_value=SendResult(
-                success=True, provider_msg_id="ok", destination_hash="abc"
-            ))
+            ch.send = AsyncMock(
+                return_value=SendResult(success=True, provider_msg_id="ok", destination_hash="abc")
+            )
         return ch
 
     with (
-        patch("apps.notifications_agent.queue.runner.build_channel", new=AsyncMock(side_effect=build_side)),
-        patch("apps.notifications_agent.queue.runner.create_delivery", new=AsyncMock(return_value=fake_delivery)),
+        patch(
+            "apps.notifications_agent.queue.runner.build_channel",
+            new=AsyncMock(side_effect=build_side),
+        ),
+        patch(
+            "apps.notifications_agent.queue.runner.create_delivery",
+            new=AsyncMock(return_value=fake_delivery),
+        ),
         patch("apps.notifications_agent.queue.runner.update_delivery", new=AsyncMock()),
         patch("apps.notifications_agent.queue.runner.get_db") as mock_get_db,
         patch("asyncio.sleep", new=AsyncMock()),
     ):
+
         async def _yield_db():
             yield db
+
         mock_get_db.return_value = _yield_db()
 
         await _deliver_channel(
-            job_id="job-3", channel_name="email",
-            subject="X", body="Y", destination="ops@example.com",
-            tenant_id="nexus", env="prod",
-            correlation_id="corr-321", channel_config={}, max_attempts=2,
+            job_id="job-3",
+            channel_name="email",
+            subject="X",
+            body="Y",
+            destination="ops@example.com",
+            tenant_id="nexus",
+            env="prod",
+            correlation_id="corr-321",
+            channel_config={},
+            max_attempts=2,
         )
 
     assert call_count["n"] == 2
@@ -160,6 +210,7 @@ async def test_deliver_channel_retries_on_failure():
 # ---------------------------------------------------------------------------
 # dispatch_job tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_dispatch_job_creates_tasks_for_each_channel():
@@ -178,8 +229,10 @@ async def test_dispatch_job_creates_tasks_for_each_channel():
         patch("apps.notifications_agent.queue.runner.get_db") as mock_get_db,
         patch("asyncio.create_task", side_effect=tracking_create_task),
     ):
+
         async def _yield_db():
             yield AsyncMock()
+
         mock_get_db.return_value = _yield_db()
 
         await dispatch_job(

@@ -1,6 +1,7 @@
 """
 Capabilities router — POST /v1/capabilities
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +26,7 @@ async def upsert_capabilities(
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent ID '{payload.agent_id}' not found. Cannot register capabilities."
+            detail=f"Agent ID '{payload.agent_id}' not found. Cannot register capabilities.",
         )
 
     await store.override_capabilities(db, agent.id, payload.capabilities)
@@ -36,7 +37,10 @@ async def upsert_capabilities(
         service_id=identity.service_id,
         action="override_capabilities",
         result="success",
-        detail=f"Overwrote capabilities for agent {agent.name} with {len(payload.capabilities)} specs"
+        detail=f"Overwrote capabilities for agent {agent.name} with {len(payload.capabilities)} specs",
     )
 
-    return {"status": "success", "message": f"Registered {len(payload.capabilities)} capabilities for agent {agent.name}."}
+    return {
+        "status": "success",
+        "message": f"Registered {len(payload.capabilities)} capabilities for agent {agent.name}.",
+    }

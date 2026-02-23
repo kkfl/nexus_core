@@ -1,11 +1,30 @@
+import os
 import uuid
+
 import structlog
 from fastapi import FastAPI, Request
-import os
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from apps.nexus_api.routers import auth, agents, personas, tasks, artifacts, task_routes, persona_defaults, kb, secrets, audit, entities, pbx, internal, monitoring, storage, carrier, docs
-from apps.nexus_api.metrics import metrics_middleware, get_metrics_response
+
+from apps.nexus_api.metrics import get_metrics_response, metrics_middleware
+from apps.nexus_api.routers import (
+    agents,
+    artifacts,
+    audit,
+    auth,
+    carrier,
+    docs,
+    entities,
+    internal,
+    kb,
+    monitoring,
+    pbx,
+    persona_defaults,
+    personas,
+    secrets,
+    storage,
+    task_routes,
+    tasks,
+)
 
 logger = structlog.get_logger()
 
@@ -13,10 +32,13 @@ logger = structlog.get_logger()
 ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").lower() == "true"
 docs_kwargs = {} if ENABLE_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
-from contextlib import asynccontextmanager
 import asyncio
+from contextlib import asynccontextmanager
+
 import httpx
+
 from packages.shared.client.agent_registry import get_registry_client
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,15 +46,29 @@ async def lifespan(app: FastAPI):
     client = get_registry_client()
     agents_to_register = [
         {"name": "secrets-agent", "url": "http://secrets-agent:8007", "auth": "headers"},
-        {"name": "dns-agent", "url": "http://dns-agent:8006", "auth": "headers", "auth_secret_alias": "dns-agent.automation-agent.key"},
-        {"name": "notifications-agent", "url": "http://notifications-agent:8008", "auth": "headers"},
+        {
+            "name": "dns-agent",
+            "url": "http://dns-agent:8006",
+            "auth": "headers",
+            "auth_secret_alias": "dns-agent.automation-agent.key",
+        },
+        {
+            "name": "notifications-agent",
+            "url": "http://notifications-agent:8008",
+            "auth": "headers",
+        },
         {"name": "carrier-agent", "url": "http://carrier-agent:8009", "auth": "headers"},
         {"name": "storage-agent", "url": "http://storage-agent:8005", "auth": "headers"},
-        {"name": "pbx-agent", "url": "http://pbx-agent:8011", "auth": "headers", "auth_secret_alias": "pbx-agent.automation-agent.key"},
+        {
+            "name": "pbx-agent",
+            "url": "http://pbx-agent:8011",
+            "auth": "headers",
+            "auth_secret_alias": "pbx-agent.automation-agent.key",
+        },
         {"name": "monitoring-agent", "url": "http://monitoring-agent:8004", "auth": "headers"},
         {"name": "automation-agent", "url": "http://automation-agent:8013", "auth": "headers"},
     ]
-    
+
     # Wait for agent-registry to be ready (up to 10 seconds)
     registry_up = False
     for _ in range(5):
@@ -43,23 +79,25 @@ async def lifespan(app: FastAPI):
             break
         except Exception:
             await asyncio.sleep(2)
-            
+
     if registry_up:
         try:
             async with httpx.AsyncClient(timeout=5.0) as hc:
                 for a in agents_to_register:
                     # 1. Create agent (409 Conflict is expected if already exists)
-                    resp = await hc.post(
+                    await hc.post(
                         f"{client.registry_base_url}/v1/agents",
                         headers=client.headers,
-                        json={"name": a["name"]}
+                        json={"name": a["name"]},
                     )
-                    
+
                     # Fetch agent_id to attach the deployment
-                    agent_resp = await hc.get(f"{client.registry_base_url}/v1/agents/{a['name']}", headers=client.headers)
+                    agent_resp = await hc.get(
+                        f"{client.registry_base_url}/v1/agents/{a['name']}", headers=client.headers
+                    )
                     if agent_resp.status_code == 200:
                         agent_id = agent_resp.json()["id"]
-                        
+
                         # 2. Create global deployment (no tenant_id) for 'prod'
                         # In a real cluster, deployments would self-register or be pushed by a controller.
                         await hc.post(
@@ -70,8 +108,8 @@ async def lifespan(app: FastAPI):
                                 "env": "prod",
                                 "base_url": a["url"],
                                 "auth_scheme": a["auth"],
-                                "auth_secret_alias": a.get("auth_secret_alias")
-                            }
+                                "auth_secret_alias": a.get("auth_secret_alias"),
+                            },
                         )
             logger.info("agent_registry_seeded", agents_count=len(agents_to_register))
         except Exception as exc:
@@ -81,13 +119,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
+
 app = FastAPI(
     title="Nexus Core API",
     version="1.0.0",
     description="Nexus Core orchestrator and persona registry.",
     redirect_slashes=False,
     lifespan=lifespan,
-    **docs_kwargs
+    **docs_kwargs,
 )
 
 # CORS origins
@@ -96,6 +135,7 @@ if not cors_origins:
     cors_origins = []
 
 from starlette.middleware.base import BaseHTTPMiddleware
+
 app.add_middleware(BaseHTTPMiddleware, dispatch=metrics_middleware)
 
 # CORS must be last added (outermost) so it handles OPTIONS preflight before other middleware
@@ -107,28 +147,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
     correlation_id = request.headers.get("x-correlation-id", str(uuid.uuid4()))
     request.state.correlation_id = correlation_id
-    
+
     structlog.contextvars.bind_contextvars(
         correlation_id=correlation_id,
         path=request.url.path,
         method=request.method,
     )
-    
+
     response = await call_next(request)
     response.headers["x-correlation-id"] = correlation_id
-    
+
     # Security Headers
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     if ENABLE_DOCS:
-        response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:;"
-        
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:;"
+        )
+
     return response
+
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(agents.router, prefix="/agents", tags=["agents"])
@@ -148,27 +192,33 @@ app.include_router(storage.router, prefix="/storage", tags=["storage"])
 app.include_router(carrier.router, prefix="/carrier", tags=["carrier"])
 app.include_router(docs.router, prefix="/docs", tags=["docs"])
 
+
 @app.get("/healthz", tags=["health"])
 async def healthz():
     return {"status": "ok"}
+
 
 @app.get("/readyz", tags=["health"])
 async def readyz():
     return {"status": "ready"}
 
+
 @app.get("/metrics", tags=["metrics"])
 async def metrics():
     return get_metrics_response()
 
+
 @app.get("/api/version", tags=["system"])
 async def get_version():
     version_str = "unknown"
-    version_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION")
+    version_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION"
+    )
     if os.path.exists(version_file):
-        with open(version_file, "r") as f:
+        with open(version_file) as f:
             version_str = f.read().strip()
     return {
         "version": version_str,
         "commit": os.environ.get("GIT_COMMIT", "unknown"),
-        "build_time": os.environ.get("BUILD_TIME", "unknown")
+        "build_time": os.environ.get("BUILD_TIME", "unknown"),
     }

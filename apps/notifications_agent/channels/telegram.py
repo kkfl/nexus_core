@@ -9,12 +9,12 @@ Secrets (from vault):
 
 INVARIANT: bot_token NEVER logged, never in error messages.
 """
+
 from __future__ import annotations
 
 import asyncio
 import random
 import re
-from typing import Optional
 
 import httpx
 import structlog
@@ -43,22 +43,23 @@ def _truncate(text: str, max_len: int = _TG_MAX_LEN) -> str:
     if len(text) <= max_len:
         return text
     suffix = "\n…\\[truncated\\]"
-    return text[:max_len - len(suffix)] + suffix
+    return text[: max_len - len(suffix)] + suffix
 
 
 # ---------------------------------------------------------------------------
 # HTTP helper with retry
 # ---------------------------------------------------------------------------
 
+
 async def _tg_post(token: str, method: str, payload: dict) -> dict:
     url = f"https://api.telegram.org/bot{token}/{method}"
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload)
             if resp.status_code == 429:
-                wait = float(resp.headers.get("Retry-After", _BASE_DELAY * (2 ** attempt)))
+                wait = float(resp.headers.get("Retry-After", _BASE_DELAY * (2**attempt)))
                 wait += random.uniform(0, 0.3)
                 logger.warning("telegram_rate_limited", attempt=attempt, wait_s=round(wait, 2))
                 await asyncio.sleep(wait)
@@ -83,15 +84,16 @@ async def _tg_post(token: str, method: str, payload: dict) -> dict:
 # Channel implementation
 # ---------------------------------------------------------------------------
 
+
 class TelegramChannel(NotificationChannel):
     """
     Full Telegram implementation.
     token and default_chat_id are private — never in repr/logs.
     """
+
     channel_name = "telegram"
 
-    def __init__(self, token: str, default_chat_id: str,
-                 parse_mode: str = "MarkdownV2") -> None:
+    def __init__(self, token: str, default_chat_id: str, parse_mode: str = "MarkdownV2") -> None:
         self.__token = token
         self.__default_chat_id = default_chat_id
         self._parse_mode = parse_mode
@@ -99,13 +101,19 @@ class TelegramChannel(NotificationChannel):
     def __repr__(self) -> str:
         return "TelegramChannel(token=[REDACTED], chat_id=[REDACTED])"
 
-    async def send(self, *, subject: Optional[str], body: str,
-                   destination: Optional[str] = None,
-                   context: dict | None = None) -> SendResult:
+    async def send(
+        self,
+        *,
+        subject: str | None,
+        body: str,
+        destination: str | None = None,
+        context: dict | None = None,
+    ) -> SendResult:
         chat_id = destination or self.__default_chat_id
         if not chat_id:
-            return SendResult(success=False, error_code="no_destination",
-                              error_detail="No chat_id configured")
+            return SendResult(
+                success=False, error_code="no_destination", error_detail="No chat_id configured"
+            )
 
         # Build message: bold subject + body
         parts = []
@@ -129,6 +137,7 @@ class TelegramChannel(NotificationChannel):
             msg_id = str(data.get("result", {}).get("message_id", ""))
             logger.info("telegram_sent", chat_id_hash=_hash_dest(chat_id), msg_id=msg_id)
             from apps.notifications_agent.audit.log import hash_destination
+
             return SendResult(
                 success=True,
                 provider_msg_id=msg_id,
@@ -138,6 +147,7 @@ class TelegramChannel(NotificationChannel):
             safe = str(exc)  # Telegram descriptions are safe; token not in exception
             logger.error("telegram_send_failed", error=safe)
             from apps.notifications_agent.audit.log import hash_destination
+
             return SendResult(
                 success=False,
                 destination_hash=hash_destination(chat_id),
@@ -148,4 +158,5 @@ class TelegramChannel(NotificationChannel):
 
 def _hash_dest(dest: str) -> str:
     import hashlib
+
     return hashlib.sha256(dest.encode()).hexdigest()[:12]

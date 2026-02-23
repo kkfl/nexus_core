@@ -1,8 +1,8 @@
 """Policies router — admin-only CRUD for vault access policies."""
+
 from __future__ import annotations
 
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
@@ -37,11 +37,11 @@ async def create_policy(
     return PolicyOut.model_validate(policy)
 
 
-@router.get("", response_model=List[PolicyOut])
+@router.get("", response_model=list[PolicyOut])
 async def list_policies(
     _: ServiceIdentity = Depends(require_admin),
     db: AsyncSession = Depends(get_vault_db),
-) -> List[PolicyOut]:
+) -> list[PolicyOut]:
     result = await db.execute(select(VaultPolicy).order_by(VaultPolicy.priority.desc()))
     return [PolicyOut.model_validate(p) for p in result.scalars().all()]
 

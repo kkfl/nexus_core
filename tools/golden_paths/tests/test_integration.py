@@ -1,6 +1,7 @@
 import os
-import pytest
 import subprocess
+
+import pytest
 
 # pytest integration scaffold for golden paths
 
@@ -8,34 +9,32 @@ import subprocess
 # standard fast unit tests, since they require a fully running stack.
 RUN_INTEGRATION_TESTS = os.environ.get("RUN_INTEGRATION_TESTS", "false").lower() == "true"
 
+
 @pytest.mark.skipif(not RUN_INTEGRATION_TESTS, reason="RUN_INTEGRATION_TESTS not set")
 class TestGoldenPaths:
     """
     Executes the bash-based Golden Paths as part of the pytest suite.
     """
-    
+
     def _run_script(self, script_name: str):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script_path = os.path.join(base_dir, "paths", script_name)
-        
+
         # Ensure executable
         os.chmod(script_path, 0o755)
-        
+
         env = os.environ.copy()
         # Ensure tests point to local defaults if not defined
         env.setdefault("NEXUS_API_URL", "http://localhost:8000")
         env.setdefault("ADMIN_EMAIL", "admin@local.host")
         env.setdefault("ADMIN_PASSWORD", "admin")
-        
-        result = subprocess.run(
-            ["bash", script_path],
-            env=env,
-            capture_output=True,
-            text=True
-        )
-        
+
+        result = subprocess.run(["bash", script_path], env=env, capture_output=True, text=True)
+
         # Assert the script didn't exit 1 (which it does via the `fail` function)
-        assert result.returncode == 0, f"Golden path '{script_name}' failed:\n{result.stderr}\n{result.stdout}"
+        assert result.returncode == 0, (
+            f"Golden path '{script_name}' failed:\n{result.stderr}\n{result.stdout}"
+        )
 
     def test_path_01_kb_ingest(self):
         self._run_script("01_kb_ingest_and_rag_search.sh")

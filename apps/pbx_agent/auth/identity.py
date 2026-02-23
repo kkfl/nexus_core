@@ -2,12 +2,13 @@
 pbx_agent inbound authentication.
 Validates X-Service-ID + X-Agent-Key headers against PBX_AGENT_KEYS env var.
 """
+
 import json
 import uuid
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
+
 from apps.pbx_agent.config import config
 
 
@@ -41,7 +42,9 @@ def get_service_identity(request: Request) -> ServiceIdentity:
 
     expected = keys.get(service_id)
     if not expected or expected != agent_key:
-        raise HTTPException(status_code=403, detail=f"Invalid credentials for service '{service_id}'")
+        raise HTTPException(
+            status_code=403, detail=f"Invalid credentials for service '{service_id}'"
+        )
 
     return ServiceIdentity(
         service_id=service_id,
