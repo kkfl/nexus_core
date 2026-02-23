@@ -36,13 +36,17 @@ def test_rbac_enforcement():
         )
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_INTEGRATION_TESTS", "false").lower() != "true",
+    reason="Integration test: requires live DB",
+)
 def test_api_keys_are_hashed():
     """Validates that API credentials are NOT plaintext in the database."""
     # Assuming direct DB access for this security assertion
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
-    from packages.shared.models import Secret
+    from packages.shared.models.core import Secret
 
     db_url = os.environ.get("DATABASE_URL", "postgresql://nexus:nexus@localhost:5432/nexus")
     engine = create_engine(db_url)
@@ -58,13 +62,17 @@ def test_api_keys_are_hashed():
             ), "Security Regression: Secret appears plaintext!"
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_INTEGRATION_TESTS", "false").lower() != "true",
+    reason="Integration test: requires live DB",
+)
 def test_entity_events_append_only():
     """Validate that SoR logs are append-only. Postgres trigger should block updates."""
     import sqlalchemy.exc
     from sqlalchemy import create_engine, update
     from sqlalchemy.orm import Session
 
-    from packages.shared.models import EntityEvent
+    from packages.shared.models.core import EntityEvent
 
     db_url = os.environ.get("DATABASE_URL", "postgresql://nexus:nexus@localhost:5432/nexus")
     engine = create_engine(db_url)
