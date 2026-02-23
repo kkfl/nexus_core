@@ -23,7 +23,7 @@ router = APIRouter(prefix="/v1", tags=["status"])
 async def current_status(
     tenant_id: str | None = Query(None),
     env: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     stmt = select(MonitoringTarget, MonitoringState).join(
         MonitoringState, MonitoringTarget.id == MonitoringState.target_id
@@ -58,7 +58,7 @@ async def check_history(
     env: str | None = Query(None),
     agent_name: str | None = Query(None),
     limit: int = Query(50, le=200),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     stmt = (
         select(MonitoringCheck, MonitoringTarget)
@@ -98,7 +98,7 @@ async def list_incidents(
     tenant_id: str | None = Query(None),
     env: str | None = Query(None),
     limit: int = Query(20, le=100),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     stmt = (
         select(MonitoringAuditEvent)
@@ -132,7 +132,7 @@ async def list_incidents(
 async def dispatch_daily_digest(
     tenant_id: str | None = Query(None),
     env: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     import uuid
     from datetime import datetime, timedelta

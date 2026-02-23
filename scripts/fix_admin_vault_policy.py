@@ -12,8 +12,13 @@ async def main():
 
         query = text("""
             INSERT INTO vault_policies (id, name, service_id, alias_pattern, actions, is_active)
-            VALUES (gen_random_uuid(), 'nexus-all', 'nexus', '*', '["read", "write", "list_metadata"]', true)
-            ON CONFLICT (name) DO UPDATE SET actions = '["read", "write", "list_metadata"]', service_id = 'nexus';
+            VALUES (
+                gen_random_uuid(), 'nexus-all', 'nexus', '*', 
+                '["read", "write", "list_metadata"]', true
+            )
+            ON CONFLICT (name) DO UPDATE SET 
+                actions = '["read", "write", "list_metadata"]',
+                service_id = 'nexus';
         """)
         await conn.execute(query)
         print("Updated Vault policies for nexus")

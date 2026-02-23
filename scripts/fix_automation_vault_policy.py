@@ -12,9 +12,17 @@ async def main():
 
         # Give automation-agent permission to read any downstream agent API key
         query = text("""
-            INSERT INTO vault_policies (id, name, service_id, alias_pattern, tenant_id, env, actions, is_active)
-            VALUES (gen_random_uuid(), 'automation-agent-downstream', 'automation-agent', '*.key', NULL, NULL, '["read", "list_metadata"]', true)
-            ON CONFLICT (name) DO UPDATE SET actions = '["read", "list_metadata"]';
+            INSERT INTO vault_policies (
+                id, name, service_id, alias_pattern, tenant_id, env, actions, is_active
+            )
+            VALUES (
+                gen_random_uuid(), 'automation-downstream', 'automation-agent', 
+                '*.key', NULL, NULL, '["read", "list_metadata"]', true
+            )
+            ON CONFLICT (name) DO UPDATE SET 
+                allowed_clients = NULL, 
+                allowed_roles = NULL, 
+                actions = '["read", "list_metadata"]';
         """)
         await conn.execute(query)
         print("Updated Vault policies for automation-agent")

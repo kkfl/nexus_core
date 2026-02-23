@@ -45,7 +45,7 @@ export default function Personas() {
             try {
                 if (payload.tools_policy) payload.tools_policy = JSON.parse(payload.tools_policy);
                 if (payload.meta_data) payload.meta_data = JSON.parse(payload.meta_data);
-            } catch (e) {
+            } catch {
                 throw new Error("Invalid JSON in policy or meta");
             }
             return (await apiClient.post(`/personas/${selectedPersona.id}/versions`, payload)).data;
