@@ -1,14 +1,16 @@
-import os
 import json
-import requests
+import os
 import sys
+
+import requests
 
 BASE_URL = os.getenv("AUTOMATION_AGENT_URL", "http://localhost:8013/v1/automations")
 HEADERS = {
     "X-Service-ID": "nexus",
     "X-Agent-Key": os.getenv("NEXUS_AUTOMATION_KEY", "<REDACTED_API_KEY>"),
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
+
 
 def main():
     automations_dir = os.path.join(os.path.dirname(__file__), "..", "automations")
@@ -23,7 +25,7 @@ def main():
 
         filepath = os.path.join(automations_dir, filename)
         try:
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 payload = json.load(f)
         except Exception as e:
             print(f"Error reading {filename}: {e}")
@@ -42,6 +44,7 @@ def main():
             print(f" -> Failed request: {e}")
 
     print(f"\nDeployment complete. {success_count} automations deployed.")
+
 
 if __name__ == "__main__":
     main()

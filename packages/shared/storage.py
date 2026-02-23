@@ -1,7 +1,4 @@
-import boto3
-from botocore.client import Config
 from abc import ABC, abstractmethod
-from typing import Optional
 from packages.shared.config import settings
 
 class StorageBackend(ABC):

@@ -33,7 +33,7 @@ async def test_create_and_get_deployment(registry_headers):
         assert created["base_url"] == "http://test-agent:8080"
         
         # Get deployments
-        res_list = await ac.get(f"/v1/deployments?env=prod&tenant_id=tenant-abc", headers=registry_headers)
+        res_list = await ac.get("/v1/deployments?env=prod&tenant_id=tenant-abc", headers=registry_headers)
         assert res_list.status_code == 200
         deps = res_list.json()
         assert len(deps) > 0

@@ -1,19 +1,21 @@
-import os
 import asyncio
+import os
+
 import httpx
+
 
 async def seed_secret():
     headers = {
         "X-Service-ID": "nexus",
-        "X-Agent-Key": os.getenv("NEXUS_MASTER_KEY", "<REDACTED_API_KEY>")
+        "X-Agent-Key": os.getenv("NEXUS_MASTER_KEY", "<REDACTED_API_KEY>"),
     }
     payload = {
         "alias": "monitoring-agent.automation-agent.key",
         "tenant_id": "nexus",
         "env": "prod",
-        "value": os.getenv("MONITORING_AUTOMATION_KEY", "<REDACTED_API_KEY>"), 
+        "value": os.getenv("MONITORING_AUTOMATION_KEY", "<REDACTED_API_KEY>"),
         "description": "Seeded key for monitoring-agent automations",
-        "sensitivity": "high"
+        "sensitivity": "high",
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post("http://localhost:8007/v1/secrets", json=payload, headers=headers)
@@ -23,6 +25,7 @@ async def seed_secret():
             print("Secret already exists.")
         else:
             print(f"Failed to create secret: {resp.status_code} {resp.text}")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_secret())

@@ -86,7 +86,7 @@ class TwilioAdapter(CarrierProviderAdapter):
         self._timeout = httpx.Timeout(10.0)
 
     def __repr__(self) -> str:
-        return f"TwilioAdapter(account_sid=[REDACTED])"
+        return "TwilioAdapter(account_sid=[REDACTED])"
 
     def _accounts_url(self, path: str = "") -> str:
         return f"{_TWILIO_BASE}/Accounts/{self.__account_sid}{path}.json"
