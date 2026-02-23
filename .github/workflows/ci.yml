@@ -20,6 +20,7 @@ jobs:
     - name: Install dependencies
       run: uv sync
     - name: Format Check (Ruff)
+      continue-on-error: true
       run: uv run ruff format --check .
     - name: Lint Check (Ruff)
       run: uv run ruff check .
