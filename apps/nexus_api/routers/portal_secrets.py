@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from apps.nexus_api.dependencies import RequireRole, get_current_user, verify_password
+from apps.nexus_api.dependencies import RequireRole, verify_password
 from packages.shared.client.agent_registry import get_registry_client
 from packages.shared.models.core import User
 

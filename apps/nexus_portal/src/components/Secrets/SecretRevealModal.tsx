@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Input, Button, Alert, Space, Typography, message } from 'antd';
 import { LockOutlined, WarningOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
@@ -35,14 +35,14 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
         }
     });
 
-    const handleClose = () => {
+    const handleClose = useCallback(() => {
         setRevealedValue(null);
         setStep('auth');
         setTimeLeft(120);
         setIsMasked(false);
         form.resetFields();
         onClose();
-    };
+    }, [form, onClose]);
 
     useEffect(() => {
         let timer: any;
@@ -50,11 +50,11 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
             timer = setInterval(() => {
                 setTimeLeft((prev) => prev - 1);
             }, 1000);
-        } else if (timeLeft === 0) {
+        } else if (timeLeft === 0 && step === 'display') {
             handleClose();
         }
         return () => clearInterval(timer);
-    }, [step, timeLeft]);
+    }, [step, timeLeft, handleClose]);
 
     const handleAuthOk = () => {
         form.validateFields().then(values => {
