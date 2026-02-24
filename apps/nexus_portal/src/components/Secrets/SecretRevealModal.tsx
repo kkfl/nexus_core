@@ -51,7 +51,9 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
                 setTimeLeft((prev) => prev - 1);
             }, 1000);
         } else if (timeLeft === 0 && step === 'display') {
-            handleClose();
+            setTimeout(() => {
+                handleClose();
+            }, 0);
         }
         return () => clearInterval(timer);
     }, [step, timeLeft, handleClose]);

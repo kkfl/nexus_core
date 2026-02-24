@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import datetime
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from apps.nexus_api.dependencies import RequireRole, verify_password
 from packages.shared.client.agent_registry import get_registry_client
