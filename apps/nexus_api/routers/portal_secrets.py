@@ -74,6 +74,7 @@ async def get_secrets_agent_url() -> str:
 
 import os
 
+
 # ...
 async def proxy_request(
     method: str,
@@ -83,7 +84,7 @@ async def proxy_request(
 ) -> Any:
     base_url = await get_secrets_agent_url()
     url = f"{base_url.rstrip('/')}{path}"
-    
+
     service_id = os.environ.get("NEXUS_VAULT_SERVICE_ID", "nexus")
     agent_key = os.environ.get("NEXUS_VAULT_AGENT_KEY", "nexus-internal-key")
 
@@ -97,7 +98,7 @@ async def proxy_request(
                 headers={
                     "X-Service-ID": service_id,
                     "X-Agent-Key": agent_key,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
             )
             if resp.status_code >= 400:
@@ -130,7 +131,9 @@ async def list_portal_secrets(
 ) -> Any:
     """List secrets metadata via secrets_agent proxy."""
     return await proxy_request(
-        "GET", "/v1/secrets", params={"tenant_id": tenant_id, "env": env, "skip": skip, "limit": limit}
+        "GET",
+        "/v1/secrets",
+        params={"tenant_id": tenant_id, "env": env, "skip": skip, "limit": limit},
     )
 
 

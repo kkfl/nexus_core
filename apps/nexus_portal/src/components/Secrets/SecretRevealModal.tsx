@@ -35,6 +35,15 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
         }
     });
 
+    const handleClose = () => {
+        setRevealedValue(null);
+        setStep('auth');
+        setTimeLeft(120);
+        setIsMasked(false);
+        form.resetFields();
+        onClose();
+    };
+
     useEffect(() => {
         let timer: any;
         if (step === 'display' && timeLeft > 0) {
@@ -46,15 +55,6 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
         }
         return () => clearInterval(timer);
     }, [step, timeLeft]);
-
-    const handleClose = () => {
-        setRevealedValue(null);
-        setStep('auth');
-        setTimeLeft(120);
-        setIsMasked(false);
-        form.resetFields();
-        onClose();
-    };
 
     const handleAuthOk = () => {
         form.validateFields().then(values => {
