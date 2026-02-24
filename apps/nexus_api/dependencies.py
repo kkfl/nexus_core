@@ -11,7 +11,7 @@ from packages.shared.config import settings
 from packages.shared.db import get_db
 from packages.shared.models import Agent, ApiKey, User
 
-pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "bcrypt", "sha256_crypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -116,7 +116,12 @@ class RequireRole:
     def __init__(self, allowed_roles: list[str]):
         self.allowed_roles = allowed_roles
 
-    def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+    async def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+            )
         if current_user.role not in self.allowed_roles:
             raise HTTPException(status_code=403, detail="Not enough permissions")
         return current_user

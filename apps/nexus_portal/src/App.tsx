@@ -22,6 +22,7 @@ import IntegrationsPbx from './pages/IntegrationsPbx';
 import IntegrationsMonitoring from './pages/IntegrationsMonitoring';
 import IntegrationsStorage from './pages/IntegrationsStorage';
 import IntegrationsCarrier from './pages/IntegrationsCarrier';
+import Secrets from './pages/Secrets';
 import Docs from './pages/Docs';
 
 const queryClient = new QueryClient({
@@ -78,6 +79,7 @@ function App() {
 
             {/* SoR */}
             <Route path="entities" element={<Entities />} />
+            <Route path="secrets" element={<Secrets />} />
             <Route path="audits" element={<Audits />} />
 
             {/* Integrations */}

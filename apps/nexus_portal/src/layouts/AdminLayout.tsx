@@ -11,6 +11,7 @@ import {
     ProfileOutlined,
     LogoutOutlined,
     ReadOutlined,
+    KeyOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -69,6 +70,7 @@ export default function AdminLayout() {
             label: 'System of Record',
             children: [
                 { key: '/entities', label: 'Entities' },
+                { key: '/secrets', label: 'Secrets / Credentials', icon: <KeyOutlined /> },
                 { key: '/audits', label: 'Audit Trail' },
             ],
         },

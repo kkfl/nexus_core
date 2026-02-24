@@ -20,6 +20,7 @@ from apps.nexus_api.routers import (
     pbx,
     persona_defaults,
     personas,
+    portal_secrets,
     secrets,
     storage,
     task_routes,
@@ -183,6 +184,7 @@ app.include_router(task_routes.router, prefix="/task-routes", tags=["task-routes
 app.include_router(persona_defaults.router, prefix="/persona-defaults", tags=["persona-defaults"])
 app.include_router(kb.router, prefix="/kb", tags=["kb"])
 app.include_router(secrets.router, prefix="/secrets", tags=["secrets"])
+app.include_router(portal_secrets.router, prefix="/portal/secrets", tags=["portal-secrets"])
 app.include_router(audit.router, prefix="/audit", tags=["audit"])
 app.include_router(entities.router, prefix="/entities", tags=["entities"])
 app.include_router(pbx.router, prefix="/pbx", tags=["pbx"])
