@@ -66,7 +66,7 @@ async def create_job(
     settings = get_settings()
     ttl = timedelta(hours=settings.job_idempotency_ttl_hours)
     job = NotificationJob(
-        id=uuid.uuid4(),
+        id=str(uuid.uuid4()),
         tenant_id=tenant_id,
         env=env,
         severity=severity,
@@ -145,7 +145,7 @@ async def create_delivery(
     db: AsyncSession, *, job_id: str, channel: str, destination_hash: str
 ) -> NotificationDelivery:
     d = NotificationDelivery(
-        id=uuid.uuid4(),
+        id=str(uuid.uuid4()),
         job_id=job_id,
         channel=channel,
         destination_hash=destination_hash,
@@ -206,7 +206,7 @@ async def upsert_routing_rule(db: AsyncSession, **kwargs) -> NotificationRouting
         for k, v in kwargs.items():
             setattr(existing, k, v)
         return existing
-    r = NotificationRoutingRule(id=uuid.uuid4(), **kwargs)
+    r = NotificationRoutingRule(id=str(uuid.uuid4()), **kwargs)
     db.add(r)
     return r
 

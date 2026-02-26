@@ -69,13 +69,20 @@ def render_template(
     Priority: db template > builtin template > raw override.
     Returns (subject, body).
     """
-    ctx = context or {}
+    ctx = dict(context or {})
+
+    # Inject subject/body overrides into context so templates like "generic"
+    # that use {subject}/{body} placeholders can resolve them.
+    if subject_override and "subject" not in ctx:
+        ctx["subject"] = subject_override
+    if body_override and "body" not in ctx:
+        ctx["body"] = body_override
 
     # Inject timestamp if not provided
     from datetime import datetime
 
     if "timestamp" not in ctx:
-        ctx = {**ctx, "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}
+        ctx["timestamp"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     if db_template_body:
         subject_tpl = db_template_subject or ""
