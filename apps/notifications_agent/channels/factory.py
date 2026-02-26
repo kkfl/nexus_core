@@ -86,12 +86,14 @@ async def build_channel(
             reason="notifications_smtp",
             correlation_id=correlation_id,
         )
+        port = int(port_str)
         return SmtpChannel(
             host=host,
-            port=int(port_str),
+            port=port,
             username=username,
             password=password,
             from_address=from_addr,
+            use_tls=(port == 465),  # 465=implicit TLS, 587=STARTTLS
         )
 
     elif channel_name == "sms":
