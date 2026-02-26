@@ -92,6 +92,7 @@ class SmtpChannel(NotificationChannel):
                 password=self.__password,
                 use_tls=self._use_tls,
                 start_tls=not self._use_tls,
+                validate_certs=False,  # internal mail servers may use self-signed certs
             )
             logger.info("smtp_sent", to_hash=dest_hash[:12], msg_id=msg_id)
             return SendResult(success=True, provider_msg_id=msg_id, destination_hash=dest_hash)
