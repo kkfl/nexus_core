@@ -96,9 +96,7 @@ def main() -> None:
                 "value": value,
                 "description": spec["description"],
             }
-            resp = client.post(
-                f"{VAULT_BASE_URL}/v1/secrets", headers=HEADERS, json=payload
-            )
+            resp = client.post(f"{VAULT_BASE_URL}/v1/secrets", headers=HEADERS, json=payload)
 
             if resp.status_code == 201:
                 data = resp.json()

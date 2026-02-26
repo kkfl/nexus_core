@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.secrets_agent.audit import sink as audit_sink
@@ -23,7 +24,6 @@ from apps.secrets_agent.dependencies import (
     get_policy_engine,
     get_service_identity,
     get_vault_db,
-    require_admin,
 )
 from apps.secrets_agent.models import VaultSecret
 from apps.secrets_agent.policy.engine import PolicyEngine
@@ -199,7 +199,26 @@ async def update_secret(
     if not decision.allowed and not identity.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
 
-    updated = await _store.update(db, secret, payload)
+    try:
+        updated = await _store.update(db, secret, payload)
+
+        await audit_sink.log_event(
+            db,
+            request_id=identity.request_id,
+            service_id=identity.service_id,
+            tenant_id=updated.tenant_id,
+            env=updated.env,
+            secret_alias=updated.alias,
+            action="write",
+            result="allowed",
+            reason="Updated metadata",
+            ip_address=identity.ip_address,
+        )
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Secret with this alias, tenant, and environment already exists.",
+        )
     return _to_meta(updated)
 
 
@@ -254,13 +273,25 @@ async def rotate_secret(
 @router.delete("/{secret_id}")
 async def delete_secret(
     secret_id: str,
-    identity: ServiceIdentity = Depends(require_admin),
+    reason: str | None = Query(None),
+    identity: ServiceIdentity = Depends(get_service_identity),
+    policy: PolicyEngine = Depends(get_policy_engine),
     db: AsyncSession = Depends(get_vault_db),
 ) -> Response:
-    """Soft-delete (deactivate) a secret. Admin only."""
+    """Soft-delete (deactivate) a secret."""
     secret = await _store.get(db, secret_id)
     if not secret:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found.")
+
+    decision = policy.check(
+        service_id=identity.service_id,
+        action="write",
+        secret_alias=secret.alias,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+    )
+    if not decision.allowed and not identity.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
     await audit_sink.log_event(
         db,
         request_id=identity.request_id,
@@ -270,6 +301,7 @@ async def delete_secret(
         secret_alias=secret.alias,
         action="delete",
         result="allowed",
+        reason=reason or "allowed",
         ip_address=identity.ip_address,
     )
     await _store.deactivate(db, secret)

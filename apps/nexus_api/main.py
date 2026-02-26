@@ -121,10 +121,14 @@ async def lifespan(app: FastAPI):
                             headers=client.headers,
                             params={"agent_id": agent_id, "env": "prod"},
                         )
-                        existing_deps = existing_resp.json() if existing_resp.status_code == 200 else []
+                        existing_deps = (
+                            existing_resp.json() if existing_resp.status_code == 200 else []
+                        )
 
                         if existing_deps:
-                            logger.debug("agent_deployment_exists", agent=a["name"], count=len(existing_deps))
+                            logger.debug(
+                                "agent_deployment_exists", agent=a["name"], count=len(existing_deps)
+                            )
                         else:
                             # Only create if no deployment exists yet
                             await hc.post(
