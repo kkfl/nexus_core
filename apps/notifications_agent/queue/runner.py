@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-import uuid
 from datetime import UTC, datetime
 
 import structlog
@@ -57,14 +56,22 @@ async def _deliver_channel(
     channel_config: dict | None,
     max_attempts: int,
 ) -> None:
-    """Inner coroutine: attempt delivery with retries, update delivery row."""
+    """Inner coroutine: attempt delivery with retries, update delivery row.
+
+    INVARIANT: once channel.send() returns successfully, we NEVER re-send,
+    even if the subsequent DB bookkeeping fails.  Retries only cover
+    pre-send failures (vault/channel build) and actual send errors.
+    """
     settings = get_settings()
     base_delay = settings.job_retry_base_delay
 
+    result = None  # set on successful send
+    sent_attempt = 0
+
+    # -- retry loop: covers vault fetch + channel.send() ONLY ---------------
     for attempt in range(1, max_attempts + 1):
         metrics.inc("notification_send_attempts")
         start_ms = asyncio.get_event_loop().time() * 1000
-        delivery_id = str(uuid.uuid4())
 
         try:
             vault = _vault()
@@ -91,58 +98,8 @@ async def _deliver_channel(
             )
             elapsed = asyncio.get_event_loop().time() * 1000 - start_ms
             metrics.record_latency(elapsed)
-
-            async for db in get_db():
-                d = await create_delivery(
-                    db,
-                    job_id=job_id,
-                    channel=channel_name,
-                    destination_hash=result.destination_hash,
-                )
-                delivery_id = str(d.id)
-                if result.success:
-                    metrics.inc("notification_send_success")
-                    await update_delivery(
-                        db,
-                        delivery_id,
-                        status="sent",
-                        provider_msg_id=result.provider_msg_id,
-                        attempt=attempt,
-                        sent_at=datetime.now(UTC),
-                    )
-                    logger.info(
-                        "delivery_success",
-                        job_id=job_id,
-                        channel=channel_name,
-                        attempt=attempt,
-                        correlation_id=correlation_id,
-                    )
-                else:
-                    metrics.inc("notification_send_failure")
-                    await update_delivery(
-                        db,
-                        delivery_id,
-                        status="failed",
-                        attempt=attempt,
-                        error_code=result.error_code,
-                        error_detail_redacted=result.error_detail,
-                    )
-                    if attempt < max_attempts:
-                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
-                        logger.warning(
-                            "delivery_retry",
-                            job_id=job_id,
-                            channel=channel_name,
-                            attempt=attempt,
-                            retry_in=round(delay, 2),
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    # All attempts exhausted
-                    logger.error(
-                        "delivery_failed_dlq", job_id=job_id, channel=channel_name, attempts=attempt
-                    )
-                return  # success or final failure
+            sent_attempt = attempt
+            break  # send succeeded — exit retry loop, NEVER re-send
 
         except Exception as exc:
             safe = _safe_error(exc)
@@ -157,6 +114,71 @@ async def _deliver_channel(
             if attempt < max_attempts:
                 delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
                 await asyncio.sleep(delay)
+
+    # -- post-send bookkeeping (outside retry loop) -------------------------
+    if result is None:
+        # All send attempts exhausted
+        logger.error(
+            "delivery_failed_dlq",
+            job_id=job_id,
+            channel=channel_name,
+            attempts=max_attempts,
+        )
+        return
+
+    try:
+        async for db in get_db():
+            d = await create_delivery(
+                db,
+                job_id=job_id,
+                channel=channel_name,
+                destination_hash=result.destination_hash,
+            )
+            delivery_id = str(d.id)
+            if result.success:
+                metrics.inc("notification_send_success")
+                await update_delivery(
+                    db,
+                    delivery_id,
+                    status="sent",
+                    provider_msg_id=result.provider_msg_id,
+                    attempt=sent_attempt,
+                    sent_at=datetime.now(UTC),
+                )
+                logger.info(
+                    "delivery_success",
+                    job_id=job_id,
+                    channel=channel_name,
+                    attempt=sent_attempt,
+                    correlation_id=correlation_id,
+                )
+            else:
+                metrics.inc("notification_send_failure")
+                await update_delivery(
+                    db,
+                    delivery_id,
+                    status="failed",
+                    attempt=sent_attempt,
+                    error_code=result.error_code,
+                    error_detail_redacted=result.error_detail,
+                )
+                logger.error(
+                    "delivery_send_returned_failure",
+                    job_id=job_id,
+                    channel=channel_name,
+                    attempt=sent_attempt,
+                )
+    except Exception as exc:
+        # DB bookkeeping failed — the message WAS already sent.
+        # Log but do NOT retry (that would duplicate the delivery).
+        safe = _safe_error(exc)
+        logger.error(
+            "delivery_bookkeeping_failed",
+            job_id=job_id,
+            channel=channel_name,
+            attempt=sent_attempt,
+            error=safe,
+        )
 
 
 async def dispatch_job(
