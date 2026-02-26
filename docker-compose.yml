@@ -80,7 +80,7 @@ services:
       - ./docs:/app/docs:ro
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -125,7 +125,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8012/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8012/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -165,7 +165,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8002/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -209,7 +209,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8011/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8011/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -239,7 +239,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8004/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -268,7 +268,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8005/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -315,7 +315,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8007/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -341,7 +341,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8013/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8013/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -367,7 +367,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8008/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3

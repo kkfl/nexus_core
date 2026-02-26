@@ -57,16 +57,32 @@ async def lifespan(app: FastAPI):
             "name": "notifications-agent",
             "url": "http://notifications-agent:8008",
             "auth": "headers",
+            "auth_secret_alias": "notifications-agent.automation-agent.key",
         },
-        {"name": "carrier-agent", "url": "http://carrier-agent:8009", "auth": "headers"},
-        {"name": "storage-agent", "url": "http://storage-agent:8005", "auth": "headers"},
+        {
+            "name": "carrier-agent",
+            "url": "http://carrier-agent:8009",
+            "auth": "headers",
+            "auth_secret_alias": "carrier-agent.automation-agent.key",
+        },
+        {
+            "name": "storage-agent",
+            "url": "http://storage-agent:8005",
+            "auth": "headers",
+            "auth_secret_alias": "storage-agent.automation-agent.key",
+        },
         {
             "name": "pbx-agent",
             "url": "http://pbx-agent:8011",
             "auth": "headers",
             "auth_secret_alias": "pbx-agent.automation-agent.key",
         },
-        {"name": "monitoring-agent", "url": "http://monitoring-agent:8004", "auth": "headers"},
+        {
+            "name": "monitoring-agent",
+            "url": "http://monitoring-agent:8004",
+            "auth": "headers",
+            "auth_secret_alias": "monitoring-agent.automation-agent.key",
+        },
         {"name": "automation-agent", "url": "http://automation-agent:8013", "auth": "headers"},
     ]
 
@@ -99,19 +115,29 @@ async def lifespan(app: FastAPI):
                     if agent_resp.status_code == 200:
                         agent_id = agent_resp.json()["id"]
 
-                        # 2. Create global deployment (no tenant_id) for 'prod'
-                        # In a real cluster, deployments would self-register or be pushed by a controller.
-                        await hc.post(
+                        # 2. Check if deployment already exists for this agent+env
+                        existing_resp = await hc.get(
                             f"{client.registry_base_url}/v1/deployments",
                             headers=client.headers,
-                            json={
-                                "agent_id": agent_id,
-                                "env": "prod",
-                                "base_url": a["url"],
-                                "auth_scheme": a["auth"],
-                                "auth_secret_alias": a.get("auth_secret_alias"),
-                            },
+                            params={"agent_id": agent_id, "env": "prod"},
                         )
+                        existing_deps = existing_resp.json() if existing_resp.status_code == 200 else []
+
+                        if existing_deps:
+                            logger.debug("agent_deployment_exists", agent=a["name"], count=len(existing_deps))
+                        else:
+                            # Only create if no deployment exists yet
+                            await hc.post(
+                                f"{client.registry_base_url}/v1/deployments",
+                                headers=client.headers,
+                                json={
+                                    "agent_id": agent_id,
+                                    "env": "prod",
+                                    "base_url": a["url"],
+                                    "auth_scheme": a["auth"],
+                                    "auth_secret_alias": a.get("auth_secret_alias"),
+                                },
+                            )
             logger.info("agent_registry_seeded", agents_count=len(agents_to_register))
         except Exception as exc:
             logger.error("agent_registry_seeding_failed", error=str(exc))
