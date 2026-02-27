@@ -18,7 +18,7 @@ async def _safe_check(coro, label):
     """Run a check with a hard 10s timeout."""
     try:
         return await asyncio.wait_for(coro, timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return False, f"{label} timed out"
     except Exception as e:
         return False, str(e)[:200]

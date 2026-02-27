@@ -5,7 +5,6 @@ Quick smoke test for email-agent endpoints (runs inside Docker container).
 import json
 import urllib.request
 
-
 BASE = "http://localhost:8014"
 HEADERS = {"X-Service-ID": "nexus", "X-Agent-Key": "nexus-email-key-change-me"}
 
@@ -45,18 +44,21 @@ print(f"   {r}")
 # 2. Health check
 print("\n2. /email/health")
 r = get("/email/health")
-print(f"   SMTP:  {r.get('smtp')} {r.get('smtp_detail','')}")
-print(f"   IMAP:  {r.get('imap')} {r.get('imap_detail','')}")
-print(f"   SSH:   {r.get('ssh_bridge')} {r.get('ssh_detail','')}")
+print(f"   SMTP:  {r.get('smtp')} {r.get('smtp_detail', '')}")
+print(f"   IMAP:  {r.get('imap')} {r.get('imap_detail', '')}")
+print(f"   SSH:   {r.get('ssh_bridge')} {r.get('ssh_detail', '')}")
 
 # 3. Test send
 print("\n3. /email/test_send")
-r = post("/email/test_send", {
-    "to": "alerts@gsmcall.com",
-    "subject": "Email Agent Smoke Test",
-    "body_text": "Automated smoke test from Nexus Email Agent",
-})
-print(f"   ok={r.get('ok')} msg_id={r.get('message_id','')[:40]} err={r.get('error','')}")
+r = post(
+    "/email/test_send",
+    {
+        "to": "alerts@gsmcall.com",
+        "subject": "Email Agent Smoke Test",
+        "body_text": "Automated smoke test from Nexus Email Agent",
+    },
+)
+print(f"   ok={r.get('ok')} msg_id={r.get('message_id', '')[:40]} err={r.get('error', '')}")
 
 # 4. Admin mailbox list
 print("\n4. /email/admin/mailbox/list")
@@ -71,7 +73,7 @@ else:
 # 5. Capabilities
 print("\n5. /v1/capabilities")
 r = get("/v1/capabilities")
-print(f"   {r.get('service')}: {len(r.get('capabilities',[]))} capabilities")
+print(f"   {r.get('service')}: {len(r.get('capabilities', []))} capabilities")
 
 print("\n" + "=" * 60)
 print("DONE")

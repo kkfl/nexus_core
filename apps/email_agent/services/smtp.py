@@ -116,8 +116,7 @@ async def check_smtp_connectivity() -> tuple[bool, str]:
     try:
         cfg = await _get_smtp_config()
         return await asyncio.wait_for(_do_smtp_check(cfg), timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return False, "connection timed out"
     except Exception as e:
         return False, str(e)[:200]
-

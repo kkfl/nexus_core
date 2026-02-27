@@ -4,6 +4,8 @@ email_agent — service identity auth (X-Service-ID + X-Agent-Key).
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 
 from fastapi import Header, HTTPException
@@ -17,12 +19,8 @@ async def verify_service_identity(
     allowed_keys: dict[str, str] = {}
     raw = os.environ.get("EMAIL_AGENT_KEYS", "")
     if raw:
-        import json
-
-        try:
+        with contextlib.suppress(Exception):
             allowed_keys = json.loads(raw)
-        except Exception:
-            pass
 
     # Fallback: accept the default dev key
     if not allowed_keys:
