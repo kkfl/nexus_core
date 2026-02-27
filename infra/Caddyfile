@@ -1,4 +1,9 @@
 :80 {
+    # Email Agent routes: forward as-is (routes already use /email prefix)
+    handle /email/* {
+        reverse_proxy email-agent:8014
+    }
+
     # API routes: strip /api prefix before forwarding
     handle /api/* {
         uri strip_prefix /api

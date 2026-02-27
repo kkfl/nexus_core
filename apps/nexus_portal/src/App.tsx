@@ -22,6 +22,7 @@ import IntegrationsPbx from './pages/IntegrationsPbx';
 import IntegrationsMonitoring from './pages/IntegrationsMonitoring';
 import IntegrationsStorage from './pages/IntegrationsStorage';
 import IntegrationsCarrier from './pages/IntegrationsCarrier';
+import IntegrationsEmail from './pages/IntegrationsEmail';
 import Secrets from './pages/Secrets';
 import Docs from './pages/Docs';
 
@@ -87,6 +88,7 @@ function App() {
             <Route path="integrations/monitoring" element={<IntegrationsMonitoring />} />
             <Route path="integrations/storage" element={<IntegrationsStorage />} />
             <Route path="integrations/carrier" element={<IntegrationsCarrier />} />
+            <Route path="integrations/email" element={<IntegrationsEmail />} />
 
             {/* Docs */}
             <Route path="docs" element={<Docs />} />

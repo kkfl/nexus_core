@@ -1,4 +1,4 @@
-import { Layout, Menu, Button, Dropdown, Space, Typography } from 'antd';
+import { Layout, Menu, Button, Dropdown, Space, Typography, ConfigProvider, theme } from 'antd';
 import {
     DashboardOutlined,
     UserOutlined,
@@ -12,6 +12,17 @@ import {
     LogoutOutlined,
     ReadOutlined,
     KeyOutlined,
+    IdcardOutlined,
+    ControlOutlined,
+    FileTextOutlined,
+    SearchOutlined,
+    AppstoreOutlined,
+    SafetyOutlined,
+    CameraOutlined,
+    LineChartOutlined,
+    HddOutlined,
+    PhoneOutlined,
+    MailOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -50,8 +61,8 @@ export default function AdminLayout() {
             icon: <UserOutlined />,
             label: 'Personas',
             children: [
-                { key: '/personas', label: 'Persona Registry' },
-                { key: '/personas/defaults', label: 'Defaults & Overrides' },
+                { key: '/personas', label: 'Persona Registry', icon: <IdcardOutlined /> },
+                { key: '/personas/defaults', label: 'Defaults & Overrides', icon: <ControlOutlined /> },
             ],
         },
         {
@@ -59,9 +70,9 @@ export default function AdminLayout() {
             icon: <DatabaseOutlined />,
             label: 'Knowledge Base',
             children: [
-                { key: '/kb/sources', label: 'Sources ' },
-                { key: '/kb/documents', label: 'Documents' },
-                { key: '/kb/search', label: 'Search' },
+                { key: '/kb/sources', label: 'Sources', icon: <FileTextOutlined /> },
+                { key: '/kb/documents', label: 'Documents', icon: <FileTextOutlined /> },
+                { key: '/kb/search', label: 'Search', icon: <SearchOutlined /> },
             ],
         },
         {
@@ -69,9 +80,9 @@ export default function AdminLayout() {
             icon: <CloudServerOutlined />,
             label: 'System of Record',
             children: [
-                { key: '/entities', label: 'Entities' },
+                { key: '/entities', label: 'Entities', icon: <AppstoreOutlined /> },
                 { key: '/secrets', label: 'Secrets / Credentials', icon: <KeyOutlined /> },
-                { key: '/audits', label: 'Audit Trail' },
+                { key: '/audits', label: 'Audit Trail', icon: <SafetyOutlined /> },
             ],
         },
         {
@@ -79,10 +90,11 @@ export default function AdminLayout() {
             icon: <SettingOutlined />,
             label: 'Integrations',
             children: [
-                { key: '/integrations/pbx', label: 'PBX Snapshots' },
-                { key: '/integrations/monitoring', label: 'Monitoring Ingests' },
-                { key: '/integrations/storage', label: 'Storage Jobs' },
-                { key: '/integrations/carrier', label: 'Carrier Inventory' },
+                { key: '/integrations/pbx', label: 'PBX Snapshots', icon: <CameraOutlined /> },
+                { key: '/integrations/monitoring', label: 'Monitoring Ingests', icon: <LineChartOutlined /> },
+                { key: '/integrations/storage', label: 'Storage Jobs', icon: <HddOutlined /> },
+                { key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> },
+                { key: '/integrations/email', label: 'Email Administration', icon: <MailOutlined /> },
             ],
         },
         {
@@ -93,44 +105,55 @@ export default function AdminLayout() {
     ];
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Sider width={250} theme="dark">
-                <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#001529', color: '#fff', fontSize: 20, fontWeight: 'bold' }}>
-                    Nexus Portal
-                </div>
-                <Menu
-                    theme="dark"
-                    mode="inline"
-                    selectedKeys={[location.pathname]}
-                    defaultOpenKeys={['orchestration', 'personas', 'kb', 'sor', 'integrations']}
-                    items={navItems}
-                    onClick={(e) => navigate(e.key)}
-                />
-            </Sider>
-            <Layout>
-                <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0' }}>
-                    <Space size="large">
-                        <Text type="secondary">{user?.role.toUpperCase()}</Text>
-                        <Dropdown menu={{
-                            items: [
-                                { key: 'email', label: <Text disabled>{user?.email}</Text> },
-                                { type: 'divider' },
-                                { key: 'logout', label: 'Log Out', icon: <LogoutOutlined />, onClick: handleLogout }
-                            ]
-                        }} placement="bottomRight">
-                            <Button type="text" icon={<UserOutlined />}>
-                                {user?.email}
-                            </Button>
-                        </Dropdown>
-                    </Space>
-                </Header>
-                <Content style={{ margin: '24px 16px', padding: 24, background: '#fff', minHeight: 280, borderRadius: 8 }}>
-                    <Outlet />
-                </Content>
-                <Footer style={{ textAlign: 'center' }}>
-                    Nexus Portal v{import.meta.env.VITE_APP_VERSION || '0.1.0'} ©{new Date().getFullYear()} Created by Nexus Core
-                </Footer>
+        <ConfigProvider
+            theme={{
+                algorithm: theme.defaultAlgorithm,
+                token: {
+                    colorPrimary: '#1677ff',
+                    borderRadius: 8,
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                },
+            }}
+        >
+            <Layout className="root-layout" style={{ minHeight: '100vh' }}>
+                <Sider width={260} theme="dark" style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 10 }}>
+                    <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#001529', color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: '-0.5px' }}>
+                        Nexus Core
+                    </div>
+                    <Menu
+                        theme="dark"
+                        mode="inline"
+                        selectedKeys={[location.pathname]}
+                        defaultOpenKeys={['orchestration', 'personas', 'kb', 'sor', 'integrations']}
+                        items={navItems}
+                        onClick={(e) => navigate(e.key)}
+                    />
+                </Sider>
+                <Layout className="main-layout" style={{ marginLeft: 260, minHeight: '100vh' }}>
+                    <Header style={{ padding: '0 32px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 1, width: '100%' }}>
+                        <Space size="large">
+                            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 600 }}>{user?.role.toUpperCase()}</Text>
+                            <Dropdown menu={{
+                                items: [
+                                    { key: 'email', label: <Text disabled>{user?.email}</Text> },
+                                    { type: 'divider' },
+                                    { key: 'logout', label: 'Log Out', icon: <LogoutOutlined />, onClick: handleLogout }
+                                ]
+                            }} placement="bottomRight">
+                                <Button type="text" icon={<UserOutlined />} style={{ display: 'flex', alignItems: 'center' }}>
+                                    {user?.email}
+                                </Button>
+                            </Dropdown>
+                        </Space>
+                    </Header>
+                    <Content style={{ margin: '24px', padding: '32px', background: '#fff', borderRadius: 12 }}>
+                        <Outlet />
+                    </Content>
+                    <Footer style={{ textAlign: 'center', color: '#8c8c8c', padding: '16px 50px' }}>
+                        Nexus Portal v{import.meta.env.VITE_APP_VERSION || '0.1.0'} ©{new Date().getFullYear()} Created by Nexus Core • System of Record
+                    </Footer>
+                </Layout>
             </Layout>
-        </Layout>
+        </ConfigProvider>
     );
 }

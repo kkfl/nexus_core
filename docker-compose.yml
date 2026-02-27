@@ -116,7 +116,7 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
-      - 'AGENT_REGISTRY_KEYS={"nexus": "nexus-registry-key", "admin": "admin-registry-key", "automation-agent": "nexus-registry-key", "monitoring-agent": "nexus-registry-key", "secrets-agent": "nexus-registry-key", "carrier-agent":"nexus-registry-key", "pbx-agent":"nexus-registry-key", "storage-agent":"nexus-registry-key"}'
+      - 'AGENT_REGISTRY_KEYS={"nexus": "nexus-registry-key", "admin": "admin-registry-key", "automation-agent": "nexus-registry-key", "monitoring-agent": "nexus-registry-key", "secrets-agent": "nexus-registry-key", "carrier-agent":"nexus-registry-key", "pbx-agent":"nexus-registry-key", "storage-agent":"nexus-registry-key", "email-agent":"nexus-registry-key"}'
       - CORS_ORIGINS=http://localhost:8001,http://localhost
     ports:
       - "8012:8012"
@@ -303,7 +303,7 @@ services:
       - VAULT_MASTER_KEY=${NEXUS_MASTER_KEY}
       # VAULT_AGENT_KEYS: JSON map of service_id -> api_key. Configure in .env.
       # Example: VAULT_AGENT_KEYS={"nexus":"nexus-internal-key","pbx-agent":"pbx-key"}
-      - 'VAULT_AGENT_KEYS=${VAULT_AGENT_KEYS:-{"nexus":"nexus-internal-key","pbx-agent":"pbx-vault-key-change-me","monitoring-agent":"monitoring-vault-key-change-me","carrier-agent":"carrier-vault-key-change-me","dns-agent":"dns-vault-key-change-me","automation-agent":"automation-vault-key-change-me","notifications-agent":"notifications-vault-key-change-me","storage-agent":"storage-vault-key-change-me"}}'
+      - 'VAULT_AGENT_KEYS=${VAULT_AGENT_KEYS:-{"nexus":"nexus-internal-key","pbx-agent":"pbx-vault-key-change-me","monitoring-agent":"monitoring-vault-key-change-me","carrier-agent":"carrier-vault-key-change-me","dns-agent":"dns-vault-key-change-me","automation-agent":"automation-vault-key-change-me","notifications-agent":"notifications-vault-key-change-me","storage-agent":"storage-vault-key-change-me","email-agent":"email-vault-key-change-me"}}'
       # VAULT_ADMIN_KEYS: JSON map for admin-only access. Configure in .env.
       # Example: VAULT_ADMIN_KEYS={"admin":"admin-vault-key"}
       - 'VAULT_ADMIN_KEYS=${VAULT_ADMIN_KEYS:-{}}'
@@ -372,10 +372,36 @@ services:
       timeout: 5s
       retries: 3
 
+  email-agent:
+    build:
+      context: .
+      dockerfile: apps/email_agent/Dockerfile
+    container_name: email-agent
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      EMAIL_AGENT_KEYS: '{"nexus":"nexus-email-key-change-me","admin":"admin-email-key"}'
+      VAULT_BASE_URL: http://secrets-agent:8007
+      VAULT_SERVICE_ID: email-agent
+      VAULT_AGENT_KEY: ${EMAIL_VAULT_AGENT_KEY:-email-vault-key-change-me}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+    ports:
+      - "8014:8014"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8014/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   nexus-portal:
     build:
-      context: apps/nexus_portal
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/nexus_portal/Dockerfile
       args:
         VITE_API_BASE_URL: http://localhost/api
     container_name: nexus-portal
