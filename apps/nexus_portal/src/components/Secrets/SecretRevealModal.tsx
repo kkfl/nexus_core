@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Input, Button, Alert, Space, Typography, message } from 'antd';
 import { LockOutlined, WarningOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 
 const { Text, Title } = Typography;
 
@@ -20,7 +20,7 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
     const [form] = Form.useForm();
 
     const revealMutation = useMutation({
-        mutationFn: (values: any) => axios.post(`/api/portal/secrets/${secret.id}/reveal`, {
+        mutationFn: (values: any) => apiClient.post(`/portal/secrets/${secret.id}/reveal`, {
             ...values,
             tenant_id: secret.tenant_id,
             env: secret.env
@@ -93,13 +93,13 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
                         showIcon
                         icon={<WarningOutlined />}
                     />
-                    <Form form={form} layout="vertical">
+                    <Form form={form} layout="vertical" autoComplete="off">
                         <Form.Item
                             name="password"
                             label="Re-authenticate with Password"
                             rules={[{ required: true }]}
                         >
-                            <Input.Password prefix={<LockOutlined />} placeholder="Enter your password" />
+                            <Input.Password prefix={<LockOutlined />} placeholder="Enter your password" autoComplete="new-password" />
                         </Form.Item>
                         <Form.Item
                             name="reason"

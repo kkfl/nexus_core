@@ -1,6 +1,6 @@
 import { Modal, Form, Input, message } from 'antd';
 import { useMutation } from '@tanstack/react-query';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 
 interface Props {
     secret: any;
@@ -13,7 +13,7 @@ export default function SecretRotateModal({ secret, open, onClose, onSuccess }: 
     const [form] = Form.useForm();
 
     const mutation = useMutation({
-        mutationFn: (values: any) => axios.post(`/api/portal/secrets/${secret.id}/rotate`, values),
+        mutationFn: (values: any) => apiClient.post(`/portal/secrets/${secret.id}/rotate`, values),
         onSuccess: () => {
             message.success('Secret rotated successfully');
             form.resetFields();

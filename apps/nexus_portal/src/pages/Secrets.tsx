@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Table, Button, Card, Space, Tag, Input, Typography, Tabs } from 'antd';
-import { KeyOutlined, PlusOutlined, SearchOutlined, HistoryOutlined, SafetyOutlined } from '@ant-design/icons';
+import { KeyOutlined, PlusOutlined, SearchOutlined, HistoryOutlined, SafetyOutlined, EditOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
+import { apiClient } from '../api/client';
 
 // Components
 import SecretCreateModal from '../components/Secrets/SecretCreateModal';
@@ -27,11 +27,10 @@ export default function Secrets() {
     const { data: secrets, isLoading } = useQuery({
         queryKey: ['portal-secrets'],
         queryFn: async () => {
-            const resp = await axios.get('/api/portal/secrets');
+            const resp = await apiClient.get('/portal/secrets');
             return resp.data;
         },
     });
-
     const columns = [
         {
             title: 'Alias',
@@ -73,16 +72,15 @@ export default function Secrets() {
             render: (_: any, record: any) => (
                 <Space size="middle">
                     <Button
-                        type="link"
+                        type="primary"
                         icon={<SafetyOutlined />}
                         onClick={() => setRevealingSecret(record)}
                         danger
-                    >
-                        Reveal
-                    </Button>
-                    <Button type="link" onClick={() => setEditingSecret(record)}>Edit</Button>
-                    <Button type="link" onClick={() => setRotatingSecret(record)}>Rotate</Button>
-                    <Button type="link" onClick={() => setDeletingSecret(record)} danger>Delete</Button>
+                        title="Reveal Secret"
+                    />
+                    <Button type="default" icon={<EditOutlined />} onClick={() => setEditingSecret(record)} title="Edit Meta" />
+                    <Button type="default" icon={<SyncOutlined />} onClick={() => setRotatingSecret(record)} title="Rotate Value" />
+                    <Button type="primary" icon={<DeleteOutlined />} onClick={() => setDeletingSecret(record)} danger title="Delete Secret" />
                 </Space>
             ),
         },
@@ -94,17 +92,10 @@ export default function Secrets() {
     );
 
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <Title level={2}>
-                    <KeyOutlined style={{ marginRight: 8 }} />
-                    Secrets & Credentials
-                </Title>
-                <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => setIsCreateModalOpen(true)}
-                >
+        <div style={{ width: '100%' }}>
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' }}>
+                <Title level={2} style={{ margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>Secrets & Credentials Management</Title>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
                     Add Secret
                 </Button>
             </div>
@@ -126,6 +117,7 @@ export default function Secrets() {
                             dataSource={filteredSecrets}
                             rowKey="id"
                             loading={isLoading}
+                            scroll={{ x: 1200 }}
                         />
                     </Card>
                 </Tabs.TabPane>

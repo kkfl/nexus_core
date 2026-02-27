@@ -22,6 +22,7 @@ Environment variables (defaults work for local docker-compose):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import hashlib
 import hmac
@@ -259,22 +260,16 @@ async def main():
     domain_id = None
     api_key = secret_key = None
 
-    try:
+    with contextlib.suppress(Exception):
         api_key, secret_key = await step_1_resolve_secrets()
-    except Exception:
-        pass
 
     if api_key and secret_key:
-        try:
+        with contextlib.suppress(Exception):
             domain_id = await step_2_domain_lookup(api_key, secret_key)
-        except Exception:
-            pass
 
     if domain_id:
-        try:
+        with contextlib.suppress(Exception):
             record_id = await step_3_create_txt(api_key, secret_key, domain_id)
-        except Exception:
-            pass
 
     if record_id:
         await step_4_verify_txt(api_key, secret_key, domain_id, record_id)

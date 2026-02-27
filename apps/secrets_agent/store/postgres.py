@@ -119,6 +119,16 @@ class PostgresSecretStore(AbstractSecretStore):
     async def update(
         self, db: AsyncSession, secret: VaultSecret, payload: SecretUpdate
     ) -> VaultSecret:
+        if payload.alias is not None:
+            secret.alias = payload.alias
+        if payload.tenant_id is not None:
+            secret.tenant_id = payload.tenant_id
+        if payload.env is not None:
+            secret.env = payload.env
+        if payload.value is not None:
+            enc = encrypt_secret(payload.value, key_version=secret.key_version)
+            secret.encrypted_dek = enc.encrypted_dek
+            secret.ciphertext = enc.ciphertext
         if payload.description is not None:
             secret.description = payload.description
         if payload.scope_tags is not None:
@@ -128,6 +138,7 @@ class PostgresSecretStore(AbstractSecretStore):
         if payload.is_active is not None:
             secret.is_active = payload.is_active
         await db.flush()
+        await db.refresh(secret)
         return secret
 
     async def deactivate(self, db: AsyncSession, secret: VaultSecret) -> VaultSecret:

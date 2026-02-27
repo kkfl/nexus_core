@@ -63,6 +63,10 @@ class SecretCreate(BaseModel):
 
 
 class SecretUpdate(BaseModel):
+    alias: str | None = Field(None, max_length=255)
+    tenant_id: str | None = Field(None, max_length=128)
+    env: str | None = Field(None, max_length=32)
+    value: str | None = None
     description: str | None = Field(None, max_length=500)
     scope_tags: dict[str, Any] | None = None
     rotation_interval_days: int | None = Field(None, ge=1)

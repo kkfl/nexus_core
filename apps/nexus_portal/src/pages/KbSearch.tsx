@@ -1,4 +1,4 @@
-import { Button, Form, Input, Select, InputNumber, Typography, List, Card, Space, Tag } from 'antd';
+import { Button, Form, Input, Select, InputNumber, Typography, List, Card, Space, Tag, Row, Col } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useState } from 'react';
@@ -40,23 +40,28 @@ export default function KbSearch() {
                         <Input.TextArea rows={2} placeholder="Enter a natural language question or keywords..." />
                     </Form.Item>
 
-                    <Space size="large" wrap>
-                        <Form.Item name="namespaces" label="Namespaces (Optional Filter)" style={{ minWidth: 250 }}>
-                            <Select mode="tags" options={namespaces.map(ns => ({ label: ns, value: ns }))} placeholder="global" />
-                        </Form.Item>
-
-                        <Form.Item name="top_k" label="Top-K Chunks">
-                            <InputNumber min={1} max={20} />
-                        </Form.Item>
-
-                        <Form.Item name="min_score" label="Min Confidence Score (0-1)">
-                            <InputNumber min={0} max={1} step={0.1} />
-                        </Form.Item>
-
-                        <Form.Item label=" ">
-                            <Button type="primary" htmlType="submit" loading={searchKb.isPending}>Search Embeddings</Button>
-                        </Form.Item>
-                    </Space>
+                    <Row gutter={16} align="bottom">
+                        <Col xs={24} md={8}>
+                            <Form.Item name="namespaces" label="Namespaces (Optional Filter)">
+                                <Select mode="tags" options={namespaces.map(ns => ({ label: ns, value: ns }))} placeholder="global" />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={4}>
+                            <Form.Item name="top_k" label="Top-K Chunks">
+                                <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Form.Item name="min_score" label="Min Confidence Score (0-1)">
+                                <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={6}>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" loading={searchKb.isPending} block>Search Embeddings</Button>
+                            </Form.Item>
+                        </Col>
+                    </Row>
                 </Form>
             </Card>
 

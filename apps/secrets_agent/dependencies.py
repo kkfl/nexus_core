@@ -111,6 +111,10 @@ async def get_service_identity(
     # Also accept admin keys for full access
     is_admin = admin_keys.get(x_service_id) == x_agent_key
 
+    # Implicitly trust the nexus core service as an admin for auditing
+    if x_service_id == "nexus" and expected == x_agent_key:
+        is_admin = True
+
     if expected != x_agent_key and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

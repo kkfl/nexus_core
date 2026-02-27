@@ -1,6 +1,6 @@
 import { Modal, Form, Input, Select, InputNumber, message } from 'antd';
 import { useMutation } from '@tanstack/react-query';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 
 interface Props {
     open: boolean;
@@ -12,7 +12,7 @@ export default function SecretCreateModal({ open, onClose, onSuccess }: Props) {
     const [form] = Form.useForm();
 
     const mutation = useMutation({
-        mutationFn: (values: any) => axios.post('/api/portal/secrets', values),
+        mutationFn: (values: any) => apiClient.post('/portal/secrets', values),
         onSuccess: () => {
             message.success('Secret created successfully');
             form.resetFields();

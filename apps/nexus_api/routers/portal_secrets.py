@@ -29,6 +29,10 @@ class PortalSecretCreate(BaseModel):
 
 
 class PortalSecretUpdate(BaseModel):
+    alias: str | None = None
+    tenant_id: str | None = None
+    env: str | None = None
+    value: str | None = None
     description: str | None = None
     scope_tags: list[Any] | None = None
     rotation_interval_days: int | None = None
@@ -42,8 +46,11 @@ class PortalSecretRotate(BaseModel):
 class PortalSecretRevealRequest(BaseModel):
     password: str
     reason: str
-    tenant_id: str
-    env: str
+
+
+class PortalSecretDeleteRequest(BaseModel):
+    password: str
+    reason: str
 
 
 class PortalSecretRevealResponse(BaseModel):
@@ -129,10 +136,12 @@ async def list_portal_secrets(
     current_user: User = Depends(RequireRole(["admin", "operator", "BreakGlass"])),
 ) -> Any:
     """List secrets metadata via secrets_agent proxy."""
+    params = {"tenant_id": tenant_id, "env": env, "skip": skip, "limit": limit}
+    params = {k: v for k, v in params.items() if v is not None}
     return await proxy_request(
         "GET",
         "/v1/secrets",
-        params={"tenant_id": tenant_id, "env": env, "skip": skip, "limit": limit},
+        params=params,
     )
 
 
@@ -143,6 +152,34 @@ async def create_portal_secret(
 ) -> Any:
     """Create secret in secrets_agent."""
     return await proxy_request("POST", "/v1/secrets", json_data=payload.model_dump())
+
+
+@router.get("/audit", response_model=list[dict[str, Any]])
+async def list_portal_secret_audit(
+    service_id: str | None = Query(None),
+    tenant_id: str | None = Query(None),
+    env: str | None = Query(None),
+    secret_alias: str | None = Query(None),
+    action: str | None = Query(None),
+    result: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(RequireRole(["admin", "BreakGlass"])),
+) -> Any:
+    """Query secret audit logs via secrets_agent proxy."""
+    params = {
+        "service_id": service_id,
+        "tenant_id": tenant_id,
+        "env": env,
+        "secret_alias": secret_alias,
+        "action": action,
+        "result": result,
+        "limit": limit,
+        "offset": offset,
+    }
+    # Filter out None values
+    params = {k: v for k, v in params.items() if v is not None}
+    return await proxy_request("GET", "/v1/audit", params=params)
 
 
 @router.get("/{id_or_alias}", response_model=dict[str, Any])
@@ -184,10 +221,16 @@ async def rotate_portal_secret(
 @router.delete("/{secret_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_portal_secret(
     secret_id: str,
+    payload: PortalSecretDeleteRequest,
     current_user: User = Depends(RequireRole(["admin"])),
 ) -> Response:
-    """Delete secret."""
-    await proxy_request("DELETE", f"/v1/secrets/{secret_id}")
+    """Delete secret. Requires password verification and reason."""
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Break-Glass password"
+        )
+
+    await proxy_request("DELETE", f"/v1/secrets/{secret_id}", params={"reason": payload.reason})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -203,7 +246,9 @@ async def reveal_portal_secret(
     """
     # 1. Password re-auth
     if not verify_password(payload.password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Break-Glass password"
+        )
 
     # 2. Proxy read request to secrets_agent
     # secrets_agent/v1/secrets/{id}/read expects SecretReadRequest(reason=...)
@@ -220,31 +265,3 @@ async def reveal_portal_secret(
         value=resp_data["value"],
         expires_in_seconds=120,
     )
-
-
-@router.get("/audit", response_model=list[dict[str, Any]])
-async def list_portal_secret_audit(
-    service_id: str | None = Query(None),
-    tenant_id: str | None = Query(None),
-    env: str | None = Query(None),
-    secret_alias: str | None = Query(None),
-    action: str | None = Query(None),
-    result: str | None = Query(None),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    current_user: User = Depends(RequireRole(["admin", "BreakGlass"])),
-) -> Any:
-    """Query secret audit logs via secrets_agent proxy."""
-    params = {
-        "service_id": service_id,
-        "tenant_id": tenant_id,
-        "env": env,
-        "secret_alias": secret_alias,
-        "action": action,
-        "result": result,
-        "limit": limit,
-        "offset": offset,
-    }
-    # Filter out None values
-    params = {k: v for k, v in params.items() if v is not None}
-    return await proxy_request("GET", "/v1/audit", params=params)

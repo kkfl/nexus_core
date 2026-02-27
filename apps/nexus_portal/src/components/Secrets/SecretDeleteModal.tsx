@@ -1,7 +1,6 @@
-import { Modal, Input, Typography, message } from 'antd';
+import { Modal, Form, Input, Typography, message } from 'antd';
 import { useMutation } from '@tanstack/react-query';
-import axios from 'axios';
-import { useState } from 'react';
+import { apiClient } from '../../api/client';
 
 const { Text } = Typography;
 
@@ -13,12 +12,13 @@ interface Props {
 }
 
 export default function SecretDeleteModal({ secret, open, onClose, onSuccess }: Props) {
-    const [confirmAlias, setConfirmAlias] = useState('');
+    const [form] = Form.useForm();
 
     const mutation = useMutation({
-        mutationFn: () => axios.delete(`/api/portal/secrets/${secret.id}`),
+        mutationFn: (values: any) => apiClient.delete(`/portal/secrets/${secret.id}`, { data: values }),
         onSuccess: () => {
             message.success('Secret deleted');
+            form.resetFields();
             onSuccess();
         },
         onError: (err: any) => {
@@ -27,34 +27,54 @@ export default function SecretDeleteModal({ secret, open, onClose, onSuccess }: 
     });
 
     const handleOk = () => {
-        if (confirmAlias !== secret.alias) {
-            message.error('Alias does not match');
-            return;
-        }
-        mutation.mutate();
+        form.validateFields().then(values => {
+            if (values.confirm_alias !== secret.alias) {
+                message.error('Alias confirmation does not match');
+                return;
+            }
+            mutation.mutate({ password: values.password, reason: values.reason });
+        });
     };
 
     return (
         <Modal
-            title="Confirm Deletion"
+            title="Break-Glass Delete Required"
             open={open}
             onOk={handleOk}
             onCancel={onClose}
             confirmLoading={mutation.isPending}
             okText="Delete Permanently"
-            okButtonProps={{ danger: true, disabled: confirmAlias !== secret.alias }}
+            okButtonProps={{ danger: true }}
         >
             <div style={{ marginBottom: 16 }}>
                 <Text>Are you sure you want to delete <Text strong>{secret.alias}</Text>? This action is permanent and will be logged.</Text>
             </div>
-            <div style={{ marginBottom: 8 }}>
-                <Text type="secondary">Type the alias to confirm:</Text>
-            </div>
-            <Input
-                placeholder={secret.alias}
-                value={confirmAlias}
-                onChange={(e) => setConfirmAlias(e.target.value)}
-            />
+
+            <Form form={form} layout="vertical" autoComplete="off">
+                <Form.Item
+                    name="confirm_alias"
+                    label="Type the alias to confirm:"
+                    rules={[{ required: true, message: 'Please confirm the alias' }]}
+                >
+                    <Input placeholder={secret.alias} autoComplete="off" />
+                </Form.Item>
+
+                <Form.Item
+                    name="password"
+                    label="Re-authenticate with Password"
+                    rules={[{ required: true, message: 'Password is required for deletion' }]}
+                >
+                    <Input.Password placeholder="Enter your password" autoComplete="new-password" />
+                </Form.Item>
+
+                <Form.Item
+                    name="reason"
+                    label="Reason for Deletion"
+                    rules={[{ required: true, message: 'Audit reason is required' }]}
+                >
+                    <Input.TextArea rows={2} placeholder="e.g. Migrated to new API key" />
+                </Form.Item>
+            </Form>
         </Modal>
     );
 }

@@ -1,6 +1,6 @@
 import { Table, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 
 const { Text } = Typography;
 
@@ -8,7 +8,7 @@ export default function SecretAuditTable() {
     const { data: audits, isLoading } = useQuery({
         queryKey: ['portal-secrets-audit'],
         queryFn: async () => {
-            const resp = await axios.get('/api/portal/secrets/audit');
+            const resp = await apiClient.get('/portal/secrets/audit');
             return resp.data;
         },
     });

@@ -48,7 +48,7 @@ export default function Dashboard() {
                 </Col>
                 <Col span={8}>
                     <Card>
-                        <Statistic title="KB Documents" value="?" loading={false} />
+                        <Statistic title="KB Documents" value={0} loading={false} />
                     </Card>
                 </Col>
             </Row>
