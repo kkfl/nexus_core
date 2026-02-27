@@ -42,3 +42,22 @@ class EmailAttachment(Base):
     content_type = Column(String(256), nullable=True)
     size_bytes = Column(Integer, nullable=True)
     object_key = Column(String(512), nullable=True)
+
+
+class MailboxStatSnapshot(Base):
+    """Cached mailbox stats from batch doveadm collection."""
+
+    __tablename__ = "mailbox_stat_snapshots"
+
+    email = Column(String(512), primary_key=True)
+    domain = Column(String(256), nullable=True)
+    quota_mb = Column(Integer, default=0)
+    used_mb = Column(Integer, default=0)  # stored as float * 10 for precision
+    used_pct = Column(Integer, default=0)
+    free_mb = Column(Integer, default=0)
+    free_pct = Column(Integer, default=0)
+    unread_count = Column(Integer, default=0)
+    total_count = Column(Integer, default=0)
+    last_received_at = Column(String(256), nullable=True)
+    collected_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(String(64), default="doveadm")

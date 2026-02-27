@@ -28,7 +28,7 @@ def _build_ssh_client(host, port, username, pem):
     return ssh
 
 
-def _sync_bridge(host, port, username, pem, script, args):
+def _sync_bridge(host, port, username, pem, script, args, cmd_timeout):
     """Run a bridge command synchronously (runs in thread)."""
     cmd_parts = [f"sudo /opt/nexus-mail-admin/{script}"]
     if args:
@@ -39,7 +39,7 @@ def _sync_bridge(host, port, username, pem, script, args):
 
     ssh = _build_ssh_client(host, port, username, pem)
     try:
-        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=15)
+        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=cmd_timeout)
         out = stdout.read().decode().strip()
         err = stderr.read().decode().strip()
         exit_code = stdout.channel.recv_exit_status()
@@ -55,7 +55,7 @@ def _sync_bridge(host, port, username, pem, script, args):
         ssh.close()
 
 
-async def run_bridge_command(script: str, args: list[str] | None = None) -> dict:
+async def run_bridge_command(script: str, args: list[str] | None = None, timeout: int = 15) -> dict:
     """
     Run a nexus-mail-admin script via sudo on mx.
     Returns parsed JSON from stdout.
@@ -66,7 +66,7 @@ async def run_bridge_command(script: str, args: list[str] | None = None) -> dict
     pem = await vault.get_secret("ssh.iredmail.private_key_pem")
 
     logger.info("ssh_bridge_exec", script=script, args_count=len(args or []))
-    return await asyncio.to_thread(_sync_bridge, host, port, username, pem, script, args)
+    return await asyncio.to_thread(_sync_bridge, host, port, username, pem, script, args, timeout)
 
 
 def _sync_ssh_check(host, port, username, pem):

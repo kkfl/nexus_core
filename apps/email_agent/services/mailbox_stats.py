@@ -1,202 +1,223 @@
 """
-Mailbox stats service — uses SSH doveadm commands to fetch quota and unread.
+Mailbox stats service — batch collection via single SSH bridge call.
 
-All commands are read-only and run via the existing SSH bridge.
-Results are cached with a configurable TTL.
+Replaces the old N-calls-per-mailbox approach with:
+1) One SSH call to /opt/nexus-mail-admin/batch_mailbox_stats
+2) Upsert results into Postgres mailbox_stat_snapshots table
+3) Serve from cache (DB) with configurable TTL
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import re
 import time
+from datetime import UTC, datetime
 
 import structlog
+from sqlalchemy import text
 
-from apps.email_agent.client import vault
+from apps.email_agent.client.ssh_bridge import run_bridge_command
 from apps.email_agent.config import config
+from apps.email_agent.store.database import async_session
 
 logger = structlog.get_logger(__name__)
 
-# ── In-memory cache ──────────────────────────────────────────────────────────
-_stats_cache: dict[str, tuple[float, dict]] = {}
+# ── In-memory cache for bulk stats ───────────────────────────────────────────
+_bulk_cache: dict | None = None
+_bulk_cache_ts: float = 0
+_refresh_lock = asyncio.Lock()
+_refreshing = False
 
 
-def _cache_get(key: str) -> dict | None:
-    """Return cached value if still fresh, else None."""
-    if key in _stats_cache:
-        ts, data = _stats_cache[key]
-        if time.time() - ts < config.stats_cache_ttl_seconds:
-            return data
-    return None
+async def _ensure_table() -> None:
+    """Auto-create the snapshots table if it doesn't exist."""
+    async with async_session() as db:
+        await db.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS mailbox_stat_snapshots (
+                    email       VARCHAR(512) PRIMARY KEY,
+                    domain      VARCHAR(256),
+                    quota_mb    INTEGER DEFAULT 0,
+                    used_mb     INTEGER DEFAULT 0,
+                    used_pct    INTEGER DEFAULT 0,
+                    free_mb     INTEGER DEFAULT 0,
+                    free_pct    INTEGER DEFAULT 0,
+                    unread_count INTEGER DEFAULT 0,
+                    total_count  INTEGER DEFAULT 0,
+                    last_received_at VARCHAR(256),
+                    collected_at TIMESTAMPTZ,
+                    source      VARCHAR(64) DEFAULT 'doveadm'
+                )
+            """)
+        )
+        await db.commit()
 
 
-def _cache_set(key: str, data: dict) -> None:
-    _stats_cache[key] = (time.time(), data)
+_table_ensured = False
 
 
-# ── SSH helpers ──────────────────────────────────────────────────────────────
+async def _maybe_ensure_table() -> None:
+    global _table_ensured
+    if not _table_ensured:
+        await _ensure_table()
+        _table_ensured = True
 
 
-def _build_ssh():
-    """Build paramiko SSH client (synchronous)."""
-    import io
-
-    import paramiko
-
-    host = _ssh_creds["host"]
-    port = _ssh_creds["port"]
-    username = _ssh_creds["username"]
-    pem = _ssh_creds["pem"]
-
-    pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(pem))
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(host, port=port, username=username, pkey=pkey, timeout=10)
-    return ssh
+# ── Refresh: single SSH call + DB upsert ─────────────────────────────────────
 
 
-# Thread-local creds resolved from vault before thread dispatch
-_ssh_creds: dict = {}
-
-
-async def _resolve_ssh_creds() -> dict:
-    """Resolve SSH credentials from vault."""
-    return {
-        "host": await vault.get_secret("ssh.iredmail.host"),
-        "port": int(await vault.get_secret("ssh.iredmail.port")),
-        "username": await vault.get_secret("ssh.iredmail.username"),
-        "pem": await vault.get_secret("ssh.iredmail.private_key_pem"),
-    }
-
-
-def _run_ssh_cmd(cmd: str) -> str:
-    """Run a single SSH command and return stdout (synchronous)."""
-    ssh = _build_ssh()
-    try:
-        _stdin, stdout, stderr = ssh.exec_command(cmd, timeout=15)
-        out = stdout.read().decode().strip()
-        return out
-    finally:
-        ssh.close()
-
-
-# ── Quota stats via doveadm ──────────────────────────────────────────────────
-
-
-def _parse_quota(output: str, email: str, quota_mb: int) -> dict:
-    """Parse doveadm quota get output.
-
-    Example output:
-    user@domain  STORAGE  1234  102400  -  MESSAGE  56  -  -
+async def refresh_stats() -> list[dict]:
     """
-    used_kb = 0
-    for line in output.splitlines():
-        line = line.strip()
-        if not line or line.startswith("Quota"):
-            continue
-        # Try to extract STORAGE usage in KB
-        parts = re.split(r"\s+", line)
-        # Format: name  type  value  limit  %
-        for i, p in enumerate(parts):
-            if p == "STORAGE" and i + 1 < len(parts):
-                with contextlib.suppress(ValueError):
-                    used_kb = int(parts[i + 1])
-                break
+    Fetch stats for ALL mailboxes in one SSH call, upsert into Postgres.
+    Returns the fetched stats list.
+    """
+    global _bulk_cache, _bulk_cache_ts, _refreshing
 
-    used_mb = round(used_kb / 1024, 1)
-    free_mb = max(0, round(quota_mb - used_mb, 1))
-    used_pct = round((used_mb / quota_mb * 100) if quota_mb > 0 else 0, 1)
-    free_pct = round(100 - used_pct, 1)
+    _refreshing = True
+    try:
+        await _maybe_ensure_table()
+
+        # Single SSH call to batch script (increased timeout via bridge)
+        result = await run_bridge_command("batch_mailbox_stats", timeout=120)
+
+        if not isinstance(result, list):
+            logger.error("batch_stats_bad_response", result_type=type(result).__name__)
+            return []
+
+        logger.info("batch_stats_fetched", count=len(result))
+
+        # Upsert into Postgres
+        async with async_session() as db:
+            for row in result:
+                email = row.get("email", "")
+                if not email:
+                    continue
+                await db.execute(
+                    text("""
+                        INSERT INTO mailbox_stat_snapshots
+                            (email, domain, quota_mb, used_mb, used_pct, free_mb, free_pct,
+                             unread_count, total_count, last_received_at, collected_at, source)
+                        VALUES
+                            (:email, :domain, :quota_mb, :used_mb, :used_pct, :free_mb, :free_pct,
+                             :unread_count, :total_count, :last_received_at, :collected_at, 'doveadm')
+                        ON CONFLICT (email) DO UPDATE SET
+                            domain = EXCLUDED.domain,
+                            quota_mb = EXCLUDED.quota_mb,
+                            used_mb = EXCLUDED.used_mb,
+                            used_pct = EXCLUDED.used_pct,
+                            free_mb = EXCLUDED.free_mb,
+                            free_pct = EXCLUDED.free_pct,
+                            unread_count = EXCLUDED.unread_count,
+                            total_count = EXCLUDED.total_count,
+                            last_received_at = EXCLUDED.last_received_at,
+                            collected_at = EXCLUDED.collected_at
+                    """),
+                    {
+                        "email": email,
+                        "domain": row.get("domain", ""),
+                        "quota_mb": int(row.get("quota_mb", 0)),
+                        "used_mb": int(float(row.get("used_mb", 0))),
+                        "used_pct": int(float(row.get("used_pct", 0))),
+                        "free_mb": int(float(row.get("free_mb", 0))),
+                        "free_pct": int(float(row.get("free_pct", 0))),
+                        "unread_count": int(row.get("unread_count", 0)),
+                        "total_count": int(row.get("total_count", 0)),
+                        "last_received_at": row.get("last_received_at"),
+                        "collected_at": row.get(
+                            "collected_at", datetime.now(UTC).isoformat()
+                        ),
+                    },
+                )
+            await db.commit()
+
+        # Update in-memory cache
+        _bulk_cache = result
+        _bulk_cache_ts = time.time()
+
+        return result
+    except Exception as e:
+        logger.error("batch_stats_refresh_error", error=str(e)[:200])
+        return []
+    finally:
+        _refreshing = False
+
+
+# ── Read from cache ──────────────────────────────────────────────────────────
+
+
+async def get_bulk_stats_cached() -> dict:
+    """
+    Return cached bulk stats.
+    If cache is stale, triggers background refresh and returns stale data.
+    Returns: {stats: [...], collected_at: ..., stale: bool, refreshing: bool}
+    """
+    global _bulk_cache, _bulk_cache_ts
+
+    await _maybe_ensure_table()
+
+    ttl = config.stats_cache_ttl_seconds
+    now = time.time()
+    is_stale = (now - _bulk_cache_ts) > ttl
+
+    # If in-memory cache is empty, try loading from DB
+    if _bulk_cache is None:
+        async with async_session() as db:
+            rows = await db.execute(text("SELECT * FROM mailbox_stat_snapshots ORDER BY email"))
+            db_rows = rows.mappings().all()
+            if db_rows:
+                _bulk_cache = [dict(r) for r in db_rows]
+                # Convert collected_at to string for JSON
+                for r in _bulk_cache:
+                    if isinstance(r.get("collected_at"), datetime):
+                        r["collected_at"] = r["collected_at"].isoformat()
+                _bulk_cache_ts = now
+                is_stale = False
+
+    # If still empty or stale, trigger background refresh
+    if (_bulk_cache is None or is_stale) and not _refreshing:
+        asyncio.create_task(_background_refresh())
+
+    collected_at = None
+    if _bulk_cache and len(_bulk_cache) > 0:
+        collected_at = _bulk_cache[0].get("collected_at")
 
     return {
-        "email": email,
-        "quota_mb": quota_mb,
-        "used_mb": used_mb,
-        "used_pct": used_pct,
-        "free_mb": free_mb,
-        "free_pct": free_pct,
+        "stats": _bulk_cache or [],
+        "collected_at": collected_at,
+        "stale": is_stale,
+        "refreshing": _refreshing,
+        "count": len(_bulk_cache or []),
     }
 
 
-def _sync_get_stats(email: str, quota_mb: int) -> dict:
-    """Synchronous: get quota + unread + total for a mailbox."""
-    # Quota
-    quota_out = _run_ssh_cmd(f"sudo doveadm quota get -u '{email}'")
-    stats = _parse_quota(quota_out, email, quota_mb)
+async def _background_refresh() -> None:
+    """Non-blocking background refresh."""
+    async with _refresh_lock:
+        if _refreshing:
+            return
+        logger.info("background_stats_refresh_started")
+        await refresh_stats()
+        logger.info("background_stats_refresh_done")
 
-    # Unread count
-    try:
-        unread_out = _run_ssh_cmd(
-            f"sudo doveadm search -u '{email}' mailbox INBOX UNSEEN 2>/dev/null | wc -l"
-        )
-        stats["unread_count"] = int(unread_out.strip()) if unread_out.strip().isdigit() else 0
-    except Exception:
-        stats["unread_count"] = 0
 
-    # Total count
-    try:
-        total_out = _run_ssh_cmd(
-            f"sudo doveadm search -u '{email}' mailbox INBOX ALL 2>/dev/null | wc -l"
-        )
-        stats["total_count"] = int(total_out.strip()) if total_out.strip().isdigit() else 0
-    except Exception:
-        stats["total_count"] = 0
-
-    # Last received — check most recent message date
-    try:
-        last_out = _run_ssh_cmd(
-            f"sudo doveadm fetch -u '{email}' 'date.received' mailbox INBOX "
-            "SAVEDSINCE 1d 2>/dev/null | head -1"
-        )
-        if last_out and "date.received" in last_out:
-            stats["last_received_at"] = last_out.split(":", 1)[-1].strip()
-        else:
-            stats["last_received_at"] = None
-    except Exception:
-        stats["last_received_at"] = None
-
-    return stats
+# ── Legacy single-mailbox (kept for per-mailbox endpoint) ────────────────────
 
 
 async def get_mailbox_stats(email: str, quota_mb: int = 0) -> dict:
-    """Get per-mailbox stats. Returns cached if fresh."""
-    cached = _cache_get(f"stats:{email}")
-    if cached:
-        return cached
-
-    global _ssh_creds
-    _ssh_creds = await _resolve_ssh_creds()
-
-    result = await asyncio.to_thread(_sync_get_stats, email, quota_mb)
-    _cache_set(f"stats:{email}", result)
-    logger.info("mailbox_stats", email=email, used_mb=result.get("used_mb"))
-    return result
-
-
-async def get_bulk_stats(mailboxes: list[dict]) -> list[dict]:
-    """Get stats for multiple mailboxes. Uses cache, batches SSH calls."""
-    results = []
-    for mbox in mailboxes:
-        email = mbox.get("email", "")
-        quota = mbox.get("quota", 0)
-        try:
-            stats = await get_mailbox_stats(email, quota)
-            results.append(stats)
-        except Exception as e:
-            logger.warning("bulk_stats_error", email=email, error=str(e)[:100])
-            results.append(
-                {
-                    "email": email,
-                    "quota_mb": quota,
-                    "used_mb": 0,
-                    "used_pct": 0,
-                    "free_mb": quota,
-                    "free_pct": 100,
-                    "unread_count": 0,
-                    "total_count": 0,
-                    "last_received_at": None,
-                }
-            )
-    return results
+    """Get stats for a single mailbox from cache."""
+    cached = await get_bulk_stats_cached()
+    for s in cached.get("stats", []):
+        if s.get("email") == email:
+            return s
+    # Fall back to empty
+    return {
+        "email": email,
+        "quota_mb": quota_mb,
+        "used_mb": 0,
+        "used_pct": 0,
+        "free_mb": 0,
+        "free_pct": 100,
+        "unread_count": 0,
+        "total_count": 0,
+        "last_received_at": None,
+    }

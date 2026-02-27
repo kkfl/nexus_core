@@ -1,0 +1,125 @@
+#!/bin/bash
+# /opt/nexus-mail-admin/batch_mailbox_stats
+# Collect quota, unread, total, last-received for ALL mailboxes in one shot.
+# Output: JSON array of stat objects.
+# Must run as root (via sudo by nexusops).
+#
+# Usage: sudo /opt/nexus-mail-admin/batch_mailbox_stats [domain_filter]
+
+set -euo pipefail
+
+LOGFILE="/var/log/nexus-mail-admin.log"
+START=$(date +%s)
+DOMAIN_FILTER="${1:-}"
+
+log() { echo "$(date -Is) batch_mailbox_stats: $*" >> "$LOGFILE"; }
+log "started domain_filter='${DOMAIN_FILTER}'"
+
+# Get all users (one per line)
+if [ -n "$DOMAIN_FILTER" ]; then
+    USERS=$(doveadm user "*@${DOMAIN_FILTER}" 2>/dev/null || true)
+else
+    USERS=$(doveadm user '*' 2>/dev/null || true)
+fi
+
+if [ -z "$USERS" ]; then
+    echo "[]"
+    log "no users found"
+    exit 0
+fi
+
+COLLECTED_AT=$(date -Is)
+FIRST=true
+echo "["
+
+while IFS= read -r USER; do
+    [ -z "$USER" ] && continue
+
+    DOMAIN="${USER#*@}"
+
+    # Quota: doveadm quota get -u <user>
+    # Output lines like:
+    #   Quota name  Type    Value  Limit  %
+    #   User quota  STORAGE 1234   102400 1
+    #   User quota  MESSAGE 56     -      -
+    QUOTA_MB=0
+    USED_KB=0
+    QUOTA_OUT=$(doveadm quota get -u "$USER" 2>/dev/null || true)
+    if [ -n "$QUOTA_OUT" ]; then
+        # Extract STORAGE line
+        STORAGE_LINE=$(echo "$QUOTA_OUT" | grep -i "STORAGE" | head -1 || true)
+        if [ -n "$STORAGE_LINE" ]; then
+            # Fields: name type value limit %
+            USED_KB=$(echo "$STORAGE_LINE" | awk '{for(i=1;i<=NF;i++){if($i=="STORAGE"){print $(i+1);exit}}}')
+            LIMIT_KB=$(echo "$STORAGE_LINE" | awk '{for(i=1;i<=NF;i++){if($i=="STORAGE"){print $(i+2);exit}}}')
+            USED_KB=${USED_KB:-0}
+            LIMIT_KB=${LIMIT_KB:-0}
+            # Convert KB to MB
+            if [ "$LIMIT_KB" != "-" ] && [ "$LIMIT_KB" != "0" ] 2>/dev/null; then
+                QUOTA_MB=$(( LIMIT_KB / 1024 ))
+            fi
+        fi
+    fi
+
+    # Mailbox status: messages + unseen in INBOX
+    MESSAGES=0
+    UNSEEN=0
+    STATUS_OUT=$(doveadm mailbox status -u "$USER" messages unseen INBOX 2>/dev/null || true)
+    if [ -n "$STATUS_OUT" ]; then
+        # Output: INBOX messages=42 unseen=3
+        MESSAGES=$(echo "$STATUS_OUT" | grep -oP 'messages=\K[0-9]+' || echo 0)
+        UNSEEN=$(echo "$STATUS_OUT" | grep -oP 'unseen=\K[0-9]+' || echo 0)
+    fi
+
+    # Calculate derived values
+    USED_KB=${USED_KB:-0}
+    # Handle non-numeric used_kb
+    if ! [[ "$USED_KB" =~ ^[0-9]+$ ]]; then USED_KB=0; fi
+    USED_MB=$(awk "BEGIN{printf \"%.1f\", $USED_KB/1024}")
+    if [ "$QUOTA_MB" -gt 0 ] 2>/dev/null; then
+        USED_PCT=$(awk "BEGIN{printf \"%.1f\", $USED_KB/1024/$QUOTA_MB*100}")
+        FREE_MB=$(awk "BEGIN{v=$QUOTA_MB-$USED_KB/1024; if(v<0)v=0; printf \"%.1f\",v}")
+        FREE_PCT=$(awk "BEGIN{printf \"%.1f\", 100-$USED_KB/1024/$QUOTA_MB*100}")
+    else
+        USED_PCT="0.0"
+        FREE_MB="0.0"
+        FREE_PCT="100.0"
+    fi
+
+    # Last received: best-effort from most recent INBOX message
+    LAST_RECEIVED="null"
+    LAST_OUT=$(doveadm fetch -u "$USER" "date.received" mailbox INBOX 2>/dev/null | tail -1 || true)
+    if [ -n "$LAST_OUT" ] && echo "$LAST_OUT" | grep -q "date.received"; then
+        LAST_VAL=$(echo "$LAST_OUT" | sed 's/date.received: //')
+        LAST_RECEIVED="\"${LAST_VAL}\""
+    fi
+
+    # Output JSON object
+    if [ "$FIRST" = true ]; then
+        FIRST=false
+    else
+        echo ","
+    fi
+    cat <<EOF
+  {
+    "email": "$USER",
+    "domain": "$DOMAIN",
+    "quota_mb": $QUOTA_MB,
+    "used_mb": $USED_MB,
+    "used_pct": $USED_PCT,
+    "free_mb": $FREE_MB,
+    "free_pct": $FREE_PCT,
+    "unread_count": $UNSEEN,
+    "total_count": $MESSAGES,
+    "last_received_at": $LAST_RECEIVED,
+    "collected_at": "$COLLECTED_AT"
+  }
+EOF
+
+done <<< "$USERS"
+
+echo ""
+echo "]"
+
+ELAPSED=$(( $(date +%s) - START ))
+log "done users=$(echo "$USERS" | wc -l) elapsed=${ELAPSED}s"

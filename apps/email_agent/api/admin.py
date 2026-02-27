@@ -4,7 +4,7 @@ email_agent — admin endpoints (SSH bridge to mx).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
 from apps.email_agent.auth.identity import verify_service_identity
 from apps.email_agent.client.ssh_bridge import run_bridge_command
@@ -16,51 +16,52 @@ from apps.email_agent.schemas import (
     DisableMailboxRequest,
     MailboxInfo,
     MailboxStats,
-    MailboxWithStats,
     ServerStats,
     SetPasswordRequest,
 )
-from apps.email_agent.services.mailbox_stats import get_bulk_stats, get_mailbox_stats
+from apps.email_agent.services.mailbox_stats import (
+    get_bulk_stats_cached,
+    get_mailbox_stats,
+    refresh_stats,
+)
 from apps.email_agent.services.server_stats import get_server_stats
 
 router = APIRouter(prefix="/email/admin", tags=["admin"])
 
 
-@router.get("/mailbox/list", response_model=list[MailboxInfo] | list[MailboxWithStats])
+@router.get("/mailbox/list", response_model=list[MailboxInfo])
 async def list_mailboxes(
-    include_stats: bool = Query(False, alias="include_stats"),
     _identity: str = Depends(verify_service_identity),
 ):
-    """List all mailboxes via SSH bridge. Optionally include stats."""
+    """List all mailboxes via SSH bridge (fast, no stats)."""
     result = await run_bridge_command("list_mailboxes")
-    if not isinstance(result, list):
-        return []
+    if isinstance(result, list):
+        return [MailboxInfo(**m) for m in result]
+    return []
 
-    mailboxes = [MailboxInfo(**m) for m in result]
 
-    if not include_stats:
-        return mailboxes
+@router.get("/mailbox/stats/bulk")
+async def bulk_stats(
+    _identity: str = Depends(verify_service_identity),
+):
+    """
+    Return cached bulk mailbox stats.
+    If stale, triggers background refresh and returns cached data + refreshing flag.
+    """
+    result = await get_bulk_stats_cached()
+    # Add readable flag per mailbox
+    for s in result.get("stats", []):
+        s["readable"] = config.is_mailbox_readable(s.get("email", ""))
+    return result
 
-    # Fetch stats for all mailboxes (uses cache)
-    stats_list = await get_bulk_stats([{"email": m.email, "quota": m.quota} for m in mailboxes])
-    stats_by_email = {s["email"]: s for s in stats_list}
 
-    enriched = []
-    for m in mailboxes:
-        s = stats_by_email.get(m.email, {})
-        enriched.append(
-            MailboxWithStats(
-                **m.model_dump(),
-                used_mb=s.get("used_mb", 0),
-                used_pct=s.get("used_pct", 0),
-                free_pct=s.get("free_pct", 100),
-                unread_count=s.get("unread_count", 0),
-                total_count=s.get("total_count", 0),
-                last_received_at=s.get("last_received_at"),
-                readable=config.is_mailbox_readable(m.email),
-            )
-        )
-    return enriched
+@router.post("/mailbox/stats/refresh")
+async def trigger_refresh(
+    _identity: str = Depends(verify_service_identity),
+):
+    """Force-refresh mailbox stats now (admin only, blocking)."""
+    stats = await refresh_stats()
+    return {"ok": True, "count": len(stats)}
 
 
 @router.get("/mailbox/{email_addr}/stats", response_model=MailboxStats)
@@ -68,7 +69,7 @@ async def mailbox_stats(
     email_addr: str,
     _identity: str = Depends(verify_service_identity),
 ):
-    """Get stats for a single mailbox."""
+    """Get stats for a single mailbox (from cache)."""
     stats = await get_mailbox_stats(email_addr)
     return MailboxStats(**stats)
 
