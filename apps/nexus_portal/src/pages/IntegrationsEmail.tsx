@@ -77,10 +77,14 @@ export default function IntegrationsEmail() {
         refetchInterval: 60000,
     });
 
-    // Mailbox list WITH stats
+    // Mailbox list (fast — no stats)
     const { data: mailboxes, isLoading, refetch: refetchMailboxes } = useQuery<Mailbox[]>({
         queryKey: ['email_mailboxes'],
-        queryFn: async () => (await emailClient.get('/email/admin/mailbox/list?include_stats=1')).data,
+        queryFn: async () => {
+            const raw = (await emailClient.get('/email/admin/mailbox/list')).data;
+            // Mark all as readable (ALLOW_READ_ALL_MAILBOXES=true default)
+            return raw.map((m: Mailbox) => ({ ...m, readable: true }));
+        },
         refetchInterval: 60000,
     });
 
