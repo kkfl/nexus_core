@@ -66,10 +66,10 @@ async def _maybe_ensure_table() -> None:
 # ── Refresh: single SSH call + DB upsert ─────────────────────────────────────
 
 
-async def refresh_stats() -> list[dict]:
+async def refresh_stats() -> tuple[list[dict], str | None]:
     """
     Fetch stats for ALL mailboxes in one SSH call, upsert into Postgres.
-    Returns the fetched stats list.
+    Returns (stats_list, error_message).
     """
     global _bulk_cache, _bulk_cache_ts, _refreshing
 
@@ -81,8 +81,9 @@ async def refresh_stats() -> list[dict]:
         result = await run_bridge_command("batch_mailbox_stats", timeout=120)
 
         if not isinstance(result, list):
-            logger.error("batch_stats_bad_response", result_type=type(result).__name__)
-            return []
+            err_msg = str(result)[:500]
+            logger.error("batch_stats_bad_response", result_type=type(result).__name__, detail=err_msg)
+            return [], f"Bridge returned {type(result).__name__}: {err_msg}"
 
         logger.info("batch_stats_fetched", count=len(result))
 
@@ -123,8 +124,8 @@ async def refresh_stats() -> list[dict]:
                         "unread_count": int(row.get("unread_count", 0)),
                         "total_count": int(row.get("total_count", 0)),
                         "last_received_at": row.get("last_received_at"),
-                        "collected_at": row.get(
-                            "collected_at", datetime.now(UTC).isoformat()
+                        "collected_at": datetime.fromisoformat(
+                            row.get("collected_at", datetime.now(UTC).isoformat())
                         ),
                     },
                 )
@@ -134,10 +135,10 @@ async def refresh_stats() -> list[dict]:
         _bulk_cache = result
         _bulk_cache_ts = time.time()
 
-        return result
+        return result, None
     except Exception as e:
         logger.error("batch_stats_refresh_error", error=str(e)[:200])
-        return []
+        return [], f"Exception: {e!s}"
     finally:
         _refreshing = False
 

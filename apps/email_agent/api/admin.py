@@ -60,8 +60,8 @@ async def trigger_refresh(
     _identity: str = Depends(verify_service_identity),
 ):
     """Force-refresh mailbox stats now (admin only, blocking)."""
-    stats = await refresh_stats()
-    return {"ok": True, "count": len(stats)}
+    stats, error = await refresh_stats()
+    return {"ok": error is None, "count": len(stats), "error": error}
 
 
 @router.get("/mailbox/{email_addr}/stats", response_model=MailboxStats)
