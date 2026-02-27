@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from apps.email_agent.api.admin import router as admin_router
 from apps.email_agent.api.health import router as health_router
 from apps.email_agent.api.inbox import router as inbox_router
+from apps.email_agent.api.mailbox import router as mailbox_router
 from apps.email_agent.api.send import router as send_router
 from apps.email_agent.config import config
 
@@ -35,7 +36,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="Nexus Email Agent",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
     docs_url="/docs" if config.enable_docs else None,
     redoc_url="/redoc" if config.enable_docs else None,
@@ -46,6 +47,7 @@ app = FastAPI(
 app.include_router(send_router)
 app.include_router(inbox_router)
 app.include_router(admin_router)
+app.include_router(mailbox_router)
 app.include_router(health_router)
 
 
@@ -64,7 +66,7 @@ async def request_middleware(request: Request, call_next):
 # ─── Health + Metrics ─────────────────────────────────────────────────────────
 @app.get("/healthz", tags=["ops"])
 async def healthz():
-    return {"status": "ok", "service": "email-agent", "version": "1.0.0"}
+    return {"status": "ok", "service": "email-agent", "version": "2.0.0"}
 
 
 @app.get("/readyz", tags=["ops"])
@@ -96,7 +98,7 @@ async def metrics():
 async def capabilities():
     return {
         "service": "email-agent",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "integration": "mx.gsmcall.com",
         "capabilities": [
             "email.send",
@@ -109,6 +111,14 @@ async def capabilities():
             "email.admin.mailbox.password",
             "email.admin.mailbox.disable",
             "email.admin.alias.add",
+            "email.admin.mailbox.stats",
+            "email.admin.server.stats",
+            "email.mailbox.messages",
+            "email.mailbox.message.read",
+            "email.mailbox.message.raw",
+            "email.mailbox.message.attachment",
+            "email.mailbox.message.mark_read",
+            "email.mailbox.message.mark_unread",
             "email.health",
         ],
     }

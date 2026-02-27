@@ -1,7 +1,8 @@
-import { Table, Button, Modal, Form, Input, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Statistic } from 'antd';
+import { Table, Button, Modal, Form, Input, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Statistic, Progress } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emailClient } from '../api/emailClient';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     MailOutlined,
     PlusOutlined,
@@ -11,6 +12,9 @@ import {
     CheckCircleOutlined,
     CloseCircleOutlined,
     ReloadOutlined,
+    InboxOutlined,
+    WarningOutlined,
+    CloudServerOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -21,6 +25,14 @@ interface Mailbox {
     active: number;
     quota: number;
     created: string;
+    // Stats fields (when include_stats=1)
+    used_mb?: number;
+    used_pct?: number;
+    free_pct?: number;
+    unread_count?: number;
+    total_count?: number;
+    last_received_at?: string;
+    readable?: boolean;
 }
 
 interface HealthStatus {
@@ -32,8 +44,17 @@ interface HealthStatus {
     ssh_detail: string | null;
 }
 
+interface ServerStats {
+    queue_total: number;
+    deferred: number;
+    active: number;
+    hold: number;
+    corrupt: number;
+}
+
 export default function IntegrationsEmail() {
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
     const [createOpen, setCreateOpen] = useState(false);
     const [passwordOpen, setPasswordOpen] = useState(false);
     const [aliasOpen, setAliasOpen] = useState(false);
@@ -49,10 +70,18 @@ export default function IntegrationsEmail() {
         refetchInterval: 30000,
     });
 
-    // Mailbox list
-    const { data: mailboxes, isLoading } = useQuery<Mailbox[]>({
+    // Server stats
+    const { data: serverStats } = useQuery<ServerStats>({
+        queryKey: ['email_server_stats'],
+        queryFn: async () => (await emailClient.get('/email/admin/server/stats')).data,
+        refetchInterval: 60000,
+    });
+
+    // Mailbox list WITH stats
+    const { data: mailboxes, isLoading, refetch: refetchMailboxes } = useQuery<Mailbox[]>({
         queryKey: ['email_mailboxes'],
-        queryFn: async () => (await emailClient.get('/email/admin/mailbox/list')).data,
+        queryFn: async () => (await emailClient.get('/email/admin/mailbox/list?include_stats=1')).data,
+        refetchInterval: 60000,
     });
 
     // Mutations
@@ -88,8 +117,8 @@ export default function IntegrationsEmail() {
     });
 
     const disableMutation = useMutation({
-        mutationFn: async (email: string) =>
-            (await emailClient.post('/email/admin/mailbox/disable', { email })).data,
+        mutationFn: async (em: string) =>
+            (await emailClient.post('/email/admin/mailbox/disable', { email: em })).data,
         onSuccess: (data) => {
             if (data.ok) {
                 message.success(`Mailbox ${data.email} ${data.action}`);
@@ -119,6 +148,7 @@ export default function IntegrationsEmail() {
     // Stats
     const activeCount = mailboxes?.filter(m => m.active === 1).length || 0;
     const disabledCount = mailboxes?.filter(m => m.active === 0).length || 0;
+    const totalUnread = mailboxes?.reduce((sum, m) => sum + (m.unread_count || 0), 0) || 0;
     const domains = [...new Set(mailboxes?.map(m => m.domain) || [])];
 
     const statusIcon = (status: string) =>
@@ -132,7 +162,14 @@ export default function IntegrationsEmail() {
             dataIndex: 'email',
             key: 'email',
             sorter: (a: Mailbox, b: Mailbox) => a.email.localeCompare(b.email),
-            render: (email: string) => <Text strong><MailOutlined style={{ marginRight: 6 }} />{email}</Text>,
+            render: (em: string, record: Mailbox) => (
+                <Space>
+                    <Text strong><MailOutlined style={{ marginRight: 6 }} />{em}</Text>
+                    {(record.unread_count ?? 0) > 0 && (
+                        <Tag color="blue" style={{ borderRadius: 10, fontSize: 11 }}>{record.unread_count}</Tag>
+                    )}
+                </Space>
+            ),
         },
         {
             title: 'Domain',
@@ -145,7 +182,7 @@ export default function IntegrationsEmail() {
             title: 'Status',
             dataIndex: 'active',
             key: 'active',
-            width: 100,
+            width: 90,
             render: (active: number) => (
                 <Tag color={active === 1 ? 'green' : 'red'}>
                     {active === 1 ? 'Active' : 'Disabled'}
@@ -155,25 +192,63 @@ export default function IntegrationsEmail() {
             onFilter: (value: any, record: Mailbox) => record.active === value,
         },
         {
-            title: 'Quota (MB)',
-            dataIndex: 'quota',
-            key: 'quota',
-            width: 100,
-            render: (q: number) => q > 0 ? `${q}` : '—',
+            title: 'Used',
+            key: 'used',
+            width: 120,
+            sorter: (a: Mailbox, b: Mailbox) => (a.used_pct ?? 0) - (b.used_pct ?? 0),
+            render: (_: any, record: Mailbox) => {
+                const pct = record.used_pct ?? 0;
+                const color = pct > 90 ? '#ff4d4f' : pct > 70 ? '#faad14' : '#52c41a';
+                return record.quota > 0 ? (
+                    <Tooltip title={`${record.used_mb ?? 0} MB / ${record.quota} MB`}>
+                        <Progress percent={pct} size="small" strokeColor={color} format={() => `${record.used_mb ?? 0} MB`} />
+                    </Tooltip>
+                ) : <Text type="secondary">—</Text>;
+            },
+        },
+        {
+            title: 'Unread',
+            key: 'unread',
+            width: 80,
+            sorter: (a: Mailbox, b: Mailbox) => (a.unread_count ?? 0) - (b.unread_count ?? 0),
+            render: (_: any, record: Mailbox) => {
+                const count = record.unread_count ?? 0;
+                return count > 0 ? <Text strong style={{ color: '#1677ff' }}>{count}</Text> : <Text type="secondary">0</Text>;
+            },
+        },
+        {
+            title: 'Last Received',
+            key: 'last_received',
+            width: 150,
+            render: (_: any, record: Mailbox) =>
+                record.last_received_at ? (
+                    <Text type="secondary" style={{ fontSize: 12 }}>{record.last_received_at}</Text>
+                ) : <Text type="secondary">—</Text>,
         },
         {
             title: 'Created',
             dataIndex: 'created',
             key: 'created',
-            width: 180,
-            render: (date: string) => date ? new Date(date).toLocaleDateString() : '—',
+            width: 110,
+            render: (date: string) => date ? <Text type="secondary" style={{ fontSize: 12 }}>{new Date(date).toLocaleDateString()}</Text> : '—',
         },
         {
             title: 'Actions',
             key: 'actions',
-            width: 200,
+            width: 180,
             render: (_: any, record: Mailbox) => (
-                <Space>
+                <Space size={4}>
+                    {record.readable && (
+                        <Tooltip title="Open Inbox">
+                            <Button
+                                size="small"
+                                type="primary"
+                                ghost
+                                icon={<InboxOutlined />}
+                                onClick={() => navigate(`/integrations/email/mailbox/${encodeURIComponent(record.email)}`)}
+                            />
+                        </Tooltip>
+                    )}
                     <Tooltip title="Reset Password">
                         <Button
                             size="small"
@@ -207,29 +282,55 @@ export default function IntegrationsEmail() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <Title level={3} style={{ margin: 0 }}>Email Administration</Title>
                 <Space>
+                    <Button icon={<ReloadOutlined />} onClick={() => { refetchMailboxes(); refetchHealth(); }}>Refresh All</Button>
                     <Button icon={<LinkOutlined />} onClick={() => setAliasOpen(true)}>Add Alias</Button>
                     <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>Create Mailbox</Button>
                 </Space>
             </div>
 
-            {/* Health + Stats */}
+            {/* Server Stats + Health */}
             <Row gutter={16} style={{ marginBottom: 20 }}>
-                <Col span={6}>
+                <Col span={4}>
                     <Card size="small">
                         <Statistic title="Total Mailboxes" value={mailboxes?.length || 0} prefix={<MailOutlined />} />
                     </Card>
                 </Col>
-                <Col span={6}>
+                <Col span={3}>
                     <Card size="small">
                         <Statistic title="Active" value={activeCount} valueStyle={{ color: '#3f8600' }} />
                     </Card>
                 </Col>
-                <Col span={6}>
+                <Col span={3}>
                     <Card size="small">
                         <Statistic title="Disabled" value={disabledCount} valueStyle={{ color: disabledCount > 0 ? '#cf1322' : undefined }} />
                     </Card>
                 </Col>
-                <Col span={6}>
+                <Col span={3}>
+                    <Card size="small">
+                        <Statistic title="Total Unread" value={totalUnread} prefix={<InboxOutlined />} valueStyle={{ color: totalUnread > 0 ? '#1677ff' : undefined }} />
+                    </Card>
+                </Col>
+                <Col span={3}>
+                    <Card size="small">
+                        <Statistic
+                            title="Mail Queue"
+                            value={serverStats?.queue_total ?? '—'}
+                            prefix={<CloudServerOutlined />}
+                            valueStyle={{ color: (serverStats?.queue_total ?? 0) > 10 ? '#faad14' : undefined }}
+                        />
+                    </Card>
+                </Col>
+                <Col span={3}>
+                    <Card size="small">
+                        <Statistic
+                            title="Deferred"
+                            value={serverStats?.deferred ?? '—'}
+                            prefix={<WarningOutlined />}
+                            valueStyle={{ color: (serverStats?.deferred ?? 0) > 0 ? '#cf1322' : undefined }}
+                        />
+                    </Card>
+                </Col>
+                <Col span={5}>
                     <Card size="small" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                         <Space direction="vertical" size={2}>
                             <Space>{statusIcon(health?.smtp || 'error')} <Text>SMTP</Text></Space>

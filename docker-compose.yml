@@ -384,6 +384,9 @@ services:
       VAULT_SERVICE_ID: email-agent
       VAULT_AGENT_KEY: ${EMAIL_VAULT_AGENT_KEY:-email-vault-key-change-me}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
+      MAILBOX_READ_ALLOWLIST: ${MAILBOX_READ_ALLOWLIST:-}
+      ALLOW_READ_ALL_MAILBOXES: ${ALLOW_READ_ALL_MAILBOXES:-true}
+      STATS_CACHE_TTL_SECONDS: ${STATS_CACHE_TTL_SECONDS:-60}
     ports:
       - "8014:8014"
     depends_on:
