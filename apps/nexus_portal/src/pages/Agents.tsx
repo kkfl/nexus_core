@@ -1,8 +1,9 @@
-import { Table, Button, Space, Tag, Modal, Form, Input, Switch, InputNumber, message, Typography } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, Switch, InputNumber, message, Typography, Card } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useState } from 'react';
+import { ApiOutlined, CheckCircleOutlined, WarningOutlined, ClockCircleOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
@@ -15,6 +16,13 @@ export default function Agents() {
     const { data: agents, isLoading } = useQuery({
         queryKey: ['agents'],
         queryFn: async () => (await apiClient.get('/agents')).data
+    });
+
+    // Fetch dashboard summary for health & heartbeat data
+    const { data: dashboardData, isLoading: healthLoading } = useQuery({
+        queryKey: ['dashboard-summary'],
+        queryFn: async () => (await apiClient.get('/brain/dashboard/summary')).data,
+        refetchInterval: 30000,
     });
 
     const createAgent = useMutation({
@@ -40,7 +48,46 @@ export default function Agents() {
         onError: (e: any) => message.error(e?.response?.data?.detail || 'Ping failed (Timeout/Error)')
     });
 
-    const columns = [
+    // --- Health & Activity columns (from dashboard summary) ---
+    const healthColumns = [
+        {
+            title: 'Agent',
+            dataIndex: 'name',
+            key: 'name',
+            render: (name: string) => <Text strong><ApiOutlined style={{ marginRight: 8, color: '#64748b' }} />{name}</Text>
+        },
+        {
+            title: 'Health Status',
+            dataIndex: 'status',
+            key: 'status',
+            width: 150,
+            render: (s: string) => {
+                const isOnline = s === 'active';
+                return (
+                    <Tag
+                        icon={isOnline ? <CheckCircleOutlined /> : <WarningOutlined />}
+                        color={isOnline ? 'success' : 'error'}
+                    >
+                        {isOnline ? 'Online' : 'Down'}
+                    </Tag>
+                );
+            }
+        },
+        {
+            title: 'Last Heartbeat',
+            dataIndex: 'last_seen_at',
+            key: 'last_seen_at',
+            render: (date: string | null) => date ? (
+                <Space>
+                    <ClockCircleOutlined style={{ color: '#94a3b8' }} />
+                    <Text type="secondary">{new Date(date).toLocaleString()}</Text>
+                </Space>
+            ) : <Text type="secondary">Never</Text>
+        },
+    ];
+
+    // --- Registry columns ---
+    const registryColumns = [
         { title: 'ID', dataIndex: 'id', key: 'id' },
         { title: 'Name', dataIndex: 'name', key: 'name' },
         { title: 'Base URL', dataIndex: 'base_url', key: 'base_url' },
@@ -61,11 +108,26 @@ export default function Agents() {
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                <Title level={3}>Agents Registry</Title>
+                <Title level={3}>Agents</Title>
                 {role !== 'reader' && <Button type="primary" onClick={() => setIsModalOpen(true)}>Register Agent</Button>}
             </div>
 
-            <Table dataSource={agents} columns={columns} rowKey="id" loading={isLoading} size="middle" />
+            {/* Health & Activity (from dashboard summary / event bus) */}
+            <Card title="Agent Health & Activity" bodyStyle={{ padding: 0 }} style={{ marginBottom: 24 }}>
+                <Table
+                    dataSource={dashboardData?.recent_activity || []}
+                    columns={healthColumns}
+                    rowKey="name"
+                    loading={healthLoading}
+                    pagination={false}
+                    size="middle"
+                />
+            </Card>
+
+            {/* Registry (legacy CRUD table) */}
+            <Card title="Agent Registry" bodyStyle={{ padding: 0 }}>
+                <Table dataSource={agents} columns={registryColumns} rowKey="id" loading={isLoading} size="middle" />
+            </Card>
 
             <Modal title="Register New Agent" open={isModalOpen} onCancel={() => setIsModalOpen(false)} onOk={() => form.submit()} confirmLoading={createAgent.isPending}>
                 <Form form={form} layout="vertical" onFinish={createAgent.mutate} initialValues={{ is_active: true, max_concurrency: 2, timeout_seconds: 30 }}>
