@@ -1,6 +1,20 @@
 version: "3.9"
 
+# ================================================================
+# Nexus Core — Production Compose
+# ================================================================
+# Usage:
+#   ./infra/prod/scripts/deploy.sh
+#
+# Or manually:
+#   docker compose -f infra/prod/docker-compose.prod.yml \
+#     --profile local_db --profile local_s3 up --build -d
+# ================================================================
+
 services:
+
+  # ── Infrastructure ──────────────────────────────────────────
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: nexus-postgres
@@ -16,7 +30,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # Do not start if managed postgres is enabled
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     profiles: [ "local_db" ]
 
   redis:
@@ -31,6 +49,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   minio:
     image: minio/minio
@@ -47,8 +66,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # Do not start if managed S3 is enabled
+    logging: *default-logging
     profiles: [ "local_s3" ]
+
+  # ── Core Services ───────────────────────────────────────────
 
   nexus-api:
     build:
@@ -59,21 +80,24 @@ services:
     env_file: ./env/nexus.env
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://minio:9000}
+      - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY}
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
+      - ENVIRONMENT=production
     volumes:
-      - model_cache:/root/.cache/fastembed # persist fastembed model cache
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "3"
+      - model_cache:/root/.cache/fastembed
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')" ]
       interval: 10s
       timeout: 5s
       retries: 3
+    logging: *default-logging
+    depends_on:
+      redis:
+        condition: service_healthy
 
   nexus-worker:
     build:
@@ -84,20 +108,332 @@ services:
     env_file: ./env/nexus.env
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://minio:9000}
+      - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
     volumes:
       - model_cache:/root/.cache/fastembed
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "3"
+    logging: *default-logging
+    depends_on:
+      nexus-api:
+        condition: service_healthy
+
+  nexus-portal:
+    build:
+      context: ../../
+      dockerfile: apps/nexus_portal/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: nexus-portal
+    restart: always
+    logging: *default-logging
     depends_on:
       - nexus-api
+
+  # ── Agent Registry ──────────────────────────────────────────
+
+  agent-registry:
+    build:
+      context: ../../
+      dockerfile: apps/agent_registry/Dockerfile
+    container_name: agent-registry
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - AGENT_REGISTRY_KEYS=${AGENT_REGISTRY_KEYS}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8012/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # ── Secrets Agent (must start before agents that use Vault) ─
+
+  secrets-agent:
+    build:
+      context: ../../
+      dockerfile: apps/secrets_agent/Dockerfile
+    container_name: secrets-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - VAULT_MASTER_KEY=${NEXUS_MASTER_KEY}
+      - VAULT_AGENT_KEYS=${VAULT_AGENT_KEYS}
+      - VAULT_ADMIN_KEYS=${VAULT_ADMIN_KEYS:-{}}
+      - ENABLE_DOCS=false
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # ── Micro-Agents ────────────────────────────────────────────
+
+  server-agent:
+    build:
+      context: ../../
+      dockerfile: apps/server_agent/Dockerfile
+    container_name: server-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - SERVER_AGENT_KEYS=${SERVER_AGENT_KEYS}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=server-agent
+      - VAULT_AGENT_KEY=${SERVER_VAULT_AGENT_KEY}
+      - ENABLE_DOCS=false
+      - PROXMOX_VERIFY_SSL=${PROXMOX_VERIFY_SSL:-false}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      redis:
+        condition: service_healthy
+      secrets-agent:
+        condition: service_healthy
+
+  dns-agent:
+    build:
+      context: ../../
+      dockerfile: apps/dns_agent/Dockerfile
+    container_name: dns-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DNS_AGENT_KEYS=${DNS_AGENT_KEYS}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=dns-agent
+      - VAULT_AGENT_KEY=${DNS_VAULT_AGENT_KEY}
+      - ENABLE_DOCS=false
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  email-agent:
+    build:
+      context: ../../
+      dockerfile: apps/email_agent/Dockerfile
+    container_name: email-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - EMAIL_AGENT_KEYS=${EMAIL_AGENT_KEYS}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=email-agent
+      - VAULT_AGENT_KEY=${EMAIL_VAULT_AGENT_KEY}
+      - ENABLE_DOCS=false
+      - ALLOW_READ_ALL_MAILBOXES=${ALLOW_READ_ALL_MAILBOXES:-true}
+      - STATS_CACHE_TTL_SECONDS=${STATS_CACHE_TTL_SECONDS:-60}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8014/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  notifications-agent:
+    build:
+      context: ../../
+      dockerfile: apps/notifications_agent/Dockerfile
+    container_name: notifications-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - NOTIFICATIONS_AGENT_KEYS=${NOTIFICATIONS_AGENT_KEYS}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=notifications-agent
+      - VAULT_AGENT_KEY=${NOTIFICATIONS_VAULT_AGENT_KEY}
+      - ENABLE_DOCS=false
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  automation-agent:
+    build:
+      context: ../../
+      dockerfile: apps/automation_agent/Dockerfile
+    container_name: automation-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTOMATION_AGENT_KEYS=${AUTOMATION_AGENT_KEYS}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY}
+      - AUTOMATION_VAULT_AGENT_KEY=${AUTOMATION_VAULT_AGENT_KEY}
+      - AUTOMATION_DNS_AGENT_KEY=${AUTOMATION_DNS_AGENT_KEY}
+      - AUTOMATION_NOTIF_AGENT_KEY=${AUTOMATION_NOTIF_AGENT_KEY}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8013/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  monitoring-agent:
+    build:
+      context: ../../
+      dockerfile: apps/monitoring_agent/Dockerfile
+    container_name: monitoring-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - PORT=8004
+      - SERVICE_NAME=monitoring-agent
+      - DATABASE_URL=${DATABASE_URL}
+      - MONITORING_AGENT_KEYS=${MONITORING_AGENT_KEYS}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=monitoring-agent
+      - VAULT_AGENT_KEY=${MONITORING_VAULT_AGENT_KEY}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  pbx-agent:
+    build:
+      context: ../../
+      dockerfile: apps/pbx_agent/Dockerfile
+    container_name: pbx-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - PORT=8011
+      - SERVICE_NAME=pbx-agent
+      - DATABASE_URL=${DATABASE_URL}
+      - PBX_AGENT_KEYS=${PBX_AGENT_KEYS}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=pbx-agent
+      - VAULT_AGENT_KEY=${PBX_VAULT_AGENT_KEY}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8011/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  storage-agent:
+    build:
+      context: ../../
+      dockerfile: apps/storage_agent/Dockerfile
+    container_name: storage-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - PORT=8005
+      - SERVICE_NAME=storage-agent
+      - DATABASE_URL=${DATABASE_URL}
+      - STORAGE_AGENT_KEYS=${STORAGE_AGENT_KEYS}
+      - REGISTRY_BASE_URL=http://agent-registry:8012
+      - NEXUS_REGISTRY_AGENT_KEY=${NEXUS_REGISTRY_AGENT_KEY}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - VAULT_SERVICE_ID=storage-agent
+      - VAULT_AGENT_KEY=${STORAGE_VAULT_AGENT_KEY}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/healthz')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    depends_on:
+      secrets-agent:
+        condition: service_healthy
+
+  carrier-agent:
+    build:
+      context: ../../
+      dockerfile: apps/carrier_agent/Dockerfile
+    container_name: carrier-agent
+    restart: always
+    env_file: ./env/nexus.env
+    environment:
+      - CARRIER_MOCK=${CARRIER_MOCK:-false}
+      - NEXUS_BASE_URL=http://nexus-api:8000
+      - DATABASE_URL=${DATABASE_URL}
+      - VAULT_BASE_URL=http://secrets-agent:8007
+      - CARRIER_AGENT_KEYS=${CARRIER_AGENT_KEYS}
+    logging: *default-logging
+    depends_on:
+      - nexus-api
+
+  # ── Observability ───────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexus-prometheus
+    restart: always
+    volumes:
+      - ../../infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    logging: *default-logging
+    depends_on:
+      - nexus-api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexus-grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
+    volumes:
+      - ../../infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    logging: *default-logging
+    depends_on:
+      - prometheus
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   model_cache:
+  prometheus_data:
+  grafana_data:

@@ -1,10 +1,11 @@
 # ------------------------------------------
-# Caddy Production TLD configuration
+# Caddy Production Configuration
 # ------------------------------------------
+# Replace nexus.example.com with your actual domain.
+# Caddy will auto-provision TLS via Let's Encrypt.
 
-# Replace with your actual domain
 nexus.example.com {
-	# Import common security headers pattern
+	# Import common security headers
 	import /etc/caddy/snippets/security_headers.caddyfile
 
 	# Terminate TLS automatically via Let's Encrypt / ZeroSSL
@@ -15,13 +16,77 @@ nexus.example.com {
 	# Enable compression for text-based assets
 	encode zstd gzip
 
-	# Route API traffic
-	handle_path /api* {
+	# ── API Routes ────────────────────────────────────────
+
+	# Core API: strip /api prefix before forwarding
+	handle /api/* {
+		uri strip_prefix /api
 		reverse_proxy nexus-api:8000
 	}
 
-	# Route Docs (only available if ENABLE_DOCS=true in app config, otherwise app returns 404)
-	# Also restrict docs path to trusted IPs for additional security
+	# ── Agent Routes (strip prefix, forward to agent) ────
+
+	# Email Agent (routes already use /email prefix)
+	handle /email/* {
+		reverse_proxy email-agent:8014
+	}
+
+	# Agent Registry
+	handle /registry/* {
+		uri strip_prefix /registry
+		reverse_proxy agent-registry:8012
+	}
+
+	# Server Agent
+	handle /servers/* {
+		uri strip_prefix /servers
+		reverse_proxy server-agent:8010
+	}
+
+	# DNS Agent
+	handle /dns/* {
+		uri strip_prefix /dns
+		reverse_proxy dns-agent:8006
+	}
+
+	# Secrets / Vault Agent
+	handle /vault/* {
+		uri strip_prefix /vault
+		reverse_proxy secrets-agent:8007
+	}
+
+	# Notifications Agent
+	handle /notify/* {
+		uri strip_prefix /notify
+		reverse_proxy notifications-agent:8008
+	}
+
+	# Automation Agent
+	handle /automation/* {
+		uri strip_prefix /automation
+		reverse_proxy automation-agent:8013
+	}
+
+	# PBX Agent
+	handle /pbx/* {
+		uri strip_prefix /pbx
+		reverse_proxy pbx-agent:8011
+	}
+
+	# Storage Agent
+	handle /storage/* {
+		uri strip_prefix /storage
+		reverse_proxy storage-agent:8005
+	}
+
+	# Monitoring Agent
+	handle_path /monitor/* {
+		reverse_proxy monitoring-agent:8004
+	}
+
+	# ── Protected Endpoints ───────────────────────────────
+
+	# OpenAPI docs (IP-restricted)
 	handle_path /docs* {
 		import /etc/caddy/snippets/admin_allowlist.caddyfile
 		reverse_proxy nexus-api:8000
@@ -32,14 +97,15 @@ nexus.example.com {
 		reverse_proxy nexus-api:8000
 	}
 
-	# Metrics endpoint
+	# Prometheus metrics (IP-restricted)
 	handle_path /metrics* {
 		import /etc/caddy/snippets/admin_allowlist.caddyfile
 		reverse_proxy nexus-api:8000
 	}
 
-	# Catch-all
+	# ── Frontend Portal (catch-all) ───────────────────────
+
 	handle {
-		respond "Nexus API Server Running" 200
+		reverse_proxy nexus-portal:80
 	}
 }
