@@ -1,7 +1,8 @@
 """
 Server Agent tables.
 
-Revision ID: 026
+Revision ID: 027_server_agent_tables
+Revises: 026_ask_feedback
 Create Date: 2026-03-01
 """
 
@@ -9,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "026"
-down_revision = "025"
+revision = "027_server_agent_tables"
+down_revision = "026_ask_feedback"
 branch_labels = None
 depends_on = None
 
