@@ -140,7 +140,7 @@ export default function IntegrationsEmail() {
     });
 
     // Mailbox list (fast — no stats)
-    const { data: mailboxes, isLoading } = useQuery<Mailbox[]>({
+    const { data: mailboxes, isLoading, isError, error } = useQuery<Mailbox[]>({
         queryKey: ['email_mailboxes'],
         queryFn: async () => (await emailClient.get('/email/admin/mailbox/list')).data,
         refetchInterval: 60000,
@@ -788,6 +788,17 @@ export default function IntegrationsEmail() {
                     loading={isLoading}
                     size="middle"
                     pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} mailboxes` }}
+                    locale={{
+                        emptyText: isError ? (
+                            <div style={{ padding: '40px 0', color: '#ef4444' }}>
+                                <WarningOutlined style={{ fontSize: 32, marginBottom: 12 }} />
+                                <div style={{ fontSize: 16, fontWeight: 600 }}>Connection to mail system failed</div>
+                                <div style={{ fontSize: 13, marginTop: 8, color: '#f87171' }}>
+                                    {String((error as any)?.response?.data?.detail || (error as any)?.message || 'Check SSH Bridge credentials')}
+                                </div>
+                            </div>
+                        ) : undefined
+                    }}
                 />
             </div>
 

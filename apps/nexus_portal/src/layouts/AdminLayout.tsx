@@ -102,6 +102,14 @@ export default function AdminLayout() {
             ],
         },
         {
+            key: 'infrastructure',
+            icon: <CloudServerOutlined />,
+            label: 'Infrastructure',
+            children: [
+                { key: '/infrastructure/servers', label: 'Servers', icon: <CloudServerOutlined /> },
+            ],
+        },
+        {
             key: '/docs',
             icon: <ReadOutlined />,
             label: 'Pilot Docs',

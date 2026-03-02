@@ -69,7 +69,10 @@ async def list_mailboxes(
     result = await run_bridge_command("list_mailboxes")
     if isinstance(result, list):
         return [MailboxInfo(**m) for m in result]
-    return []
+    
+    # If not a list, it's an error dict from the bridge
+    err_msg = result.get("error", str(result)) if isinstance(result, dict) else str(result)
+    raise HTTPException(status_code=502, detail=f"Mail server connection failed: {err_msg}")
 
 
 @router.get("/domains")
@@ -79,7 +82,8 @@ async def list_domains(
     """List unique domains with mailbox counts (derived from mailbox list)."""
     result = await run_bridge_command("list_mailboxes")
     if not isinstance(result, list):
-        return []
+        err_msg = result.get("error", str(result)) if isinstance(result, dict) else str(result)
+        raise HTTPException(status_code=502, detail=f"Mail server connection failed: {err_msg}")
     domain_map: dict[str, dict] = {}
     for m in result:
         d = m.get("domain", "unknown")

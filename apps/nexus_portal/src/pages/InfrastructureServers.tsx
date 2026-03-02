@@ -1,0 +1,649 @@
+import { useState, useMemo } from 'react';
+import {
+    Table, Button, Space, Tag, Typography, Tooltip, Drawer, Modal,
+    Progress, Empty, Tabs, Badge, message, Input,
+} from 'antd';
+import {
+    CloudServerOutlined, SyncOutlined,
+    CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
+    ReloadOutlined, LoadingOutlined, PoweroffOutlined,
+    PlayCircleOutlined, PauseCircleOutlined, DesktopOutlined,
+    InfoCircleOutlined,
+    SearchOutlined, ThunderboltOutlined, HddOutlined,
+} from '@ant-design/icons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { serverClient } from '../api/serverClient';
+
+const { Title, Text } = Typography;
+
+// ── Midnight palette (consistent with DNS page) ──
+const MN = {
+    bg: '#0f1623', card: '#131b2e', border: '#1e293b',
+    text: '#e2e8f0', muted: '#94a3b8', accent: '#3b82f6',
+    green: '#4ade80', red: '#f87171', orange: '#fb923c', purple: '#a78bfa',
+    cyan: '#22d3ee',
+};
+
+const cardStyle = (glow = MN.accent): React.CSSProperties => ({
+    background: MN.card, borderRadius: 12,
+    border: `1px solid ${MN.border}`,
+    boxShadow: `0 0 20px ${glow}10`,
+    padding: 20, height: '100%',
+});
+
+export default function InfrastructureServers() {
+    const qc = useQueryClient();
+    const [selectedServer, setSelectedServer] = useState<any>(null);
+    const [searchText, setSearchText] = useState('');
+    const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+
+    // ── Queries ──
+    const { data: servers = [], isLoading: serversLoading } = useQuery({
+        queryKey: ['servers'],
+        queryFn: async () => {
+            const r = await serverClient.get('/servers/v1/servers');
+            return r.data;
+        },
+    });
+
+    const { data: hosts = [] } = useQuery({
+        queryKey: ['server-hosts'],
+        queryFn: async () => {
+            const r = await serverClient.get('/servers/v1/hosts');
+            return r.data;
+        },
+    });
+
+    const { data: jobs = [] } = useQuery({
+        queryKey: ['server-jobs'],
+        queryFn: async () => {
+            const r = await serverClient.get('/servers/v1/jobs');
+            return r.data;
+        },
+        refetchInterval: 10000,
+    });
+
+    // ── Mutations ──
+    const syncMut = useMutation({
+        mutationFn: async (hostId?: string) => {
+            const params = hostId ? `?host_id=${hostId}` : '';
+            const r = await serverClient.post(`/servers/v1/servers/sync${params}`);
+            return r.data;
+        },
+        onSuccess: () => {
+            message.success('Sync job queued — inventory will update shortly');
+            qc.invalidateQueries({ queryKey: ['server-jobs'] });
+            setTimeout(() => qc.invalidateQueries({ queryKey: ['servers'] }), 3000);
+        },
+        onError: (e: any) => message.error(e?.response?.data?.detail || 'Sync failed'),
+    });
+
+    const powerMut = useMutation({
+        mutationFn: async ({ id, action }: { id: string; action: string }) => {
+            const r = await serverClient.post(`/servers/v1/servers/${id}/${action}`);
+            return r.data;
+        },
+        onSuccess: (_data, vars) => {
+            message.success(`${vars.action} queued`);
+            qc.invalidateQueries({ queryKey: ['server-jobs'] });
+            setTimeout(() => qc.invalidateQueries({ queryKey: ['servers'] }), 3000);
+        },
+        onError: (e: any) => message.error(e?.response?.data?.detail || 'Action failed'),
+    });
+
+    const consoleMut = useMutation({
+        mutationFn: async (id: string) => {
+            const r = await serverClient.get(`/servers/v1/servers/${id}/console`);
+            return r.data;
+        },
+        onSuccess: (data) => {
+            if (data.url) {
+                window.open(data.url, '_blank');
+                message.success('Console opened in new tab');
+            } else {
+                message.info('No console URL available from provider');
+            }
+        },
+        onError: (e: any) => message.error(e?.response?.data?.detail || 'Console unavailable'),
+    });
+
+    // ── Host-filtered base set ──
+    const hostFilteredServers = useMemo(() => {
+        if (!selectedHostId) return servers;
+        return servers.filter((s: any) => s.host_id === selectedHostId);
+    }, [servers, selectedHostId]);
+
+    // ── Selected host label ──
+    const selectedHostLabel = useMemo(() => {
+        if (!selectedHostId) return null;
+        const h = hosts.find((h: any) => h.id === selectedHostId);
+        return h?.label || null;
+    }, [selectedHostId, hosts]);
+
+    // ── Derived stats (from host-filtered set) ──
+    const stats = useMemo(() => {
+        const src = hostFilteredServers;
+        const running = src.filter((s: any) => s.power_status === 'running').length;
+        const stopped = src.filter((s: any) => s.power_status === 'stopped').length;
+        const other = src.length - running - stopped;
+        const totalVcpu = src.reduce((s: number, sv: any) => s + (sv.vcpu_count || 0), 0);
+        const totalRam = src.reduce((s: number, sv: any) => s + (sv.ram_mb || 0), 0);
+        const totalDisk = src.reduce((s: number, sv: any) => s + (sv.disk_gb || 0), 0);
+        // Provider breakdown (only meaningful when viewing all)
+        const byProvider: Record<string, number> = {};
+        servers.forEach((s: any) => {
+            const prov = s.provider || 'unknown';
+            byProvider[prov] = (byProvider[prov] || 0) + 1;
+        });
+        const jobPending = jobs.filter((j: any) => j.status === 'pending').length;
+        const jobRunning = jobs.filter((j: any) => j.status === 'running').length;
+        const jobOk = jobs.filter((j: any) => j.status === 'succeeded').length;
+        const jobFail = jobs.filter((j: any) => j.status === 'failed').length;
+        return { running, stopped, other, total: src.length, byProvider, totalVcpu, totalRam: Math.round(totalRam / 1024), totalDisk, jobPending, jobRunning, jobOk, jobFail };
+    }, [hostFilteredServers, servers, jobs]);
+
+    // ── Filtered servers (host + search) ──
+    const filteredServers = useMemo(() => {
+        if (!searchText) return hostFilteredServers;
+        const q = searchText.toLowerCase();
+        return hostFilteredServers.filter((s: any) =>
+            s.label?.toLowerCase().includes(q) ||
+            s.ip_v4?.includes(q) ||
+            s.hostname?.toLowerCase().includes(q) ||
+            s.region?.toLowerCase().includes(q) ||
+            s.os?.toLowerCase().includes(q)
+        );
+    }, [hostFilteredServers, searchText]);
+
+    // ── Power status badge ──
+    const powerBadge = (status: string) => {
+        const map: Record<string, { color: string; bg: string; border: string }> = {
+            running: { color: MN.green, bg: 'rgba(34,197,94,0.15)', border: 'rgba(34,197,94,0.3)' },
+            stopped: { color: MN.red, bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
+            paused: { color: MN.orange, bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.3)' },
+        };
+        const s = map[status] || { color: MN.muted, bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
+        return (
+            <Tag style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
+                <span style={{
+                    width: 6, height: 6, borderRadius: '50%', display: 'inline-block',
+                    background: s.color, boxShadow: `0 0 6px ${s.color}`, marginRight: 6,
+                }} />
+                {status}
+            </Tag>
+        );
+    };
+
+    // ── Job status icon ──
+    const jobIcon = (s: string) => {
+        switch (s) {
+            case 'succeeded': return <CheckCircleOutlined style={{ color: MN.green }} />;
+            case 'failed': return <CloseCircleOutlined style={{ color: MN.red }} />;
+            case 'running': return <LoadingOutlined style={{ color: MN.accent }} spin />;
+            default: return <ClockCircleOutlined style={{ color: MN.orange }} />;
+        }
+    };
+
+    // ── Server table columns ──
+    const serverCols = [
+        {
+            title: 'SERVER', dataIndex: 'label', key: 'label',
+            sorter: (a: any, b: any) => (a.label || '').localeCompare(b.label || ''),
+            render: (t: string, rec: any) => (
+                <div>
+                    <Text style={{ color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                        onClick={() => setSelectedServer(rec)}>{t}</Text>
+                    {rec.hostname && <div><Text style={{ color: MN.muted, fontSize: 11, fontFamily: 'monospace' }}>{rec.hostname}</Text></div>}
+                </div>
+            ),
+        },
+        {
+            title: 'IP', dataIndex: 'ip_v4', key: 'ip_v4',
+            render: (t: string) => (
+                <Tooltip title="Click to copy">
+                    <Text style={{ color: MN.cyan, fontFamily: 'monospace', cursor: 'pointer' }}
+                        onClick={() => { navigator.clipboard.writeText(t); message.success('IP copied'); }}>
+                        {t}
+                    </Text>
+                </Tooltip>
+            ),
+        },
+        {
+            title: 'POWER', dataIndex: 'power_status', key: 'power_status',
+            filters: [
+                { text: 'Running', value: 'running' },
+                { text: 'Stopped', value: 'stopped' },
+            ],
+            onFilter: (value: any, record: any) => record.power_status === value,
+            render: (t: string) => powerBadge(t),
+        },
+        {
+            title: 'PLAN', dataIndex: 'plan', key: 'plan',
+            render: (t: string) => (
+                <Tag style={{ background: 'rgba(59,130,246,0.15)', color: MN.accent, border: '1px solid rgba(59,130,246,0.3)', fontFamily: 'monospace', fontSize: 11 }}>
+                    {t || '—'}
+                </Tag>
+            ),
+        },
+        {
+            title: 'REGION', dataIndex: 'region', key: 'region',
+            render: (t: string) => <Text style={{ color: MN.muted, fontSize: 12 }}>{t || '—'}</Text>,
+        },
+        {
+            title: 'OS', dataIndex: 'os', key: 'os', ellipsis: true,
+            render: (t: string) => <Text style={{ color: MN.muted, fontSize: 12 }}>{t || '—'}</Text>,
+        },
+        {
+            title: 'SPEC', key: 'spec',
+            render: (_: any, rec: any) => (
+                <Text style={{ color: MN.muted, fontSize: 11, fontFamily: 'monospace' }}>
+                    {rec.vcpu_count || '?'}c / {rec.ram_mb ? Math.round(rec.ram_mb / 1024) : '?'}G / {rec.disk_gb || '?'}G
+                </Text>
+            ),
+        },
+        {
+            title: 'ACTIONS', key: 'actions', width: 190,
+            render: (_: any, rec: any) => (
+                <Space size={4}>
+                    <Tooltip title="Details">
+                        <Button size="small" onClick={() => setSelectedServer(rec)}
+                            style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: MN.accent }}>
+                            <InfoCircleOutlined />
+                        </Button>
+                    </Tooltip>
+                    <Tooltip title="Console">
+                        <Button size="small" onClick={() => consoleMut.mutate(rec.id)}
+                            style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: MN.purple }}>
+                            <DesktopOutlined />
+                        </Button>
+                    </Tooltip>
+                    {rec.power_status === 'running' ? (
+                        <Tooltip title="Stop">
+                            <Button size="small" onClick={() => powerMut.mutate({ id: rec.id, action: 'stop' })}
+                                style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: MN.red }}>
+                                <PauseCircleOutlined />
+                            </Button>
+                        </Tooltip>
+                    ) : (
+                        <Tooltip title="Start">
+                            <Button size="small" onClick={() => powerMut.mutate({ id: rec.id, action: 'start' })}
+                                style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: MN.green }}>
+                                <PlayCircleOutlined />
+                            </Button>
+                        </Tooltip>
+                    )}
+                    <Tooltip title="Reboot">
+                        <Button size="small" onClick={() => {
+                            Modal.confirm({
+                                title: <span style={{ color: MN.text }}>Reboot Server</span>,
+                                icon: <ThunderboltOutlined style={{ color: MN.orange }} />,
+                                content: <div style={{ color: MN.muted }}>Reboot <strong style={{ color: '#fff' }}>{rec.label}</strong>?</div>,
+                                okText: 'Reboot',
+                                okButtonProps: { danger: true },
+                                styles: { header: { background: MN.bg }, body: { background: MN.bg }, mask: { background: 'rgba(0,0,0,0.6)' } },
+                                onOk: () => powerMut.mutate({ id: rec.id, action: 'reboot' }),
+                            });
+                        }}
+                            style={{ background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.3)', color: MN.orange }}>
+                            <ReloadOutlined />
+                        </Button>
+                    </Tooltip>
+                </Space>
+            ),
+        },
+    ];
+
+    return (
+        <div style={{ background: MN.bg, margin: -32, padding: 32, minHeight: 'calc(100vh - 64px)' }}>
+            <style>{`
+                .srv-table .ant-table { background: transparent !important; }
+                .srv-table .ant-table-thead > tr > th { background: rgba(30,41,59,0.6) !important; color: ${MN.muted} !important; border-bottom: 1px solid ${MN.border} !important; font-size: 11px !important; letter-spacing: 0.5px; }
+                .srv-table .ant-table-tbody > tr > td { border-bottom: 1px solid ${MN.border} !important; background: transparent !important; }
+                .srv-table .ant-table-tbody > tr:hover > td { background: rgba(59,130,246,0.05) !important; }
+                .srv-table .ant-table-cell { color: ${MN.text} !important; }
+                .srv-table .ant-pagination .ant-pagination-item a { color: ${MN.muted} !important; }
+                .srv-table .ant-pagination .ant-pagination-item-active { border-color: ${MN.accent} !important; }
+                .srv-table .ant-pagination .ant-pagination-item-active a { color: ${MN.accent} !important; }
+                .srv-table .ant-empty-description { color: ${MN.muted} !important; }
+                .srv-table .ant-select-selector { background: ${MN.card} !important; border-color: ${MN.border} !important; color: ${MN.muted} !important; }
+                .srv-table .ant-pagination-prev .ant-pagination-item-link,
+                .srv-table .ant-pagination-next .ant-pagination-item-link { color: ${MN.muted} !important; }
+                .srv-table .ant-table-filter-trigger { color: ${MN.muted} !important; }
+                .ant-drawer .ant-drawer-close { color: ${MN.muted} !important; }
+                .ant-drawer .ant-drawer-close:hover { color: ${MN.text} !important; }
+            `}</style>
+
+            {/* ═══ Header ═══ */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                <Title level={2} style={{ margin: 0, color: MN.text }}>
+                    <CloudServerOutlined style={{ marginRight: 10, color: MN.accent }} />
+                    Server Administration
+                </Title>
+                <Space>
+                    <Input
+                        prefix={<SearchOutlined style={{ color: MN.muted }} />}
+                        placeholder="Search servers..."
+                        value={searchText}
+                        onChange={e => setSearchText(e.target.value)}
+                        style={{ width: 240, background: MN.card, borderColor: MN.border, color: MN.text }}
+                        allowClear
+                    />
+                    <Button icon={<ReloadOutlined />}
+                        onClick={() => { qc.invalidateQueries({ queryKey: ['servers'] }); qc.invalidateQueries({ queryKey: ['server-jobs'] }); }}
+                        style={{ background: MN.card, borderColor: MN.border, color: MN.muted }}>
+                        Refresh
+                    </Button>
+                    <Button type="primary" icon={<SyncOutlined />} onClick={() => syncMut.mutate(undefined)} loading={syncMut.isPending}>
+                        Sync All
+                    </Button>
+                </Space>
+            </div>
+
+            {/* ═══ Dashboard Panels ═══ */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+                {/* Fleet Panel */}
+                <div style={cardStyle()}>
+                    <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                        <CloudServerOutlined style={{ marginRight: 6 }} /> {selectedHostLabel ? selectedHostLabel.toUpperCase() : 'FLEET'}
+                    </Text>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                        <div style={{ position: 'relative', width: 80, height: 80 }}>
+                            <Progress type="circle" percent={stats.total > 0 ? Math.round((stats.running / stats.total) * 100) : 0}
+                                size={80} strokeColor={MN.green} trailColor="rgba(30,41,59,0.8)"
+                                format={() => <span style={{ color: '#fff', fontSize: 22, fontWeight: 700 }}>{stats.total}</span>} />
+                        </div>
+                        <div>
+                            {selectedHostId ? (
+                                <>
+                                    <div style={{ color: MN.green, fontSize: 14 }}>▲ {stats.running} Running</div>
+                                    <div style={{ color: MN.red, fontSize: 13 }}>■ {stats.stopped} Stopped</div>
+                                    {stats.other > 0 && <div style={{ color: MN.muted, fontSize: 12 }}>◌ {stats.other} Other</div>}
+                                </>
+                            ) : (
+                                Object.entries(stats.byProvider).map(([prov, count]) => (
+                                    <div key={prov} style={{ color: prov === 'vultr' ? MN.cyan : MN.purple, fontSize: 13 }}>
+                                        {prov === 'vultr' ? '▸' : '◆'} {count} {prov.charAt(0).toUpperCase() + prov.slice(1)}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Resources Panel */}
+                <div style={cardStyle()}>
+                    <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                        <ThunderboltOutlined style={{ marginRight: 6 }} /> RESOURCES
+                    </Text>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 4 }}>
+                        {[
+                            { label: 'vCPUs', value: stats.totalVcpu, icon: '⚡' },
+                            { label: 'RAM', value: `${stats.totalRam} GB`, icon: '💾' },
+                            { label: 'Disk', value: `${stats.totalDisk} GB`, icon: '💿' },
+                        ].map(item => (
+                            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
+                                <Text style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>{item.value}</Text>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Jobs Panel */}
+                <div style={cardStyle()}>
+                    <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                        <SyncOutlined style={{ marginRight: 6 }} /> RECENT JOBS
+                    </Text>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <ClockCircleOutlined style={{ color: MN.orange }} />
+                            <Text style={{ color: MN.text }}>{stats.jobPending}</Text>
+                            <Text style={{ color: MN.muted, fontSize: 11 }}>Pending</Text>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <LoadingOutlined style={{ color: MN.accent }} />
+                            <Text style={{ color: MN.text }}>{stats.jobRunning}</Text>
+                            <Text style={{ color: MN.muted, fontSize: 11 }}>Running</Text>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CheckCircleOutlined style={{ color: MN.green }} />
+                            <Text style={{ color: MN.text }}>{stats.jobOk}</Text>
+                            <Text style={{ color: MN.muted, fontSize: 11 }}>OK</Text>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CloseCircleOutlined style={{ color: MN.red }} />
+                            <Text style={{ color: MN.text }}>{stats.jobFail}</Text>
+                            <Text style={{ color: MN.muted, fontSize: 11 }}>Failed</Text>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Health / Hosts Panel */}
+                <div style={cardStyle()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1 }}>
+                            <HddOutlined style={{ marginRight: 6 }} /> HOSTS
+                        </Text>
+                        {selectedHostId && (
+                            <Tag style={{ cursor: 'pointer', background: 'rgba(59,130,246,0.15)', color: MN.accent, border: '1px solid rgba(59,130,246,0.3)', fontSize: 10, margin: 0 }}
+                                onClick={() => setSelectedHostId(null)}>Show All ✕</Tag>
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                        {hosts.length === 0 && <Text style={{ color: MN.muted, fontStyle: 'italic' }}>No hosts registered</Text>}
+                        {hosts.map((h: any) => {
+                            const isSelected = selectedHostId === h.id;
+                            const hostCount = servers.filter((s: any) => s.host_id === h.id).length;
+                            return (
+                                <div key={h.id}
+                                    onClick={() => setSelectedHostId(isSelected ? null : h.id)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        cursor: 'pointer', padding: '6px 10px', borderRadius: 8,
+                                        background: isSelected ? 'rgba(59,130,246,0.15)' : 'transparent',
+                                        border: isSelected ? `1px solid ${MN.accent}` : '1px solid transparent',
+                                        transition: 'all 0.2s',
+                                    }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{
+                                            width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
+                                            background: h.is_active ? MN.green : MN.red,
+                                            boxShadow: h.is_active ? `0 0 6px ${MN.green}` : `0 0 6px ${MN.red}`,
+                                        }} />
+                                        <Text style={{ color: isSelected ? '#fff' : MN.text, fontSize: 13, fontWeight: isSelected ? 600 : 400 }}>{h.label}</Text>
+                                    </div>
+                                    <Space size={6}>
+                                        <Text style={{ color: MN.muted, fontSize: 11 }}>{hostCount}</Text>
+                                        <Tag style={{
+                                            margin: 0, fontSize: 10,
+                                            background: 'rgba(59,130,246,0.15)', color: MN.accent,
+                                            border: '1px solid rgba(59,130,246,0.3)', borderRadius: 4,
+                                        }}>
+                                            {h.provider}
+                                        </Tag>
+                                    </Space>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            {/* ═══ Tabs: Servers + Jobs ═══ */}
+            <Tabs
+                defaultActiveKey="servers"
+                style={{ marginBottom: 24 }}
+                items={[
+                    {
+                        key: 'servers',
+                        label: <span style={{ color: MN.text }}><CloudServerOutlined style={{ marginRight: 6 }} />Servers ({filteredServers.length})</span>,
+                        children: (
+                            <div className="srv-table" style={{ ...cardStyle(), padding: 0 }}>
+                                <Table
+                                    columns={serverCols}
+                                    dataSource={filteredServers}
+                                    rowKey="id"
+                                    loading={serversLoading}
+                                    pagination={{ pageSize: 20, showTotal: (t) => <span style={{ color: MN.muted }}>{t} servers</span> }}
+                                    locale={{ emptyText: <Empty description={<span style={{ color: MN.muted }}>No servers found</span>} /> }}
+                                    scroll={{ x: 1100 }}
+                                />
+                            </div>
+                        ),
+                    },
+                    {
+                        key: 'jobs',
+                        label: (
+                            <span style={{ color: MN.text }}>
+                                <SyncOutlined style={{ marginRight: 6 }} />
+                                Jobs
+                                {stats.jobPending + stats.jobRunning > 0 && (
+                                    <Badge count={stats.jobPending + stats.jobRunning} size="small" style={{ marginLeft: 8 }} />
+                                )}
+                            </span>
+                        ),
+                        children: (
+                            <div className="srv-table" style={{ ...cardStyle(), padding: 0 }}>
+                                <Table
+                                    columns={[
+                                        {
+                                            title: 'STATUS', dataIndex: 'status', key: 'status', width: 110,
+                                            render: (s: string) => <Space>{jobIcon(s)}<Text style={{ color: MN.text }}>{s}</Text></Space>,
+                                        },
+                                        {
+                                            title: 'OPERATION', dataIndex: 'operation', key: 'op',
+                                            render: (t: string) => <Tag style={{ background: 'rgba(59,130,246,0.15)', color: MN.accent, border: '1px solid rgba(59,130,246,0.3)' }}>{t}</Tag>,
+                                        },
+                                        {
+                                            title: 'ATTEMPTS', dataIndex: 'attempts', key: 'attempts', width: 90,
+                                            render: (t: number) => <Text style={{ color: MN.muted }}>{t}</Text>,
+                                        },
+                                        {
+                                            title: 'ERROR', dataIndex: 'last_error', key: 'error', ellipsis: true,
+                                            render: (t: string | null) => t ? <Text style={{ color: MN.red, fontSize: 12 }}>{t}</Text> : <Text style={{ color: MN.muted }}>—</Text>,
+                                        },
+                                        {
+                                            title: 'CREATED', dataIndex: 'created_at', key: 'created_at',
+                                            render: (t: string) => <Text style={{ color: MN.muted, fontSize: 12 }}>{new Date(t).toLocaleString()}</Text>,
+                                        },
+                                    ]}
+                                    dataSource={jobs}
+                                    rowKey="id"
+                                    pagination={{ pageSize: 15, showTotal: (t) => <span style={{ color: MN.muted }}>{t} jobs</span> }}
+                                    locale={{ emptyText: <Empty description={<span style={{ color: MN.muted }}>No jobs</span>} /> }}
+                                />
+                            </div>
+                        ),
+                    },
+                ]}
+                className="srv-tabs"
+            />
+
+            {/* ═══ Server Detail Drawer ═══ */}
+            <Drawer
+                title={
+                    <span style={{ color: MN.text }}>
+                        <CloudServerOutlined style={{ marginRight: 8, color: MN.accent }} />
+                        {selectedServer?.label}
+                        {selectedServer && (
+                            <span style={{ marginLeft: 12 }}>
+                                {powerBadge(selectedServer.power_status)}
+                            </span>
+                        )}
+                    </span>
+                }
+                open={!!selectedServer}
+                onClose={() => setSelectedServer(null)}
+                width={Math.min(700, window.innerWidth - 40)}
+                styles={{
+                    header: { background: MN.bg, borderBottom: `1px solid ${MN.border}` },
+                    body: { background: MN.bg, padding: 20 },
+                }}
+                extra={
+                    selectedServer && (
+                        <Space>
+                            <Button size="small" icon={<DesktopOutlined />} onClick={() => consoleMut.mutate(selectedServer.id)}
+                                style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: MN.purple }}>
+                                Console
+                            </Button>
+                            {selectedServer.power_status === 'running' ? (
+                                <Button size="small" icon={<PoweroffOutlined />}
+                                    onClick={() => powerMut.mutate({ id: selectedServer.id, action: 'stop' })}
+                                    style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: MN.red }}>
+                                    Stop
+                                </Button>
+                            ) : (
+                                <Button size="small" icon={<PlayCircleOutlined />}
+                                    onClick={() => powerMut.mutate({ id: selectedServer.id, action: 'start' })}
+                                    style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: MN.green }}>
+                                    Start
+                                </Button>
+                            )}
+                        </Space>
+                    )
+                }
+            >
+                {selectedServer && (
+                    <div>
+                        {/* Quick info cards */}
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+                            {[
+                                { label: 'IPv4', value: selectedServer.ip_v4 || '—', mono: true },
+                                { label: 'IPv6', value: selectedServer.ip_v6 ? `${selectedServer.ip_v6.substring(0, 20)}…` : '—', mono: true },
+                                { label: 'Region', value: selectedServer.region || '—' },
+                                { label: 'Plan', value: selectedServer.plan || '—' },
+                            ].map(item => (
+                                <div key={item.label} style={{ background: MN.card, border: `1px solid ${MN.border}`, borderRadius: 8, padding: '8px 16px', minWidth: 120 }}>
+                                    <Text style={{ color: MN.muted, fontSize: 10, letterSpacing: 0.5, display: 'block' }}>{item.label}</Text>
+                                    <Text style={{ color: MN.text, fontWeight: 600, fontFamily: item.mono ? 'monospace' : 'inherit', fontSize: 13 }}>{item.value}</Text>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Specs */}
+                        <div style={{ ...cardStyle(), marginBottom: 16 }}>
+                            <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                                SPECIFICATIONS
+                            </Text>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                                {[
+                                    { label: 'vCPU', value: selectedServer.vcpu_count || '—', suffix: 'cores' },
+                                    { label: 'RAM', value: selectedServer.ram_mb ? `${Math.round(selectedServer.ram_mb / 1024)}` : '—', suffix: 'GB' },
+                                    { label: 'Disk', value: selectedServer.disk_gb || '—', suffix: 'GB' },
+                                ].map(s => (
+                                    <div key={s.label} style={{ textAlign: 'center' }}>
+                                        <div style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>{s.value}</div>
+                                        <div style={{ color: MN.muted, fontSize: 11 }}>{s.suffix}</div>
+                                        <div style={{ color: MN.accent, fontSize: 12, marginTop: 4 }}>{s.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Metadata */}
+                        <div style={{ ...cardStyle() }}>
+                            <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                                METADATA
+                            </Text>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    { label: 'OS', value: selectedServer.os },
+                                    { label: 'Hostname', value: selectedServer.hostname },
+                                    { label: 'Provider', value: selectedServer.provider },
+                                    { label: 'Provider ID', value: selectedServer.provider_instance_id },
+                                    { label: 'Status', value: selectedServer.status },
+                                    { label: 'Last Synced', value: selectedServer.last_synced_at ? new Date(selectedServer.last_synced_at).toLocaleString() : 'Never' },
+                                ].map(item => (
+                                    <div key={item.label}>
+                                        <Text style={{ color: MN.muted, fontSize: 10, display: 'block' }}>{item.label}</Text>
+                                        <Text style={{ color: MN.text, fontSize: 13, fontFamily: 'monospace' }}>{item.value || '—'}</Text>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Drawer>
+        </div>
+    );
+}
