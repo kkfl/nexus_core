@@ -1,9 +1,13 @@
+from packages.shared.db import Base  # noqa: F401 — needed by migrations/env.py
+
 from .core import (
     Agent,
     AgentCheckin,
     ApiKey,
+    AskFeedback,
     Artifact,
     AuditEvent,
+    BusEvent,
     CarrierSnapshot,
     CarrierTarget,
     Entity,
@@ -38,8 +42,10 @@ __all__ = [
     "Agent",
     "AgentCheckin",
     "ApiKey",
+    "AskFeedback",
     "Artifact",
     "AuditEvent",
+    "BusEvent",
     "CarrierSnapshot",
     "CarrierTarget",
     "Entity",

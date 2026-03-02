@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir \
     httpx \
     structlog \
     aiosmtplib \
-    paramiko
+    paramiko \
+    redis>=5.0.0
 
 ENV PYTHONPATH=/app
 ENV PORT=8014

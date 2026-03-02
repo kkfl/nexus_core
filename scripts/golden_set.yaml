@@ -1,0 +1,91 @@
+# RAG Evaluation Golden Set — Nexus Core Repo Docs
+# Each query references content that exists in the ingested repo documentation.
+# namespace: repo-docs (seeded by scripts/ingest_repo_docs.py)
+
+queries:
+  # ── Architecture & Overview ─────────────────────────────────────
+
+  - question: "What components make up the Nexus Core architecture?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["api", "worker", "portal", "postgres", "minio"]
+    expected_doc_ids: []
+
+  - question: "What database and storage technologies does Nexus use?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["postgres", "pgvector", "minio", "s3"]
+    expected_doc_ids: []
+
+  - question: "How do you start the Nexus stack locally?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["docker", "compose", "env"]
+    expected_doc_ids: []
+
+  # ── Security & Auth ────────────────────────────────────────────
+
+  - question: "What RBAC roles does Nexus implement?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["admin", "operator", "reader", "agent"]
+    expected_doc_ids: []
+
+  - question: "How does Nexus encrypt and store secrets?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["aes", "gcm", "envelope", "encryption", "master"]
+    expected_doc_ids: []
+
+  - question: "How do you rotate an API key in Nexus?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["rotate", "api-keys", "invalidated"]
+    expected_doc_ids: []
+
+  # ── DNS Agent ──────────────────────────────────────────────────
+
+  - question: "How does the DNS agent fetch provider credentials?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["secrets", "vault", "alias", "cloudflare"]
+    expected_doc_ids: []
+
+  - question: "What DNS record operations does the DNS agent support?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["upsert", "delete", "sync", "zone"]
+    expected_doc_ids: []
+
+  # ── Notifications Agent ────────────────────────────────────────
+
+  - question: "What notification channels does Nexus support?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["telegram", "email", "sms", "webhook"]
+    expected_doc_ids: []
+
+  - question: "How does the notification routing rules system work?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["routing", "severity", "channels", "tenant"]
+    expected_doc_ids: []
+
+  - question: "What built-in notification templates are available?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["agent_down", "job_failed", "template"]
+    expected_doc_ids: []
+
+  # ── Operations & Triage ────────────────────────────────────────
+
+  - question: "What should you do when an agent is unreachable with HTTP 502?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["container", "base_url", "registry", "network"]
+    expected_doc_ids: []
+
+  - question: "How do you handle a persona policy violation failure?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["persona", "deny_task_types", "forbidden"]
+    expected_doc_ids: []
+
+  # ── Backup & Recovery ──────────────────────────────────────────
+
+  - question: "How does the Nexus backup system work?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["pg_dump", "backup", "gzip", "s3"]
+    expected_doc_ids: []
+
+  - question: "How do you restore a Nexus database from a backup?"
+    namespaces: ["repo-docs"]
+    expected_keywords: ["restore", "CONFIRM_RESTORE", "destructive"]
+    expected_doc_ids: []

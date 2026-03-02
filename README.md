@@ -248,6 +248,11 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/artifacts/2/downlo
 ```
 *Open the provided URL to see `context_received_count > 0` and the extracted KB text inside the `context` array!*
 
+#### RAG Internal Semantics
+- **Dedup semantics:** The pipeline computes a semantic SHA-256 hash automatically on the *extracted text content* (not the raw file binary). This prevents duplicate embeddings when file metadata, timestamps, or visual layout bits flip for the exact same semantic text. Documents with matching textual hashes skip re-embedding natively.
+- **Raw storage:** To maintain absolute fidelity with source data, the original raw artifacts (e.g., unmodified HTTP responses, `.pdf` files, or webhook bodies) are persistently stored in MinIO/S3 upon ingestion under a `kb/{source_id}/` prefix. The PostgreSQL table `kb_documents` retains pointer bindings via `storage_backend="s3"` and the `object_key` value.
+- **Embedding metadata:** Ingestion lifecycle tracks dynamic model configurations. Native properties (such as `embedding_model`, `embedding_provider`, and `embedding_dimension`) are injected into the JSON `meta_data` field of the `kb_documents` row upon indexing. Operators can inspect cluster topology sizing safely via the `GET /v1/kb/embeddings/info` endpoint.
+
 #### Negative KI Tools RAG Policy Test
 ```bash
 # Create a persona version that DISABLES RAG

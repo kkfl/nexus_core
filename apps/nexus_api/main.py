@@ -11,9 +11,11 @@ from apps.nexus_api.routers import (
     artifacts,
     audit,
     auth,
+    brain_routes,
     carrier,
     docs,
     entities,
+    events,
     internal,
     kb,
     monitoring,
@@ -223,6 +225,8 @@ app.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
 app.include_router(storage.router, prefix="/storage", tags=["storage"])
 app.include_router(carrier.router, prefix="/carrier", tags=["carrier"])
 app.include_router(docs.router, prefix="/docs", tags=["docs"])
+app.include_router(brain_routes.router, prefix="/brain", tags=["brain"])
+app.include_router(events.router, prefix="/events", tags=["events"])
 
 
 @app.get("/healthz", tags=["health"])

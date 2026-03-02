@@ -4,12 +4,16 @@ email_agent — inbox/message endpoints (IMAP).
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from apps.email_agent.auth.identity import verify_service_identity
 from apps.email_agent.schemas import MessageDetail, MessageSummary
 from apps.email_agent.services import imap
+from packages.shared.events.api import emit_event
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/email", tags=["inbox"])
 
@@ -24,7 +28,20 @@ async def search_inbox(
 ):
     """Search messages in the ingest mailbox."""
     results = await imap.search_inbox(query=query, since=since, limit=limit, folder=folder)
-    return [MessageSummary(**r) for r in results]
+    summaries = [MessageSummary(**r) for r in results]
+
+    if summaries:
+        try:
+            await emit_event(
+                event_type="email.inbox.searched",
+                payload={"folder": folder, "count": len(summaries), "query": query or ""},
+                produced_by="email-agent",
+                tags=["email", "inbox", "search"],
+            )
+        except Exception:
+            logger.warning("event_emit_failed", event_type="email.inbox.searched")
+
+    return summaries
 
 
 @router.get("/message/{msg_id}", response_model=MessageDetail)
@@ -37,6 +54,17 @@ async def get_message(
     msg = await imap.fetch_message(msg_id, folder=folder)
     if not msg:
         return Response(status_code=404, content='{"error":"message not found"}')
+
+    try:
+        await emit_event(
+            event_type="email.message.read",
+            payload={"msg_id": msg_id, "folder": folder, "subject": msg.get("subject", "")[:100]},
+            produced_by="email-agent",
+            tags=["email", "message", "read"],
+        )
+    except Exception:
+        logger.warning("event_emit_failed", event_type="email.message.read")
+
     return MessageDetail(**msg)
 
 

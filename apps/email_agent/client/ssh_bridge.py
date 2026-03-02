@@ -28,6 +28,60 @@ def _build_ssh_client(host, port, username, pem):
     return ssh
 
 
+# ---------------------------------------------------------------------------
+# Human-readable error messages for common SSH bridge failures
+# ---------------------------------------------------------------------------
+
+_SCRIPT_ERROR_HINTS: dict[str, dict[int, str]] = {
+    "create_mailbox": {
+        1: "Mailbox creation failed. The domain may not be hosted on this mail server, "
+           "or the mailbox may already exist. Only domains configured in iRedMail are allowed.",
+        2: "Permission denied on mail server. Check SSH bridge credentials.",
+        126: "Mail admin script is not executable on the server.",
+        127: "Mail admin script not found on the server.",
+    },
+    "set_password": {
+        1: "Password reset failed. The mailbox may not exist on this mail server.",
+        2: "Permission denied on mail server.",
+    },
+    "disable_mailbox": {
+        1: "Disable failed. The mailbox may not exist.",
+    },
+}
+
+_GENERIC_EXIT_HINTS: dict[int, str] = {
+    1: "The command failed on the mail server.",
+    2: "Permission denied on the remote server.",
+    126: "Script is not executable.",
+    127: "Script not found on the remote server.",
+    255: "SSH connection failed or was refused.",
+}
+
+
+def _describe_error(script: str, exit_code: int, stderr_text: str, args: list[str] | None) -> str:
+    """Build a human-readable error message from script context."""
+    # If the remote script wrote useful stderr, use it
+    if stderr_text and "exit code" not in stderr_text.lower():
+        return stderr_text[:500]
+
+    # Try script-specific hint
+    script_hints = _SCRIPT_ERROR_HINTS.get(script, {})
+    hint = script_hints.get(exit_code)
+
+    # Fall back to generic hint
+    if not hint:
+        hint = _GENERIC_EXIT_HINTS.get(exit_code, f"Unexpected error (exit code {exit_code}).")
+
+    # Enrich with context from args (e.g. show the email/domain)
+    if args and script in ("create_mailbox", "set_password", "disable_mailbox"):
+        email = args[0] if args else ""
+        if "@" in email:
+            domain = email.split("@", 1)[1]
+            hint += f" (email: {email}, domain: {domain})"
+
+    return hint
+
+
 def _sync_bridge(host, port, username, pem, script, args, cmd_timeout):
     """Run a bridge command synchronously (runs in thread)."""
     cmd_parts = [f"sudo /opt/nexus-mail-admin/{script}"]
@@ -45,12 +99,12 @@ def _sync_bridge(host, port, username, pem, script, args, cmd_timeout):
         exit_code = stdout.channel.recv_exit_status()
 
         if exit_code != 0:
-            return {"ok": False, "error": err[:500] or f"exit code {exit_code}"}
+            return {"ok": False, "error": _describe_error(script, exit_code, err, args)}
 
         try:
             return json.loads(out)
         except json.JSONDecodeError:
-            return {"ok": False, "error": f"Invalid JSON: {out[:200]}"}
+            return {"ok": False, "error": f"Invalid response from mail server: {out[:200]}"}
     finally:
         ssh.close()
 

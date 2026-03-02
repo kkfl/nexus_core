@@ -55,7 +55,7 @@ async def get_zone_by_name(
             DnsZone.tenant_id == tenant_id,
             DnsZone.env == env,
             DnsZone.zone_name == zone_name,
-            DnsZone.is_active is True,
+            DnsZone.is_active == True,  # noqa: E712 — SQLAlchemy column comparison
         )
     )
     return result.scalars().first()
@@ -64,7 +64,7 @@ async def get_zone_by_name(
 async def list_zones(
     db: AsyncSession, tenant_id: str | None = None, env: str | None = None
 ) -> list[DnsZone]:
-    q = select(DnsZone).where(DnsZone.is_active is True)
+    q = select(DnsZone).where(DnsZone.is_active == True)  # noqa: E712 — SQLAlchemy column comparison
     if tenant_id:
         q = q.where(DnsZone.tenant_id == tenant_id)
     if env:
@@ -92,6 +92,40 @@ async def set_provider_zone_id(db: AsyncSession, zone: DnsZone, provider_zone_id
     zone.provider_zone_id = provider_zone_id
     await db.flush()
     return zone
+
+
+async def delete_zone(db: AsyncSession, zone: DnsZone) -> None:
+    """
+    Delete a zone and all its records from the LOCAL Nexus database only.
+    This does NOT touch the DNS provider (e.g. DNSMadeEasy, Cloudflare).
+    Records are cascade-deleted via the ORM relationship.
+    """
+    # Also clean up any change jobs referencing this zone
+    from sqlalchemy import delete as sql_delete
+
+    await db.execute(
+        sql_delete(DnsChangeJob).where(
+            DnsChangeJob.zone_name == zone.zone_name,
+            DnsChangeJob.tenant_id == zone.tenant_id,
+            DnsChangeJob.env == zone.env,
+        )
+    )
+    await db.delete(zone)
+    await db.flush()
+
+
+async def count_records_by_zone(db: AsyncSession, zone_ids: list[str]) -> dict[str, int]:
+    """Return a dict of {zone_id: record_count} for the given zone IDs."""
+    if not zone_ids:
+        return {}
+    from sqlalchemy import func as sqla_func
+
+    result = await db.execute(
+        select(DnsRecord.zone_id, sqla_func.count(DnsRecord.id))
+        .where(DnsRecord.zone_id.in_(zone_ids))
+        .group_by(DnsRecord.zone_id)
+    )
+    return dict(result.all())
 
 
 # ---------------------------------------------------------------------------

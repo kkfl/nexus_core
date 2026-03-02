@@ -16,6 +16,7 @@ import PersonaDefaults from './pages/PersonaDefaults';
 import KbSources from './pages/KbSources';
 import KbDocuments from './pages/KbDocuments';
 import KbSearch from './pages/KbSearch';
+import AskNexus from './pages/AskNexus';
 import Entities from './pages/Entities';
 import Audits from './pages/Audits';
 import IntegrationsPbx from './pages/IntegrationsPbx';
@@ -23,6 +24,7 @@ import IntegrationsMonitoring from './pages/IntegrationsMonitoring';
 import IntegrationsStorage from './pages/IntegrationsStorage';
 import IntegrationsCarrier from './pages/IntegrationsCarrier';
 import IntegrationsEmail from './pages/IntegrationsEmail';
+import IntegrationsDns from './pages/IntegrationsDns';
 import MailboxInbox from './pages/MailboxInbox';
 import Secrets from './pages/Secrets';
 import Docs from './pages/Docs';
@@ -78,6 +80,7 @@ function App() {
             <Route path="kb/sources" element={<KbSources />} />
             <Route path="kb/documents" element={<KbDocuments />} />
             <Route path="kb/search" element={<KbSearch />} />
+            <Route path="kb/ask" element={<AskNexus />} />
 
             {/* SoR */}
             <Route path="entities" element={<Entities />} />
@@ -91,6 +94,7 @@ function App() {
             <Route path="integrations/carrier" element={<IntegrationsCarrier />} />
             <Route path="integrations/email" element={<IntegrationsEmail />} />
             <Route path="integrations/email/mailbox/:email" element={<MailboxInbox />} />
+            <Route path="integrations/dns" element={<IntegrationsDns />} />
 
             {/* Docs */}
             <Route path="docs" element={<Docs />} />

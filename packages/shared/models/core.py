@@ -229,6 +229,8 @@ class KbDocument(Base):
     checksum: Mapped[str | None]
     meta_data: Mapped[dict[str, Any] | None] = mapped_column(type_=JSON)
     ingest_status: Mapped[str] = mapped_column(default="uploaded")
+    error_message: Mapped[str | None] = mapped_column(type_=Text)
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
 
@@ -240,6 +242,9 @@ class KbChunk(Base):
     chunk_index: Mapped[int]
     text_content: Mapped[str] = mapped_column(type_=Text)
     char_count: Mapped[int]
+    token_count: Mapped[int | None]
+    start_char: Mapped[int | None]
+    end_char: Mapped[int | None]
     meta_data: Mapped[dict[str, Any] | None] = mapped_column(type_=JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
@@ -451,3 +456,40 @@ class MetricEvent(Base):
     value: Mapped[float | None]
     meta_data: Mapped[dict[str, Any] | None] = mapped_column(type_=JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class BusEvent(Base):
+    """Persistent event store for the Nexus event bus (audit + replay)."""
+
+    __tablename__ = "bus_events"
+
+    id: Mapped[str] = mapped_column(primary_key=True, index=True)  # event_id UUID
+    event_type: Mapped[str] = mapped_column(index=True)
+    event_version: Mapped[int] = mapped_column(default=1)
+    occurred_at: Mapped[str]  # ISO 8601 string
+    produced_by: Mapped[str] = mapped_column(index=True)
+    correlation_id: Mapped[str | None] = mapped_column(index=True)
+    causation_id: Mapped[str | None]
+    actor_type: Mapped[str | None]
+    actor_id: Mapped[str | None]
+    tenant_id: Mapped[str | None] = mapped_column(index=True)
+    severity: Mapped[str] = mapped_column(default="info")
+    tags: Mapped[list[str] | None] = mapped_column(type_=JSON)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(type_=JSON)
+    payload_schema_version: Mapped[int] = mapped_column(default=1)
+    idempotency_key: Mapped[str | None] = mapped_column(index=True)
+    stream_id: Mapped[str | None]  # Redis Stream entry ID
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        server_default=func.now(), index=True
+    )
+
+
+class AskFeedback(Base):
+    __tablename__ = "ask_feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    correlation_id: Mapped[str] = mapped_column(index=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    rating: Mapped[str]  # "good" | "bad"
+    note: Mapped[str | None]
+    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())

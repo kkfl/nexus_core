@@ -50,6 +50,7 @@ class ZoneOut(BaseModel):
     provider: str
     provider_zone_id: str | None = None
     is_active: bool
+    record_count: int = 0
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

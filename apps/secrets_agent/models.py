@@ -65,6 +65,7 @@ class VaultSecret(VaultBase):
 
     created_by_service_id: Mapped[str] = mapped_column(String(128), default="system")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

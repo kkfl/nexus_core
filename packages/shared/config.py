@@ -19,10 +19,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(...)
 
     # Storage
-    S3_ENDPOINT: str | None = None
-    S3_ACCESS_KEY: str | None = None
-    S3_SECRET_KEY: SecretStr | None = None
-    S3_USE_SSL: bool = True
+    STORAGE_BACKEND_TYPE: str = "s3"
+    STORAGE_S3_ENDPOINT: str | None = None
+    STORAGE_S3_ACCESS_KEY: str | None = None
+    STORAGE_S3_SECRET_KEY: str | None = None
+    STORAGE_S3_BUCKET: str = "nexus-artifacts"
+    STORAGE_S3_REGION: str = "us-east-1"
 
     # Feature Flags / Toggles
     ENABLE_DOCS: bool = False

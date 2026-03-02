@@ -10,4 +10,4 @@ COPY ./packages /app/packages
 COPY ./apps /app/apps
 ENV PYTHONPATH=/app
 
-CMD ["sh", "-c", "rq worker nexus_tasks --url $REDIS_URL"]
+CMD ["sh", "-c", "python -m apps.nexus_worker.startup && rq worker nexus_tasks --url $REDIS_URL"]

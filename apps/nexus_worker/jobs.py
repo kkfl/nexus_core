@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import uuid
 from datetime import datetime
 
@@ -562,6 +563,30 @@ async def _dispatch_task(task_id: int, attempt: int = 1):
 
 
 async def _embed_document(document_id: int):
+    """Multi-stage RAG ingestion pipeline with event bus integration.
+
+    Stages: extract → checksum dedup → chunk → embed → index
+    Emits kb.document.* events at each stage.
+    """
+    import hashlib as _hashlib
+    import traceback
+
+    from packages.shared.events.api import emit_event
+    from packages.shared.rag.chunker import DocumentChunker
+
+    async def _emit(event_type: str, payload: dict):
+        """Fire-and-forget event emission; never block the pipeline."""
+        try:
+            await emit_event(
+                event_type=event_type,
+                payload=payload,
+                produced_by="nexus-worker",
+                tenant_id="nexus",
+                correlation_id=str(document_id),
+            )
+        except Exception:
+            pass  # event emission must not break ingest
+
     async with get_db_context() as db:
         res = await db.execute(select(KbDocument).where(KbDocument.id == document_id))
         doc = res.scalars().first()
@@ -569,32 +594,87 @@ async def _embed_document(document_id: int):
             print(f"KbDocument {document_id} not found.")
             return
 
+        doc.ingest_status = "processing"
+        doc.error_message = None
+        await db.commit()
+
+        await _emit("kb.document.ingest_started", {
+            "document_id": document_id,
+            "title": doc.title,
+            "content_type": doc.content_type,
+        })
+
         try:
+            # ── Stage 1: Extract ─────────────────────────────────────
             storage = get_storage_backend()
             raw_bytes = storage.get_bytes(doc.object_key)
 
-            # Simple text extraction based on content_type
+            # Text extraction based on content_type
             if doc.content_type == "application/pdf":
                 import io
-
                 import pypdf
-
                 pdf_file = io.BytesIO(raw_bytes)
                 reader = pypdf.PdfReader(pdf_file)
                 text_content = ""
                 for page in reader.pages:
                     text_content += page.extract_text() + "\n"
             else:
-                # assume text
                 text_content = raw_bytes.decode("utf-8", errors="ignore")
 
+            # Compute checksum for dedup AFTER extraction (semantic deduplication)
+            content_hash = _hashlib.sha256(text_content.encode("utf-8")).hexdigest()
+
+            # Dedup: if checksum matches and doc already indexed, skip
+            if doc.checksum == content_hash and doc.ingest_status == "ready":
+                print(f"Document {document_id} unchanged (checksum match), skipping.")
+                await _emit("kb.document.indexed", {
+                    "document_id": document_id, "skipped": True, "reason": "checksum_match",
+                })
+                return
+
+            doc.checksum = content_hash
+
+            await _emit("kb.document.text_extracted", {
+                "document_id": document_id,
+                "text_length": len(text_content),
+            })
+
+            # ── TEST HOOK: slow stage (for interrupt testing) ────────
+            if os.environ.get("RAG_TEST_SLOW_STAGE") == "1":
+                import time as _time
+                print(f"[TEST] RAG_TEST_SLOW_STAGE: sleeping 30s for doc {document_id}")
+                _time.sleep(30)
+
+            # ── Stage 2: Chunk ───────────────────────────────────────
             chunker = DocumentChunker()
-            text_chunks = chunker.chunk_text(text_content)
+            chunk_infos = chunker.chunk_text_with_offsets(text_content)
 
+            await _emit("kb.document.chunked", {
+                "document_id": document_id,
+                "chunk_count": len(chunk_infos),
+            })
+
+            # ── TEST HOOK: forced chunk failure ──────────────────────
+            if os.environ.get("RAG_TEST_FAIL_STAGE") == "chunk":
+                raise RuntimeError("TEST: forced chunk failure")
+
+            # ── Stage 3: Embed ───────────────────────────────────────
             provider = get_embedding_provider()
-            embeddings = provider.embed_texts(text_chunks)
+            chunk_texts = [c.text for c in chunk_infos]
+            embeddings = provider.embed_texts(chunk_texts)
 
-            # clear old chunks and embeddings if retrying
+            await _emit("kb.document.embedded", {
+                "document_id": document_id,
+                "chunk_count": len(embeddings),
+                "model": provider.model_name,
+            })
+
+            # ── TEST HOOK: forced embed failure ──────────────────────
+            if os.environ.get("RAG_TEST_FAIL_STAGE") == "embed":
+                raise RuntimeError("TEST: forced embed failure")
+
+            # ── Stage 4: Index (upsert to Postgres) ──────────────────
+            # Clear old chunks and embeddings
             old_chunks_res = await db.execute(
                 select(KbChunk.id).where(KbChunk.document_id == doc.id)
             )
@@ -605,29 +685,113 @@ async def _embed_document(document_id: int):
                 )
                 await db.execute(KbChunk.__table__.delete().where(KbChunk.document_id == doc.id))
 
-            for i, (chunk_text, embedding) in enumerate(zip(text_chunks, embeddings, strict=False)):
+            for i, (chunk_info, embedding) in enumerate(
+                zip(chunk_infos, embeddings, strict=False)
+            ):
                 db_chunk = KbChunk(
                     document_id=doc.id,
                     chunk_index=i,
-                    text_content=chunk_text,
-                    char_count=len(chunk_text),
+                    text_content=chunk_info.text,
+                    char_count=chunk_info.char_count,
+                    token_count=chunk_info.token_count,
+                    start_char=chunk_info.start_char,
+                    end_char=chunk_info.end_char,
                 )
                 db.add(db_chunk)
-                await db.flush()  # get chunk id
+                await db.flush()
 
                 db_emb = KbEmbedding(
                     chunk_id=db_chunk.id, embedding=embedding, model=provider.model_name
                 )
                 db.add(db_emb)
 
+            # Inject embedding metadata into the document's meta_data JSON block
+            if not doc.meta_data:
+                doc.meta_data = {}
+            doc.meta_data["embedding_model"] = provider.model_name
+            doc.meta_data["embedding_provider"] = type(provider).__name__
+            doc.meta_data["embedding_dimension"] = provider.dim
+
             doc.ingest_status = "ready"
+            doc.version += 1
             await db.commit()
-            print(f"Successfully embedded document {document_id} into {len(text_chunks)} chunks.")
+
+            print(f"Successfully embedded document {document_id} into {len(chunk_infos)} chunks.")
+            await _emit("kb.document.indexed", {
+                "document_id": document_id,
+                "chunk_count": len(chunk_infos),
+                "version": doc.version,
+            })
 
         except Exception as e:
-            print(f"Failed linking document {document_id} embeddings: {e}")
+            tb = traceback.format_exc()
+            error_msg = f"{type(e).__name__}: {e}"
+            print(f"Failed ingesting document {document_id}: {error_msg}\n{tb}")
             doc.ingest_status = "failed"
+            doc.error_message = error_msg[:2000]  # truncate for safety
             await db.commit()
+            await _emit("kb.document.ingest_failed", {
+                "document_id": document_id,
+                "error": error_msg[:500],
+            })
+
+
+async def _ingest_url(url: str, source_id: int, namespace: str, title: str):
+    """Fetch a URL, store raw content in MinIO, then embed."""
+    from packages.shared.events.api import emit_event
+
+    async with get_db_context() as db:
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+
+            raw_bytes = resp.content
+            content_type = resp.headers.get("content-type", "text/plain").split(";")[0].strip()
+
+            # Map common types
+            if "html" in content_type:
+                content_type = "text/html"
+            elif "pdf" in content_type:
+                content_type = "application/pdf"
+            elif "plain" in content_type or "text" in content_type:
+                content_type = "text/plain"
+
+            obj_key = f"kb/{source_id}/{uuid.uuid4()}_url_fetch"
+            storage = get_storage_backend()
+            storage.put_bytes(obj_key, raw_bytes, content_type)
+
+            db_doc = KbDocument(
+                source_id=source_id,
+                namespace=namespace,
+                title=title,
+                content_type=content_type,
+                storage_backend="s3",
+                object_key=obj_key,
+                bytes_size=len(raw_bytes),
+                meta_data={"source_url": url},
+                ingest_status="uploaded",
+            )
+            db.add(db_doc)
+            await db.commit()
+            await db.refresh(db_doc)
+
+            try:
+                await emit_event(
+                    event_type="kb.document.ingest_requested",
+                    payload={"document_id": db_doc.id, "source": "url", "url": url},
+                    produced_by="nexus-worker",
+                    tenant_id="nexus",
+                )
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"URL ingest failed for {url}: {e}")
+            raise
+
+    # Now run embedding pipeline
+    await _embed_document(db_doc.id)
 
 
 def dispatch_task(task_id: int):
@@ -636,3 +800,7 @@ def dispatch_task(task_id: int):
 
 def embed_document(document_id: int):
     asyncio.run(_embed_document(document_id))
+
+
+def ingest_url(url: str, source_id: int, namespace: str, title: str):
+    asyncio.run(_ingest_url(url, source_id, namespace, title))

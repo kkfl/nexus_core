@@ -166,6 +166,9 @@ async def read_secret_value(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
 
     plaintext = await _store.get_plaintext(db, secret)
+    # Update last_used_at timestamp
+    secret.last_used_at = datetime.datetime.utcnow()
+    await db.flush()
     # NOTE: plaintext is returned but NOT logged anywhere in this function.
     return SecretReadResponse(
         id=secret.id,

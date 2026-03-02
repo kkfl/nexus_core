@@ -33,6 +33,7 @@ class SecretMeta(BaseModel):
     next_due_at: datetime.datetime | None = None
     created_by_service_id: str
     is_active: bool
+    last_used_at: datetime.datetime | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

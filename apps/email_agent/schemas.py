@@ -121,12 +121,14 @@ class MessageFull(MessageListItem):
 
 class CreateMailboxRequest(BaseModel):
     email: str
-    password: str
+    password: str | None = None
+    vault_ref: str | None = None  # Vault alias — Brain-managed credential
 
 
 class SetPasswordRequest(BaseModel):
     email: str
-    password: str
+    password: str | None = None
+    vault_ref: str | None = None  # Vault alias — Brain-managed credential
 
 
 class DisableMailboxRequest(BaseModel):

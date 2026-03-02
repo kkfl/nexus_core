@@ -154,8 +154,9 @@ services:
       # Vault integration — dns-agent fetches provider credentials from secrets-agent at runtime
       - VAULT_BASE_URL=http://secrets-agent:8007
       - VAULT_SERVICE_ID=dns-agent
-      - VAULT_AGENT_KEY=${DNS_VAULT_AGENT_KEY}
+      - VAULT_AGENT_KEY=${DNS_VAULT_AGENT_KEY:-dns-vault-key-change-me}
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8006:8006"
     depends_on:
@@ -387,6 +388,7 @@ services:
       MAILBOX_READ_ALLOWLIST: ${MAILBOX_READ_ALLOWLIST:-}
       ALLOW_READ_ALL_MAILBOXES: ${ALLOW_READ_ALL_MAILBOXES:-true}
       STATS_CACHE_TTL_SECONDS: ${STATS_CACHE_TTL_SECONDS:-60}
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8014:8014"
     depends_on:
@@ -414,9 +416,53 @@ services:
       - nexus-api
     restart: unless-stopped
 
+  # ── Observability ──────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexus-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - nexus-api
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexus-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:
+

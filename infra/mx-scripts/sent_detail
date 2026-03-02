@@ -1,0 +1,106 @@
+#!/bin/bash
+# /opt/nexus-mail-admin/sent_detail
+# Per-mailbox sent email detail — recent outbound messages for a given sender.
+# Output: JSON array of individual sent message records.
+# Must run as root (via sudo by nexusops).
+#
+# Strategy for iRedMail with amavis:
+#   Single-pass awk over mail logs:
+#   1) Collects qmgr from=<sender> queue IDs
+#   2) Matches those queue IDs in delivery status lines
+#   3) Outputs tab-separated records for JSON formatting
+#
+# Usage: sudo /opt/nexus-mail-admin/sent_detail <sender_email> [limit]
+
+set -eu
+
+SENDER="${1:?Usage: sent_detail <sender_email> [limit]}"
+LIMIT="${2:-50}"
+
+LOGFILE="/var/log/nexus-mail-admin.log"
+log() { echo "$(date -Is) sent_detail: $*" >> "$LOGFILE"; }
+log "started sender=${SENDER} limit=${LIMIT}"
+
+LOG_FILES="/var/log/mail.log"
+[ -f /var/log/mail.log.1 ] && LOG_FILES="$LOG_FILES /var/log/mail.log.1"
+
+WORK_DIR=$(mktemp -d)
+trap "rm -rf $WORK_DIR" EXIT
+
+# Single-pass awk: find qmgr entries for sender, then match delivery lines
+cat $LOG_FILES 2>/dev/null | awk -v sender="$SENDER" '
+    # qmgr line with from=<sender>
+    /postfix\/qmgr/ && index($0, "from=<" sender ">") > 0 {
+        match($0, /: ([A-Za-z0-9]+):/, q)
+        if (q[1] != "") sender_qids[q[1]] = 1
+        next
+    }
+    # delivery line with status=
+    /status=(sent|bounced|deferred|expired)/ {
+        match($0, /: ([A-Za-z0-9]+):/, q)
+        qid = q[1]
+        if (qid in sender_qids) {
+            ts = $1 " " $2 " " $3
+            match($0, /to=<([^>]*)>/, t)
+            recipient = t[1]
+            match($0, /relay=([^,]*)/, r)
+            relay = r[1]
+            match($0, /delay=([^,]*)/, d)
+            delay = d[1]
+            match($0, /dsn=([^,]*)/, n)
+            dsn = n[1]
+            match($0, /status=([a-z]+)/, s)
+            status = s[1]
+            match($0, /status=[a-z]+ \((.*)$/, sd)
+            detail = sd[1]
+            sub(/\)$/, "", detail)
+            # Escape quotes in detail
+            gsub(/"/, "\\\"", detail)
+            if (recipient != "") {
+                print qid "\t" ts "\t" recipient "\t" status "\t" dsn "\t" delay "\t" relay "\t" detail
+            }
+        }
+    }
+' > "$WORK_DIR/parsed.txt" || true
+
+# Output JSON (most recent first, limited)
+COLLECTED_AT=$(date -Is)
+
+# Reverse and limit records
+tac "$WORK_DIR/parsed.txt" 2>/dev/null | head -n "$LIMIT" > "$WORK_DIR/limited.txt" || true
+
+echo "["
+
+FIRST=true
+COUNT=0
+while IFS=$'\t' read -r QID LOG_TS RECIPIENT STATUS DSN DELAY RELAY STATUS_DETAIL; do
+    [ -z "$QID" ] && continue
+
+    if [ "$FIRST" = true ]; then
+        FIRST=false
+    else
+        echo ","
+    fi
+
+    cat <<EOF
+  {
+    "queue_id": "$QID",
+    "sender": "$SENDER",
+    "recipient": "$RECIPIENT",
+    "sent_at": "$LOG_TS",
+    "status": "$STATUS",
+    "dsn": "$DSN",
+    "delay_seconds": "$DELAY",
+    "relay": "$RELAY",
+    "status_detail": "$STATUS_DETAIL",
+    "collected_at": "$COLLECTED_AT"
+  }
+EOF
+
+    COUNT=$((COUNT + 1))
+done < "$WORK_DIR/limited.txt"
+
+echo ""
+echo "]"
+
+log "done records=${COUNT}"

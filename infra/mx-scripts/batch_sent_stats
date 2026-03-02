@@ -1,0 +1,143 @@
+#!/bin/bash
+# /opt/nexus-mail-admin/batch_sent_stats
+# Parse Postfix mail logs for outbound email stats per authenticated sender.
+# Output: JSON array of per-sender sent/delivered/bounced/deferred counts.
+# Must run as root (via sudo by nexusops).
+#
+# Strategy for iRedMail with amavis content filter:
+#   The message flow creates multiple queue IDs:
+#     smtpd (sasl auth) -> cleanup -> qmgr -> amavis -> cleanup2 -> qmgr2 -> smtp (delivery)
+#   Instead of tracing through queue ID transitions, we:
+#     1) Build a map of queue-id -> from-addr from qmgr "from=<addr>" lines
+#     2) Build delivery stats from "status=" lines (which have to=<> but qid)
+#     3) Join on queue-id to get from-addr per delivery
+#     4) Filter to only authenticated senders (from sasl_username entries)
+#
+# Usage: sudo /opt/nexus-mail-admin/batch_sent_stats [hours_back]
+
+set -euo pipefail
+
+LOGFILE="/var/log/nexus-mail-admin.log"
+START=$(date +%s)
+HOURS_BACK="${1:-24}"
+
+log() { echo "$(date -Is) batch_sent_stats: $*" >> "$LOGFILE"; }
+log "started hours_back=${HOURS_BACK}"
+
+LOG_FILES="/var/log/mail.log"
+[ -f /var/log/mail.log.1 ] && LOG_FILES="$LOG_FILES /var/log/mail.log.1"
+
+WORK_DIR=$(mktemp -d)
+trap "rm -rf $WORK_DIR" EXIT
+
+# Step 1: Get the set of authenticated senders
+grep -ohP 'sasl_username=\K[^ ,]+' $LOG_FILES 2>/dev/null | \
+    sort -u > "$WORK_DIR/auth_senders.txt" || true
+
+AUTH_COUNT=$(wc -l < "$WORK_DIR/auth_senders.txt" 2>/dev/null || echo 0)
+if [ "$AUTH_COUNT" -eq 0 ]; then
+    echo "[]"
+    log "no authenticated senders found"
+    exit 0
+fi
+
+# Step 2: Extract queue-id -> from address from qmgr lines
+# Lines: Feb 27 10:15:03 mx postfix/qmgr[1234]: 4fQID123: from=<user@domain.com>, ...
+grep 'postfix/qmgr' $LOG_FILES 2>/dev/null | grep 'from=<' | \
+    awk '{ match($0, /: ([A-Za-z0-9]+):/, q); match($0, /from=<([^>]*)>/, f); if (q[1]!="" && f[1]!="") print q[1], f[1] }' \
+    > "$WORK_DIR/qid_from.txt" || true
+
+# Step 3: Extract queue-id -> delivery status
+# Lines: ... postfix/smtp[1234]: 4fQID: to=<rcpt>, ..., status=sent (...)
+grep -E 'status=(sent|bounced|deferred|expired)' $LOG_FILES 2>/dev/null | \
+    awk '{ match($0, /: ([A-Za-z0-9]+):/, q); match($0, /status=(sent|bounced|deferred|expired)/, s); if (q[1]!="" && s[1]!="") print q[1], s[1] }' \
+    > "$WORK_DIR/qid_status.txt" || true
+
+# Step 4: Join qid_from + qid_status, then filter by auth senders, aggregate
+awk '
+    # File 1: auth_senders.txt - just email addresses
+    ARGIND==1 { auth[$1]=1; next }
+    # File 2: qid_from.txt - qid from_addr
+    ARGIND==2 { from_map[$1]=$2; next }
+    # File 3: qid_status.txt - qid status
+    ARGIND==3 {
+        qid=$1; status=$2
+        if (qid in from_map) {
+            sender = from_map[qid]
+            if (sender in auth) {
+                total[sender]++
+                if (status=="sent") delivered[sender]++
+                else if (status=="bounced") bounced[sender]++
+                else if (status=="deferred") deferred_cnt[sender]++
+            }
+        }
+    }
+    END {
+        for (s in total) {
+            print s, total[s]+0, delivered[s]+0, bounced[s]+0, deferred_cnt[s]+0
+        }
+    }
+' "$WORK_DIR/auth_senders.txt" "$WORK_DIR/qid_from.txt" "$WORK_DIR/qid_status.txt" \
+    > "$WORK_DIR/aggregated.txt" || true
+
+# Step 5: Get last sent timestamp per sender
+grep -h "sasl_username=" $LOG_FILES 2>/dev/null | \
+    awk '{
+        month = $1; day = $2; time = $3
+        match($0, /sasl_username=([^ ,]*)/, m)
+        if (m[1] != "") { last_seen[m[1]] = month " " day " " time }
+    }
+    END { for (u in last_seen) print u, last_seen[u] }' \
+    > "$WORK_DIR/last_sent.txt" || true
+
+# Step 6: Output JSON
+COLLECTED_AT=$(date -Is)
+PERIOD="${HOURS_BACK}h"
+FIRST=true
+
+echo "["
+
+while IFS=' ' read -r SENDER SENT_TOTAL DELIVERED BOUNCED DEFERRED; do
+    [ -z "$SENDER" ] && continue
+
+    LAST_SENT="null"
+    LAST_LINE=$(grep "^${SENDER} " "$WORK_DIR/last_sent.txt" 2>/dev/null | head -1 || true)
+    if [ -n "$LAST_LINE" ]; then
+        LAST_VAL="${LAST_LINE#* }"
+        LAST_SENT="\"${LAST_VAL}\""
+    fi
+
+    if [ "$SENT_TOTAL" -gt 0 ] 2>/dev/null; then
+        DELIVERY_RATE=$(awk "BEGIN{printf \"%.1f\", ${DELIVERED}/${SENT_TOTAL}*100}")
+    else
+        DELIVERY_RATE="0.0"
+    fi
+
+    if [ "$FIRST" = true ]; then
+        FIRST=false
+    else
+        echo ","
+    fi
+
+    cat <<EOF
+  {
+    "sender": "$SENDER",
+    "sent_total": $SENT_TOTAL,
+    "delivered": $DELIVERED,
+    "bounced": $BOUNCED,
+    "deferred": $DEFERRED,
+    "delivery_rate": $DELIVERY_RATE,
+    "last_sent_at": $LAST_SENT,
+    "period": "$PERIOD",
+    "collected_at": "$COLLECTED_AT"
+  }
+EOF
+
+done < "$WORK_DIR/aggregated.txt"
+
+echo ""
+echo "]"
+
+ELAPSED=$(( $(date +%s) - START ))
+SENDERS=$(wc -l < "$WORK_DIR/aggregated.txt" 2>/dev/null || echo 0)
+log "done senders=${SENDERS} elapsed=${ELAPSED}s"

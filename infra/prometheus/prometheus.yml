@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # ── Nexus Core API ──────────────────────────────────────────
+  - job_name: "nexus-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["nexus-api:8000"]
+        labels:
+          service: "nexus-api"
+
+  # ── Agent Registry ──────────────────────────────────────────
+  - job_name: "agent-registry"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["agent-registry:8012"]
+        labels:
+          service: "agent-registry"
+
+  # ── Prometheus self-monitoring ──────────────────────────────
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

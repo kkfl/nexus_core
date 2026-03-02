@@ -28,7 +28,7 @@ class FastEmbedProvider(EmbeddingProvider):
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         # fastembed returns a generator of numpy arrays
         embeddings_gen = self.model.embed(texts)
-        return [list(emb) for emb in embeddings_gen]
+        return [[float(x) for x in emb] for emb in embeddings_gen]
 
 
 # Optional OpenAIProvider could go here if OPENAI_API_KEY is present

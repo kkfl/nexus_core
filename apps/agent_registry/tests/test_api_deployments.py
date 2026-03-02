@@ -1,5 +1,6 @@
+import uuid
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from apps.agent_registry.main import app
 
@@ -11,9 +12,10 @@ def registry_headers():
 
 @pytest.mark.asyncio
 async def test_create_and_get_deployment(registry_headers):
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # Create an agent first
-        res = await ac.post("/v1/agents", json={"name": "test-dep-agent"}, headers=registry_headers)
+        name = f"test-dep-agent-{uuid.uuid4().hex[:8]}"
+        res = await ac.post("/v1/agents", json={"name": name}, headers=registry_headers)
         agent_id = res.json()["id"]
 
         # Create deployment
@@ -43,9 +45,10 @@ async def test_create_and_get_deployment(registry_headers):
 
 @pytest.mark.asyncio
 async def test_update_deployment(registry_headers):
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        name = f"test-update-dep-agent-{uuid.uuid4().hex[:8]}"
         res = await ac.post(
-            "/v1/agents", json={"name": "test-update-dep-agent"}, headers=registry_headers
+            "/v1/agents", json={"name": name}, headers=registry_headers
         )
         agent_id = res.json()["id"]
 
@@ -53,11 +56,11 @@ async def test_update_deployment(registry_headers):
         res_dep = await ac.post("/v1/deployments", json=dep_data, headers=registry_headers)
         dep_id = res_dep.json()["id"]
 
-        update_data = {"status": "inactive", "base_url": "http://dead-agent:8080"}
+        update_data = {"version": "v2", "base_url": "http://dead-agent:8080"}
         res_patch = await ac.patch(
             f"/v1/deployments/{dep_id}", json=update_data, headers=registry_headers
         )
         assert res_patch.status_code == 200
         updated = res_patch.json()
-        assert updated["status"] == "inactive"
+        assert updated["version"] == "v2"
         assert updated["base_url"] == "http://dead-agent:8080"

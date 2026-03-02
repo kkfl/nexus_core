@@ -23,6 +23,8 @@ import {
     HddOutlined,
     PhoneOutlined,
     MailOutlined,
+    GlobalOutlined,
+    QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -73,6 +75,7 @@ export default function AdminLayout() {
                 { key: '/kb/sources', label: 'Sources', icon: <FileTextOutlined /> },
                 { key: '/kb/documents', label: 'Documents', icon: <FileTextOutlined /> },
                 { key: '/kb/search', label: 'Search', icon: <SearchOutlined /> },
+                { key: '/kb/ask', label: 'Ask Nexus', icon: <QuestionCircleOutlined /> },
             ],
         },
         {
@@ -95,6 +98,7 @@ export default function AdminLayout() {
                 { key: '/integrations/storage', label: 'Storage Jobs', icon: <HddOutlined /> },
                 { key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> },
                 { key: '/integrations/email', label: 'Email Administration', icon: <MailOutlined /> },
+                { key: '/integrations/dns', label: 'DNS Management', icon: <GlobalOutlined /> },
             ],
         },
         {

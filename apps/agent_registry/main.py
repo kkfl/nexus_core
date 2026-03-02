@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.agent_registry.api import agents, audit, capabilities, deployments
 from apps.agent_registry.config import get_settings
+from apps.agent_registry.metrics import get_metrics_response, metrics_middleware
 from apps.agent_registry.models import Base
 from apps.agent_registry.store.postgres import _engine
 
@@ -46,6 +47,10 @@ app = FastAPI(
     redoc_url="/redoc" if settings.enable_docs else None,
     openapi_url="/openapi.json" if settings.enable_docs else None,
 )
+
+from starlette.middleware.base import BaseHTTPMiddleware
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=metrics_middleware)
 
 cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -112,7 +117,7 @@ async def readyz():
 
 @app.get("/metrics", tags=["ops"])
 async def metrics():
-    return Response(content="# No prometheus metrics implemented yet\n", media_type="text/plain")
+    return get_metrics_response()
 
 
 # ---------------------------------------------------------------------------

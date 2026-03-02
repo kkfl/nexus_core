@@ -61,6 +61,20 @@ export default function Secrets() {
             ellipsis: true,
         },
         {
+            title: 'Last Used',
+            dataIndex: 'last_used_at',
+            key: 'last_used_at',
+            sorter: (a: any, b: any) => {
+                if (!a.last_used_at && !b.last_used_at) return 0;
+                if (!a.last_used_at) return 1;
+                if (!b.last_used_at) return -1;
+                return new Date(a.last_used_at).getTime() - new Date(b.last_used_at).getTime();
+            },
+            render: (text: string) => text
+                ? new Date(text).toLocaleString()
+                : <Text type="secondary" italic>Never</Text>,
+        },
+        {
             title: 'Updated At',
             dataIndex: 'updated_at',
             key: 'updated_at',

@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir \
     httpx==0.27.2 \
     cryptography==43.0.3 \
     structlog==24.4.0 \
-    alembic==1.13.3
+    alembic==1.13.3 \
+    redis>=5.0.0
 
 COPY ./apps/dns_agent /app/apps/dns_agent
 COPY ./apps/secrets_agent /app/apps/secrets_agent

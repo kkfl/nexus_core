@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,9 @@ from apps.dns_agent.schemas import (
     RecordOut,
 )
 from apps.dns_agent.store import postgres as store
+from packages.shared.events.api import emit_event
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/v1/records", tags=["records"])
 
@@ -92,6 +96,19 @@ async def batch_upsert(
         ip_address=identity.ip_address,
         reason=f"{len(payload.records)} record(s) queued in job {job.id}",
     )
+
+    try:
+        await emit_event(
+            event_type="dns.record.upserted",
+            payload={"zone": payload.zone, "count": len(payload.records), "job_id": job.id},
+            produced_by="dns-agent",
+            tenant_id=payload.tenant_id,
+            correlation_id=identity.correlation_id,
+            tags=["dns", "record", "upsert"],
+        )
+    except Exception:
+        logger.warning("event_emit_failed", event_type="dns.record.upserted")
+
     return JobCreateResponse(
         job_id=job.id,
         status="pending",
@@ -139,6 +156,19 @@ async def batch_delete(
         result="queued",
         ip_address=identity.ip_address,
     )
+
+    try:
+        await emit_event(
+            event_type="dns.record.deleted",
+            payload={"zone": payload.zone, "count": len(payload.records), "job_id": job.id},
+            produced_by="dns-agent",
+            tenant_id=payload.tenant_id,
+            correlation_id=identity.correlation_id,
+            tags=["dns", "record", "delete"],
+        )
+    except Exception:
+        logger.warning("event_emit_failed", event_type="dns.record.deleted")
+
     return JobCreateResponse(
         job_id=job.id,
         status="pending",

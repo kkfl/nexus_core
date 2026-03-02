@@ -1,5 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom';
-import { Table, Button, Typography, Space, Card, Input, Tooltip, Drawer, Tabs, Empty, Spin, message, Descriptions } from 'antd';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Table, Button, Typography, Space, Card, Input, Tooltip, Drawer, Tabs, Empty, Spin, message, Descriptions, Tag } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emailClient } from '../api/emailClient';
 import { useState } from 'react';
@@ -13,6 +13,10 @@ import {
     SearchOutlined,
     DownloadOutlined,
     FileTextOutlined,
+    SendOutlined,
+    CheckCircleOutlined,
+    CloseCircleOutlined,
+    ClockCircleOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
@@ -50,6 +54,19 @@ interface FullMessage {
     has_attachments: boolean;
 }
 
+interface SentMessage {
+    queue_id: string;
+    sender: string;
+    recipient: string;
+    sent_at: string;
+    status: string;
+    dsn: string;
+    delay_seconds: string;
+    relay: string;
+    status_detail: string;
+    collected_at: string;
+}
+
 export default function MailboxInbox() {
     const { email } = useParams<{ email: string }>();
     const navigate = useNavigate();
@@ -58,6 +75,8 @@ export default function MailboxInbox() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedUid, setSelectedUid] = useState<string | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [searchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'sent' ? 'sent' : 'inbox');
 
     // Message list
     const { data: messages, isLoading, refetch } = useQuery<MessageItem[]>({
@@ -88,6 +107,13 @@ export default function MailboxInbox() {
         },
     });
 
+    // Sent messages
+    const { data: sentData, isLoading: sentLoading, refetch: refetchSent } = useQuery<{ ok: boolean; messages: SentMessage[]; count: number }>({
+        queryKey: ['mailbox_sent', decodedEmail],
+        queryFn: async () => (await emailClient.get(`/email/admin/mailbox/${encodeURIComponent(decodedEmail)}/sent?limit=100`)).data,
+        enabled: !!decodedEmail && activeTab === 'sent',
+    });
+
     const formatSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -98,6 +124,85 @@ export default function MailboxInbox() {
         setSelectedUid(uid);
         setDrawerOpen(true);
     };
+
+    const statusIcon = (status: string) => {
+        switch (status) {
+            case 'sent': return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+            case 'bounced': return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+            case 'deferred': return <ClockCircleOutlined style={{ color: '#faad14' }} />;
+            default: return null;
+        }
+    };
+
+    const statusColor = (status: string) => {
+        switch (status) {
+            case 'sent': return 'green';
+            case 'bounced': return 'red';
+            case 'deferred': return 'orange';
+            default: return 'default';
+        }
+    };
+
+    const sentColumns = [
+        {
+            title: 'Recipient',
+            dataIndex: 'recipient',
+            key: 'recipient',
+            ellipsis: true,
+            render: (r: string) => <Text style={{ fontSize: 13 }}>{r}</Text>,
+        },
+        {
+            title: 'Status',
+            dataIndex: 'status',
+            key: 'status',
+            width: 110,
+            render: (status: string) => (
+                <Tag icon={statusIcon(status)} color={statusColor(status)}>
+                    {status?.charAt(0).toUpperCase() + status?.slice(1)}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Sent At',
+            dataIndex: 'sent_at',
+            key: 'sent_at',
+            width: 180,
+            render: (date: string) => <Text type="secondary" style={{ fontSize: 12 }}>{date}</Text>,
+        },
+        {
+            title: 'Relay',
+            dataIndex: 'relay',
+            key: 'relay',
+            width: 200,
+            ellipsis: true,
+            render: (relay: string) => <Text type="secondary" style={{ fontSize: 12 }}>{relay}</Text>,
+        },
+        {
+            title: 'Delay',
+            dataIndex: 'delay_seconds',
+            key: 'delay',
+            width: 80,
+            render: (delay: string) => <Text type="secondary" style={{ fontSize: 12 }}>{delay}s</Text>,
+        },
+        {
+            title: 'DSN',
+            dataIndex: 'dsn',
+            key: 'dsn',
+            width: 80,
+            render: (dsn: string) => <Text type="secondary" style={{ fontSize: 12 }}>{dsn}</Text>,
+        },
+        {
+            title: 'Detail',
+            dataIndex: 'status_detail',
+            key: 'detail',
+            ellipsis: true,
+            render: (detail: string) => (
+                <Tooltip title={detail}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{detail}</Text>
+                </Tooltip>
+            ),
+        },
+    ];
 
     const columns = [
         {
@@ -194,34 +299,82 @@ export default function MailboxInbox() {
                 </Space>
             </div>
 
-            {/* Stats bar */}
-            <Card size="small" style={{ marginBottom: 16 }}>
-                <Space size="large">
-                    <Text type="secondary">
-                        <MailOutlined style={{ marginRight: 4 }} />
-                        {messages?.length ?? 0} messages
-                    </Text>
-                    <Text type="secondary">
-                        {messages?.filter(m => !m.is_read).length ?? 0} unread
-                    </Text>
-                </Space>
-            </Card>
+            {/* Tabs: Inbox / Sent */}
+            <Tabs
+                activeKey={activeTab}
+                onChange={setActiveTab}
+                items={[
+                    {
+                        key: 'inbox',
+                        label: <Space><MailOutlined />Inbox ({messages?.length ?? 0})</Space>,
+                        children: (
+                            <>
+                                {/* Stats bar */}
+                                <Card size="small" style={{ marginBottom: 16 }}>
+                                    <Space size="large">
+                                        <Text type="secondary">
+                                            <MailOutlined style={{ marginRight: 4 }} />
+                                            {messages?.length ?? 0} messages
+                                        </Text>
+                                        <Text type="secondary">
+                                            {messages?.filter(m => !m.is_read).length ?? 0} unread
+                                        </Text>
+                                    </Space>
+                                </Card>
 
-            {/* Message list */}
-            <Table
-                dataSource={messages}
-                columns={columns}
-                rowKey="uid"
-                loading={isLoading}
-                size="small"
-                pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} messages` }}
-                onRow={(record) => ({
-                    onClick: () => openMessage(record.uid),
-                    style: {
-                        cursor: 'pointer',
-                        backgroundColor: record.is_read ? undefined : '#f0f5ff',
+                                {/* Message list */}
+                                <Table
+                                    dataSource={messages}
+                                    columns={columns}
+                                    rowKey="uid"
+                                    loading={isLoading}
+                                    size="small"
+                                    pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} messages` }}
+                                    onRow={(record) => ({
+                                        onClick: () => openMessage(record.uid),
+                                        style: {
+                                            cursor: 'pointer',
+                                            backgroundColor: record.is_read ? undefined : '#f0f5ff',
+                                        },
+                                    })}
+                                />
+                            </>
+                        ),
                     },
-                })}
+                    {
+                        key: 'sent',
+                        label: <Space><SendOutlined />Sent</Space>,
+                        children: (
+                            <>
+                                <Card size="small" style={{ marginBottom: 16 }}>
+                                    <Space size="large">
+                                        <Text type="secondary">
+                                            <SendOutlined style={{ marginRight: 4 }} />
+                                            {sentData?.count ?? 0} sent messages
+                                        </Text>
+                                        <Button
+                                            size="small"
+                                            icon={<ReloadOutlined />}
+                                            onClick={() => refetchSent()}
+                                        >
+                                            Refresh
+                                        </Button>
+                                    </Space>
+                                </Card>
+
+                                <Table
+                                    dataSource={sentData?.messages}
+                                    columns={sentColumns}
+                                    rowKey="queue_id"
+                                    loading={sentLoading}
+                                    size="small"
+                                    pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} sent messages` }}
+                                    locale={{ emptyText: <Empty description="No sent messages found in recent logs" /> }}
+                                />
+                            </>
+                        ),
+                    },
+                ]}
             />
 
             {/* Message Detail Drawer */}
