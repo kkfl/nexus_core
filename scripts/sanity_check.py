@@ -1,6 +1,5 @@
 """Sanity check: ingest test docs and verify MinIO + Postgres."""
 
-
 import httpx
 
 API = "http://localhost:8000"

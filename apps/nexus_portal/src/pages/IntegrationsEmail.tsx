@@ -295,7 +295,7 @@ export default function IntegrationsEmail() {
     const domains = [...new Set(mergedMailboxes.map(m => m.domain))];
 
     // Stale indicator — Date.now() is intentionally called here for freshness display
-    // eslint-disable-next-line react-compiler/react-compiler
+    // eslint-disable-next-line
     const statsAgeLabel = (() => {
         const age = bulkStats?.collected_at
             ? Math.round((Date.now() - new Date(bulkStats.collected_at).getTime()) / 1000)
