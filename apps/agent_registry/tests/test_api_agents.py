@@ -1,4 +1,5 @@
 import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -36,7 +37,7 @@ async def test_update_agent(registry_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         name = f"update-agent-{uuid.uuid4().hex[:8]}"
         agent_data = {"name": name}
-        res = await ac.post("/v1/agents", json=agent_data, headers=registry_headers)
+        await ac.post("/v1/agents", json=agent_data, headers=registry_headers)
 
         update_data = {"status": "disabled", "description": "Offline"}
         res_patch = await ac.patch(f"/v1/agents/{name}", json=update_data, headers=registry_headers)

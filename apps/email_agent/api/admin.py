@@ -29,7 +29,6 @@ from apps.email_agent.services.mailbox_stats import (
 from apps.email_agent.services.sent_stats import (
     get_sent_detail,
     get_sent_stats_cached,
-    get_sender_stats,
     refresh_sent_stats,
 )
 from apps.email_agent.services.server_stats import get_server_stats

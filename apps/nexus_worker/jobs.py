@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -572,11 +573,10 @@ async def _embed_document(document_id: int):
     import traceback
 
     from packages.shared.events.api import emit_event
-    from packages.shared.rag.chunker import DocumentChunker
 
     async def _emit(event_type: str, payload: dict):
         """Fire-and-forget event emission; never block the pipeline."""
-        try:
+        with contextlib.suppress(Exception):
             await emit_event(
                 event_type=event_type,
                 payload=payload,
@@ -584,8 +584,6 @@ async def _embed_document(document_id: int):
                 tenant_id="nexus",
                 correlation_id=str(document_id),
             )
-        except Exception:
-            pass  # event emission must not break ingest
 
     async with get_db_context() as db:
         res = await db.execute(select(KbDocument).where(KbDocument.id == document_id))
@@ -615,6 +613,7 @@ async def _embed_document(document_id: int):
             # Text extraction based on content_type
             if doc.content_type == "application/pdf":
                 import io
+
                 import pypdf
 
                 pdf_file = io.BytesIO(raw_bytes)
@@ -799,15 +798,13 @@ async def _ingest_url(url: str, source_id: int, namespace: str, title: str):
             await db.commit()
             await db.refresh(db_doc)
 
-            try:
+            with contextlib.suppress(Exception):
                 await emit_event(
                     event_type="kb.document.ingest_requested",
                     payload={"document_id": db_doc.id, "source": "url", "url": url},
                     produced_by="nexus-worker",
                     tenant_id="nexus",
                 )
-            except Exception:
-                pass
 
         except Exception as e:
             print(f"URL ingest failed for {url}: {e}")

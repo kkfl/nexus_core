@@ -36,7 +36,7 @@ import asyncio
 import os
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -69,10 +69,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Cancel worker on shutdown
     worker_task.cancel()
-    try:
+    with suppress(asyncio.CancelledError):
         await worker_task
-    except asyncio.CancelledError:
-        pass
     logger.info("server_agent_shutdown")
 
 

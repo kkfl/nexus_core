@@ -276,7 +276,7 @@ class EventBus:
         total = 0
 
         results = await self._redis.xrange(stream_key, min=from_id, count=count)
-        for entry_id_bytes, fields in results:
+        for _entry_id_bytes, fields in results:
             event = NexusEvent.from_stream_dict(fields)
             await handler(event)
             total += 1

@@ -1,7 +1,7 @@
 """Sanity check: ingest test docs and verify MinIO + Postgres."""
 
+
 import httpx
-import json
 
 API = "http://localhost:8000"
 
@@ -66,7 +66,7 @@ time.sleep(3)
 # List last documents
 r3 = httpx.get(f"{API}/kb/documents?limit=100", headers=h)
 docs = r3.json()
-print(f"\n=== Last 5 Documents ===")
+print("\n=== Last 5 Documents ===")
 for d in docs[-5:]:
     print(
         f"  id={d['id']} title={d['title'][:30]} status={d['ingest_status']}"
@@ -75,8 +75,9 @@ for d in docs[-5:]:
     )
 
 # Check embedding metadata
-from sqlalchemy import create_engine, text
 import os
+
+from sqlalchemy import create_engine, text
 
 db_url = os.environ.get("DATABASE_URL", "postgresql://nexus:nexus@localhost:5432/nexus_core")
 engine = create_engine(db_url.replace("+asyncpg", ""))
@@ -84,7 +85,7 @@ with engine.connect() as conn:
     rows = conn.execute(
         text("SELECT DISTINCT model, COUNT(*) as cnt FROM kb_embeddings GROUP BY model")
     ).fetchall()
-    print(f"\n=== Embedding Models in DB ===")
+    print("\n=== Embedding Models in DB ===")
     for row in rows:
         print(f"  model={row[0]}, embeddings_count={row[1]}")
 

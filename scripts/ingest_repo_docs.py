@@ -12,7 +12,6 @@ This script:
 
 import argparse
 import os
-import sys
 import time
 
 import httpx
@@ -121,8 +120,8 @@ def main():
 
     # Ingest each file
     ingested = []
-    for rel_path, abs_path, size in files:
-        with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+    for rel_path, abs_path, _size in files:
+        with open(abs_path, encoding="utf-8", errors="ignore") as f:
             text = f.read()
 
         title = rel_path.replace("\\", "/")
@@ -149,7 +148,7 @@ def main():
 
     print(f"\n  Ingested {len(ingested)} documents. Worker will embed them in the background.")
     print(f"  Monitor with: curl http://localhost:8000/kb/documents?namespace={args.namespace}")
-    print(f"\n  Wait ~60s for embedding to complete, then run:")
+    print("\n  Wait ~60s for embedding to complete, then run:")
     print(f"    python scripts/eval_runner.py --api-url {args.api_url}")
 
 

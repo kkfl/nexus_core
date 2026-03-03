@@ -6,9 +6,9 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.server_agent.models import ServerHost
 from apps.server_agent.adapters.factory import get_adapter
 from apps.server_agent.client.vault_client import ServerVaultClient
+from apps.server_agent.models import ServerHost
 from apps.server_agent.store.postgres import get_db
 
 logger = structlog.get_logger(__name__)

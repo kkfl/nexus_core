@@ -9,7 +9,7 @@ Tests the core credential orchestration logic:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -21,7 +21,6 @@ from apps.nexus_api.brain.credentials import (
     provision_pbx_credential,
     store_credential_in_vault,
 )
-
 
 # ---------------------------------------------------------------------------
 # Vault alias conventions
@@ -64,7 +63,7 @@ class TestStoreCredentialInVault:
                 {"id": "new-id", "alias": "test.alias"},  # POST /v1/secrets
             ]
 
-            result = await store_credential_in_vault(
+            await store_credential_in_vault(
                 alias="test.alias", value="secret-value", description="Test"
             )
 
@@ -86,7 +85,7 @@ class TestStoreCredentialInVault:
                 {"id": "existing-id", "rotated_at": "2026-01-01T00:00:00Z"},  # POST /rotate
             ]
 
-            result = await store_credential_in_vault(alias="test.alias", value="new-secret-value")
+            await store_credential_in_vault(alias="test.alias", value="new-secret-value")
 
             assert mock_req.call_count == 2
             second_call = mock_req.call_args_list[1]

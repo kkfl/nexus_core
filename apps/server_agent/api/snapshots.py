@@ -9,9 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.server_agent.models import ServerChangeJob, ServerInstance
+from apps.server_agent.models import ServerChangeJob, ServerInstance, ServerSnapshot
 from apps.server_agent.schemas import JobCreateResponse, SnapshotCreate, SnapshotOut
-from apps.server_agent.models import ServerSnapshot
 from apps.server_agent.store.postgres import get_db
 
 logger = structlog.get_logger(__name__)

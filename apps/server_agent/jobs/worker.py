@@ -11,7 +11,7 @@ import datetime
 import uuid
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.server_agent.adapters.factory import get_adapter
@@ -141,7 +141,7 @@ async def _execute_job(job: ServerChangeJob, db: AsyncSession) -> None:
             ram_mb=meta.ram_mb,
             disk_gb=meta.disk_gb,
             tags=meta.tags,
-            last_synced_at=datetime.datetime.now(datetime.timezone.utc),
+            last_synced_at=datetime.datetime.now(datetime.UTC),
         )
         db.add(instance)
         job.instance_id = instance.id
@@ -245,7 +245,7 @@ async def _execute_job(job: ServerChangeJob, db: AsyncSession) -> None:
                 existing_row.vcpu_count = meta.vcpu_count
                 existing_row.ram_mb = meta.ram_mb
                 existing_row.disk_gb = meta.disk_gb
-                existing_row.last_synced_at = datetime.datetime.now(datetime.timezone.utc)
+                existing_row.last_synced_at = datetime.datetime.now(datetime.UTC)
                 continue
             db.add(
                 ServerInstance(
@@ -268,7 +268,7 @@ async def _execute_job(job: ServerChangeJob, db: AsyncSession) -> None:
                     ram_mb=meta.ram_mb,
                     disk_gb=meta.disk_gb,
                     tags=meta.tags,
-                    last_synced_at=datetime.datetime.now(datetime.timezone.utc),
+                    last_synced_at=datetime.datetime.now(datetime.UTC),
                 )
             )
             added += 1
@@ -300,14 +300,14 @@ async def process_pending_jobs() -> int:
                 # Mark running
                 job.status = "running"
                 job.attempts += 1
-                job.started_at = datetime.datetime.now(datetime.timezone.utc)
+                job.started_at = datetime.datetime.now(datetime.UTC)
                 await db.commit()
 
                 await _execute_job(job, db)
 
                 # Mark succeeded
                 job.status = "succeeded"
-                job.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                job.completed_at = datetime.datetime.now(datetime.UTC)
                 await db.commit()
 
                 # Emit event
@@ -339,7 +339,7 @@ async def process_pending_jobs() -> int:
                 logger.error("job_failed", job_id=job.id, error=str(exc))
                 job.status = "failed" if job.attempts >= settings.job_max_attempts else "pending"
                 job.last_error = str(exc)[:1000]  # Truncate, never include credentials
-                job.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                job.completed_at = datetime.datetime.now(datetime.UTC)
                 await db.commit()
 
                 # Emit failure event

@@ -6,8 +6,8 @@ Revises: 026_ask_feedback
 Create Date: 2026-03-01
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "027_server_agent_tables"

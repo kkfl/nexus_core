@@ -15,8 +15,6 @@ import structlog
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.shared.db import get_db
-
 from apps.nexus_api.brain.credentials import (
     EmailCredentialRequest,
     EmailCredentialResponse,
@@ -27,6 +25,7 @@ from apps.nexus_api.brain.credentials import (
 )
 from apps.nexus_api.dependencies import RequireRole
 from packages.shared.client.agent_registry import get_registry_client
+from packages.shared.db import get_db
 
 logger = structlog.get_logger(__name__)
 
@@ -175,12 +174,14 @@ async def dashboard_summary(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     import httpx
+
     from packages.shared.client.agent_registry import get_registry_client
 
     registry = get_registry_client()
 
     # 1. Fetch agents
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from packages.shared.models.core import BusEvent
 
     recent_activity = []

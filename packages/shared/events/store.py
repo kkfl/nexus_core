@@ -4,7 +4,6 @@ Event store — persist events to Postgres for audit and debugging.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 import structlog

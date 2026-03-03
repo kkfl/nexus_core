@@ -1,6 +1,4 @@
-import re
 
-from unittest.mock import patch
 
 import pytest
 import respx
@@ -15,7 +13,6 @@ async def test_resolve_agent_exact_tenant():
     client = AgentRegistryClient(
         registry_base_url="http://fake-registry", agent_key="key", service_id="test"
     )
-    headers = {"X-Service-ID": "test", "X-Agent-Key": "key", "Content-Type": "application/json"}
 
     # Mock agent lookup
     respx.get("http://fake-registry/v1/agents/demo-agent").mock(
@@ -64,7 +61,6 @@ async def test_resolve_agent_fallback_global():
     client = AgentRegistryClient(
         registry_base_url="http://fake-registry", agent_key="key", service_id="test"
     )
-    headers = {"X-Service-ID": "test", "X-Agent-Key": "key", "Content-Type": "application/json"}
 
     # Mock agent lookup
     respx.get("http://fake-registry/v1/agents/demo-agent").mock(

@@ -1,16 +1,17 @@
 import asyncio
 import os
-import uuid
-import httpx
-from sqlalchemy.future import select
 
 # Setup python path to allow importing nexus_core modules
 import sys
+import uuid
+
+import httpx
+from sqlalchemy.future import select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
 from packages.shared.db import get_db_context
-from packages.shared.models.core import KbSource, KbDocument, KbEmbedding
+from packages.shared.models.core import KbDocument, KbEmbedding, KbSource
 from packages.shared.storage import get_storage_backend
 
 
@@ -56,7 +57,6 @@ async def verify():
             print(f"Failed to call API (is it running?): {e}")
             print("Will attempt direct worker call if possible...")
             from apps.nexus_worker.jobs import _ingest_url
-            from apps.nexus_api.routers.kb import ingest_from_email, KbEmailIngestRequest
 
             await _ingest_url("https://example.com", source_id, "global", "Example Domain")
 
@@ -92,7 +92,7 @@ async def verify():
                 print(f"  [FAIL] Could not retrieve from MinIO: {e}")
 
             # Check embeddings metadata
-            res_emb = await db.execute(
+            await db.execute(
                 select(KbEmbedding)
                 .join(KbEmbedding.chunk_id)
                 .where(

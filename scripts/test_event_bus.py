@@ -11,9 +11,7 @@ Tests:
 """
 
 import asyncio
-import json
 import os
-import sys
 import time
 
 os.environ.setdefault("REDIS_URL", "redis://redis:6379/0")
@@ -51,7 +49,7 @@ async def test_a_happy_path():
     if found and found[0]["length"] >= 1:
         print(f"  Redis Stream: length={found[0]['length']} ✅ PASS")
     else:
-        print(f"  Redis Stream: NOT FOUND ❌ FAIL")
+        print("  Redis Stream: NOT FOUND ❌ FAIL")
         await bus.close()
         return False
 
@@ -111,16 +109,16 @@ async def test_b_consumer_failure():
     pending_count = (
         pending.get("pending", 0)
         if isinstance(pending, dict)
-        else (pending[0] if isinstance(pending, (list, tuple)) else 0)
+        else (pending[0] if isinstance(pending, list | tuple) else 0)
     )
     print(f"  Pending count: {pending_count}")
-    print(f"  DLQ Note: Message is NOT in DLQ yet because delivery_count=1 < MAX=3")
-    print(f"  Gap G3 confirmed: No pending claimer loop to re-deliver failed messages ⚠️ KNOWN GAP")
+    print("  DLQ Note: Message is NOT in DLQ yet because delivery_count=1 < MAX=3")
+    print("  Gap G3 confirmed: No pending claimer loop to re-deliver failed messages ⚠️ KNOWN GAP")
 
     # Verify DLQ is still empty (as expected with gap)
     dlq = await bus.read_dlq()
     print(f"  DLQ entries: {len(dlq)} (expected 0 — gap G3)")
-    print(f"  Result: ⚠️ PASS (behavior matches documented gap)")
+    print("  Result: ⚠️ PASS (behavior matches documented gap)")
 
     await bus.close()
     return True
@@ -152,9 +150,9 @@ async def test_c_replay():
     count = await bus.replay("test.replay", collector, from_id="0-0", count=100)
     print(f"  Replayed {count} events: {replayed}")
     if count >= 3:
-        print(f"  ✅ PASS")
+        print("  ✅ PASS")
     else:
-        print(f"  ❌ FAIL (expected >= 3)")
+        print("  ❌ FAIL (expected >= 3)")
         await bus.close()
         return False
 
@@ -204,12 +202,12 @@ async def test_d_idempotency():
     print(f"  Stream length: {length}")
 
     if length >= 2:
-        print(f"  Status: Both events stored in Redis (no transport-level dedup)")
-        print(f"  Gap G4 confirmed: idempotency_key exists but no UNIQUE constraint ⚠️ KNOWN GAP")
-        print(f"  Consumer-side dedup must be handled by the subscriber")
-        print(f"  ⚠️ PASS (behavior matches documented gap)")
+        print("  Status: Both events stored in Redis (no transport-level dedup)")
+        print("  Gap G4 confirmed: idempotency_key exists but no UNIQUE constraint ⚠️ KNOWN GAP")
+        print("  Consumer-side dedup must be handled by the subscriber")
+        print("  ⚠️ PASS (behavior matches documented gap)")
     else:
-        print(f"  ❌ UNEXPECTED")
+        print("  ❌ UNEXPECTED")
 
     await bus.close()
     return True
@@ -218,7 +216,6 @@ async def test_d_idempotency():
 async def test_e_redaction():
     """E) Secret-like fields redacted in Postgres."""
     banner("E: Redaction")
-    from packages.shared.events.schema import NexusEvent
     from packages.shared.logging import redact_dict
 
     # Simulate what store.py does
@@ -235,8 +232,8 @@ async def test_e_redaction():
     }
 
     redacted = redact_dict(payload)
-    print(f"  Original keys with secrets: api_key, password, token, nested.authorization")
-    print(f"  Redacted result:")
+    print("  Original keys with secrets: api_key, password, token, nested.authorization")
+    print("  Redacted result:")
     for k, v in redacted.items():
         if isinstance(v, dict):
             for nk, nv in v.items():
@@ -247,26 +244,26 @@ async def test_e_redaction():
     # Verify redaction
     passed = True
     if redacted["api_key"] != "***REDACTED***":
-        print(f"  ❌ FAIL: api_key not redacted")
+        print("  ❌ FAIL: api_key not redacted")
         passed = False
     if redacted["password"] != "***REDACTED***":
-        print(f"  ❌ FAIL: password not redacted")
+        print("  ❌ FAIL: password not redacted")
         passed = False
     if redacted["token"] != "***REDACTED***":
-        print(f"  ❌ FAIL: token not redacted")
+        print("  ❌ FAIL: token not redacted")
         passed = False
     if redacted["nested"]["authorization"] != "***REDACTED***":
-        print(f"  ❌ FAIL: nested.authorization not redacted")
+        print("  ❌ FAIL: nested.authorization not redacted")
         passed = False
     if redacted["safe_field"] != "this should survive":
-        print(f"  ❌ FAIL: safe_field was incorrectly redacted")
+        print("  ❌ FAIL: safe_field was incorrectly redacted")
         passed = False
     if redacted["nested"]["value"] != "ok":
-        print(f"  ❌ FAIL: nested.value was incorrectly redacted")
+        print("  ❌ FAIL: nested.value was incorrectly redacted")
         passed = False
 
     if passed:
-        print(f"  ✅ PASS — all secret fields redacted, safe fields preserved")
+        print("  ✅ PASS — all secret fields redacted, safe fields preserved")
     return passed
 
 
@@ -294,7 +291,7 @@ async def test_f_backpressure():
     print(f"  Stream length: {length}")
 
     if length >= 500:
-        print(f"  ✅ PASS — all 500 events stored in Redis")
+        print("  ✅ PASS — all 500 events stored in Redis")
     else:
         print(f"  ❌ FAIL — only {length}/500 events stored")
         await bus.close()
@@ -322,7 +319,7 @@ async def test_f_backpressure():
     results = await bus._redis.xreadgroup(
         groupname="lag-test-group",
         consumername="lag-worker",
-        streams={"nexus:events:test.backpressure".encode(): b">"},
+        streams={b"nexus:events:test.backpressure": b">"},
         count=5,
         block=100,
     )
@@ -338,7 +335,7 @@ async def test_f_backpressure():
     # Check pending info
     pending_summary = await bus._redis.xpending("nexus:events:test.backpressure", "lag-test-group")
     print(f"  Pending summary: {pending_summary}")
-    print(f"  ✅ PASS — lag is visible via XPENDING and admin /events/streams")
+    print("  ✅ PASS — lag is visible via XPENDING and admin /events/streams")
 
     await bus.close()
     return True
@@ -375,7 +372,7 @@ async def main():
         print(f"  {icon} {label}: {status}")
 
     # Cleanup test streams
-    print(f"\n  (Test streams left in Redis for inspection)")
+    print("\n  (Test streams left in Redis for inspection)")
 
 
 asyncio.run(main())

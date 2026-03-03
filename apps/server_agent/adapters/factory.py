@@ -9,8 +9,8 @@ from __future__ import annotations
 import structlog
 
 from apps.server_agent.adapters.base import ServerProviderAdapter
-from apps.server_agent.adapters.vultr import VultrAdapter
 from apps.server_agent.adapters.proxmox import ProxmoxAdapter
+from apps.server_agent.adapters.vultr import VultrAdapter
 from apps.server_agent.config import get_settings
 
 logger = structlog.get_logger(__name__)

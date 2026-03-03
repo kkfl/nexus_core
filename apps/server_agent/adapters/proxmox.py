@@ -7,8 +7,8 @@ Auth: API tokens only (PVEAPIToken=user!tokenid=secret).
 
 from __future__ import annotations
 
-import structlog
 import httpx
+import structlog
 
 from apps.server_agent.adapters.base import (
     BackupMeta,

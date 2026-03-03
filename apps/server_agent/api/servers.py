@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.server_agent.models import ServerChangeJob, ServerHost, ServerInstance, ServerAuditEvent
+from apps.server_agent.adapters.factory import get_adapter
+from apps.server_agent.client.vault_client import ServerVaultClient
+from apps.server_agent.models import ServerAuditEvent, ServerChangeJob, ServerHost, ServerInstance
 from apps.server_agent.schemas import (
     ConsoleOut,
     CreateServerRequest,
@@ -17,8 +19,6 @@ from apps.server_agent.schemas import (
     ServerOut,
 )
 from apps.server_agent.store.postgres import get_db
-from apps.server_agent.adapters.factory import get_adapter
-from apps.server_agent.client.vault_client import ServerVaultClient
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/v1/servers", tags=["servers"])

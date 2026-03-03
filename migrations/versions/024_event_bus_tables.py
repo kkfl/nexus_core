@@ -5,8 +5,8 @@ Revises: 023_storage_agent_tables
 Create Date: 2026-02-28
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "024_event_bus_tables"

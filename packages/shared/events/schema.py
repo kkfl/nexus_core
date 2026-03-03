@@ -36,7 +36,7 @@ class NexusEvent(BaseModel):
 
     # ── Timing ────────────────────────────────────────────────────────────
     occurred_at: str = Field(
-        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
+        default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat()
     )
 
     # ── Provenance ────────────────────────────────────────────────────────

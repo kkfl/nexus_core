@@ -43,7 +43,7 @@ def _hmac_headers(api_key: str, secret_key: str) -> dict[str, str]:
     Build HMAC-SHA1 auth headers for DNSMadeEasy.
     Keys are never logged — used only in the Authorization headers.
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     request_date = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
     hmac_hash = hmac.new(
         secret_key.encode("utf-8"),
