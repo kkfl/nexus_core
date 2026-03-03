@@ -294,16 +294,13 @@ export default function IntegrationsEmail() {
     const totalUnread = mergedMailboxes.reduce((sum, m) => sum + (m.unread_count || 0), 0);
     const domains = [...new Set(mergedMailboxes.map(m => m.domain))];
 
-    // Stale indicator — Date.now() is intentionally called here for freshness display
-    // eslint-disable-next-line
-    const statsAgeLabel = (() => {
-        const age = bulkStats?.collected_at
-            ? Math.round((Date.now() - new Date(bulkStats.collected_at).getTime()) / 1000)
-            : null;
-        return age !== null
-            ? age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`
-            : 'never';
-    })();
+    // Stale indicator
+    const collectedAt = bulkStats?.collected_at;
+    // eslint-disable-next-line react-hooks/purity
+    const statsAgeSeconds = collectedAt ? Math.round((Date.now() - new Date(collectedAt).getTime()) / 1000) : null;
+    const statsAgeLabel = statsAgeSeconds !== null
+        ? statsAgeSeconds < 60 ? `${statsAgeSeconds}s ago` : `${Math.round(statsAgeSeconds / 60)}m ago`
+        : 'never';
 
 
 
