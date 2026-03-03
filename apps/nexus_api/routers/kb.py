@@ -166,6 +166,7 @@ async def upload_document(
 
 # ── URL Ingest ────────────────────────────────────────────────────────
 
+
 @router.post("/documents/url", response_model=dict)
 async def ingest_from_url(
     req: KbUrlIngestRequest,
@@ -190,6 +191,7 @@ async def ingest_from_url(
 
 
 # ── Email Ingest Hook ────────────────────────────────────────────────
+
 
 @router.post("/documents/email-ingest", response_model=dict)
 async def ingest_from_email(
@@ -240,6 +242,7 @@ async def ingest_from_email(
 
 # ── Re-ingest ────────────────────────────────────────────────────────
 
+
 @router.post("/documents/{id}/reingest", response_model=dict)
 async def reingest_document(
     id: int,
@@ -268,6 +271,7 @@ async def reingest_document(
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────
+
 
 @router.get("/documents", response_model=list[KbDocumentOut])
 async def read_documents(
@@ -335,6 +339,7 @@ async def read_chunks(
 
 
 # ── RAG Policy + Search ──────────────────────────────────────────────
+
 
 async def enforce_rag_policy(
     namespaces: list[str],
@@ -529,6 +534,7 @@ async def internal_kb_search(
 
 # ── Embedding Metadata Info ──────────────────────────────────────────
 
+
 @router.get("/embeddings/info")
 async def embeddings_info(
     db: AsyncSession = Depends(get_db),
@@ -542,17 +548,11 @@ async def embeddings_info(
     provider = get_embedding_provider()
 
     # Count embeddings and chunks
-    emb_count = (await db.execute(
-        select(sa_func.count()).select_from(KbEmbedding)
-    )).scalar() or 0
+    emb_count = (await db.execute(select(sa_func.count()).select_from(KbEmbedding))).scalar() or 0
 
-    chunk_count = (await db.execute(
-        select(sa_func.count()).select_from(KbChunk)
-    )).scalar() or 0
+    chunk_count = (await db.execute(select(sa_func.count()).select_from(KbChunk))).scalar() or 0
 
-    doc_count = (await db.execute(
-        select(sa_func.count()).select_from(KbDocument)
-    )).scalar() or 0
+    doc_count = (await db.execute(select(sa_func.count()).select_from(KbDocument))).scalar() or 0
 
     # Get distinct models actually used in stored embeddings
     models_query = await db.execute(
@@ -680,7 +680,11 @@ async def ask_nexus(
         # ── Emit ask.retrieved (persisted) ───────────────────────────
         await emit_event(
             event_type="ask.retrieved",
-            payload={"chunk_count": len(rows), "namespaces": actual_namespaces, "retrieve_ms": retrieve_ms},
+            payload={
+                "chunk_count": len(rows),
+                "namespaces": actual_namespaces,
+                "retrieve_ms": retrieve_ms,
+            },
             produced_by="nexus-api",
             correlation_id=correlation_id,
             db=db,
@@ -691,16 +695,18 @@ async def ask_nexus(
         for row in rows:
             score = 1.0 - float(row.distance)
             excerpt = row.text_content[:500] if row.text_content else ""
-            citations.append(AskNexusCitation(
-                document_id=str(row.document_id),
-                title=row.title,
-                chunk_id=str(row.chunk_id),
-                chunk_index=row.chunk_index,
-                start_char=row.start_char,
-                end_char=row.end_char,
-                score=score,
-                excerpt=excerpt,
-            ))
+            citations.append(
+                AskNexusCitation(
+                    document_id=str(row.document_id),
+                    title=row.title,
+                    chunk_id=str(row.chunk_id),
+                    chunk_index=row.chunk_index,
+                    start_char=row.start_char,
+                    end_char=row.end_char,
+                    score=score,
+                    excerpt=excerpt,
+                )
+            )
 
         # Compose answer from retrieved context (V1 — no LLM)
         if citations:
@@ -708,7 +714,8 @@ async def ask_nexus(
                 f"Based on {len(citations)} relevant document(s) from the knowledge base:\n\n"
                 + "\n\n---\n\n".join(
                     f"**{c.title}** (score: {c.score:.0%})\n{c.excerpt[:300]}..."
-                    if len(c.excerpt) > 300 else f"**{c.title}** (score: {c.score:.0%})\n{c.excerpt}"
+                    if len(c.excerpt) > 300
+                    else f"**{c.title}** (score: {c.score:.0%})\n{c.excerpt}"
                     for c in citations[:3]
                 )
             )
@@ -747,7 +754,11 @@ async def ask_nexus(
         # ── Emit ask.responded (persisted) ───────────────────────────
         await emit_event(
             event_type="ask.responded",
-            payload={"citation_count": len(citations), "answer_length": len(answer), "total_ms": total_ms},
+            payload={
+                "citation_count": len(citations),
+                "answer_length": len(answer),
+                "total_ms": total_ms,
+            },
             produced_by="nexus-api",
             correlation_id=correlation_id,
             db=db,
@@ -777,6 +788,7 @@ async def ask_nexus(
 
 
 # ── Ask Feedback ─────────────────────────────────────────────────────
+
 
 @router.post("/ask/feedback")
 async def submit_ask_feedback(

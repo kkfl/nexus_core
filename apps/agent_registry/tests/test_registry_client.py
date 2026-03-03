@@ -47,9 +47,10 @@ async def test_resolve_agent_exact_tenant():
         )
     )
 
-
     try:
-        resolved = await client.resolve_agent(agent_name="demo-agent", tenant_id="tenant-x", env="prod")
+        resolved = await client.resolve_agent(
+            agent_name="demo-agent", tenant_id="tenant-x", env="prod"
+        )
         assert resolved is not None
         assert resolved.agent_id == "agent-123"
         assert resolved.base_url == "http://tenant-agent:80"  # Prioritized exact match

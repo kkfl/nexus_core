@@ -9,6 +9,7 @@ Tests:
   E) Redaction of secret-like fields
   F) Backpressure (500+ events, lag visibility)
 """
+
 import asyncio
 import json
 import os
@@ -21,9 +22,9 @@ REDIS_URL = os.environ["REDIS_URL"]
 
 
 def banner(label: str):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  TEST {label}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 async def test_a_happy_path():
@@ -106,11 +107,11 @@ async def test_b_consumer_failure():
     print(f"  Failure #{fail_count}: message stays in PEL")
 
     # Check pending
-    pending = await bus._redis.xpending(
-        "nexus:events:test.failure.path", "test-failure-group"
-    )
-    pending_count = pending.get("pending", 0) if isinstance(pending, dict) else (
-        pending[0] if isinstance(pending, (list, tuple)) else 0
+    pending = await bus._redis.xpending("nexus:events:test.failure.path", "test-failure-group")
+    pending_count = (
+        pending.get("pending", 0)
+        if isinstance(pending, dict)
+        else (pending[0] if isinstance(pending, (list, tuple)) else 0)
     )
     print(f"  Pending count: {pending_count}")
     print(f"  DLQ Note: Message is NOT in DLQ yet because delivery_count=1 < MAX=3")
@@ -305,10 +306,13 @@ async def test_f_backpressure():
     bp_stream = [s for s in streams if s["stream"] == "nexus:events:test.backpressure"]
     if bp_stream:
         for g in bp_stream[0]["groups"]:
-            print(f"  Group '{g['name']}': pending={g['pending']}, last_delivered={g['last_delivered_id']}")
+            print(
+                f"  Group '{g['name']}': pending={g['pending']}, last_delivered={g['last_delivered_id']}"
+            )
 
     # Read just 5 to create visible lag
     consumed = 0
+
     async def counter(evt):
         nonlocal consumed
         consumed += 1
@@ -332,9 +336,7 @@ async def test_f_backpressure():
     print(f"  Consumed+acked {consumed}/500 — remaining are visible as lag")
 
     # Check pending info
-    pending_summary = await bus._redis.xpending(
-        "nexus:events:test.backpressure", "lag-test-group"
-    )
+    pending_summary = await bus._redis.xpending("nexus:events:test.backpressure", "lag-test-group")
     print(f"  Pending summary: {pending_summary}")
     print(f"  ✅ PASS — lag is visible via XPENDING and admin /events/streams")
 
@@ -361,12 +363,13 @@ async def main():
         except Exception as e:
             print(f"  ❌ EXCEPTION: {e}")
             import traceback
+
             traceback.print_exc()
             results[label] = "FAIL"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for label, status in results.items():
         icon = "✅" if "PASS" in status else "❌"
         print(f"  {icon} {label}: {status}")

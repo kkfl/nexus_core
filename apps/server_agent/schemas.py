@@ -29,7 +29,9 @@ class HostCreate(BaseModel):
     provider: str = Field(..., description="vultr | proxmox")
     label: str = Field(..., min_length=1, max_length=255)
     config: dict[str, Any] = Field(default_factory=dict, description="Provider-specific config")
-    secret_alias: str = Field(..., min_length=1, max_length=255, description="Vault alias for credentials")
+    secret_alias: str = Field(
+        ..., min_length=1, max_length=255, description="Vault alias for credentials"
+    )
 
     @field_validator("provider")
     @classmethod

@@ -79,7 +79,11 @@ class ProxmoxAdapter(ServerProviderAdapter):
             os=os_label,
             plan=f"{raw.get('cores', 0)}C/{raw.get('maxmem', 0) // (1024**3)}GB",
             region=self._node,
-            status="running" if status == "running" else "stopped" if status == "stopped" else status,
+            status="running"
+            if status == "running"
+            else "stopped"
+            if status == "stopped"
+            else status,
             power_status="running" if status == "running" else "stopped",
             vcpu_count=raw.get("cores", raw.get("cpus", 0)),
             ram_mb=raw.get("maxmem", 0) // (1024**2),
@@ -122,9 +126,7 @@ class ProxmoxAdapter(ServerProviderAdapter):
     async def _get_vm_ostype(self, vmid: str) -> str:
         """Fetch ostype from VM config (list endpoint doesn't include it)."""
         try:
-            data = await self._request(
-                "GET", f"/api2/json/nodes/{self._node}/qemu/{vmid}/config"
-            )
+            data = await self._request("GET", f"/api2/json/nodes/{self._node}/qemu/{vmid}/config")
             ostype = data.get("ostype", "") if isinstance(data, dict) else ""
             return _OSTYPE_MAP.get(ostype, ostype or "Unknown")
         except Exception:
@@ -166,9 +168,7 @@ class ProxmoxAdapter(ServerProviderAdapter):
             "memory": 1024,
             "ostype": spec.os_id,
         }
-        await self._request(
-            "POST", f"/api2/json/nodes/{self._node}/qemu", data=body
-        )
+        await self._request("POST", f"/api2/json/nodes/{self._node}/qemu", data=body)
         # Get the newly created VM (simplified -- real impl would parse task UPID)
         vms = await self.list_instances()
         for vm in vms:
@@ -185,7 +185,9 @@ class ProxmoxAdapter(ServerProviderAdapter):
     # -- Power actions --
 
     async def start(self, provider_id: str) -> None:
-        await self._request("POST", f"/api2/json/nodes/{self._node}/qemu/{provider_id}/status/start")
+        await self._request(
+            "POST", f"/api2/json/nodes/{self._node}/qemu/{provider_id}/status/start"
+        )
 
     async def stop(self, provider_id: str) -> None:
         await self._request("POST", f"/api2/json/nodes/{self._node}/qemu/{provider_id}/status/stop")
@@ -278,7 +280,10 @@ class ProxmoxAdapter(ServerProviderAdapter):
     async def list_regions(self) -> list[dict]:
         data = await self._request("GET", "/api2/json/nodes")
         if isinstance(data, list):
-            return [{"id": n.get("node", ""), "name": n.get("node", ""), "status": n.get("status", "")} for n in data]
+            return [
+                {"id": n.get("node", ""), "name": n.get("node", ""), "status": n.get("status", "")}
+                for n in data
+            ]
         return []
 
     async def list_plans(self) -> list[dict]:
@@ -291,7 +296,8 @@ class ProxmoxAdapter(ServerProviderAdapter):
 
     async def list_os_images(self) -> list[dict]:
         data = await self._request(
-            "GET", f"/api2/json/nodes/{self._node}/storage/local/content",
+            "GET",
+            f"/api2/json/nodes/{self._node}/storage/local/content",
             params={"content": "iso"},
         )
         if isinstance(data, list):

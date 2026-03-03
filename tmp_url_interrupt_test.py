@@ -1,4 +1,5 @@
 """Isolated Text/URL Interrupt Test — uses text ingest so doc exists before worker."""
+
 import json
 import os
 import subprocess
@@ -16,7 +17,7 @@ def docker(*args):
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=COMPOSE_DIR)
     out = result.stdout.strip()
     if out:
-        lines = [l for l in out.split('\n') if 'obsolete' not in l]
+        lines = [l for l in out.split("\n") if "obsolete" not in l]
         if lines:
             print(f"  [docker] {lines[0][:200]}")
     return result
@@ -48,9 +49,9 @@ def main():
     print("=" * 70)
 
     client = httpx.Client(timeout=30)
-    r = client.post(f"{API}/auth/login", data={
-        "username": "admin@nexus.local", "password": "admin_password"
-    })
+    r = client.post(
+        f"{API}/auth/login", data={"username": "admin@nexus.local", "password": "admin_password"}
+    )
     r.raise_for_status()
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -70,12 +71,16 @@ def main():
     # Step 2: Ingest via text (doc created by API before worker touches it)
     unique_title = f"Interrupt Test {int(time.time())}"
     print(f"\n  [2] Creating text doc: '{unique_title}'...")
-    r = client.post(f"{API}/kb/documents/text", json={
-        "source_id": source_id,
-        "namespace": "global",
-        "title": unique_title,
-        "text": "This is a test document for worker interrupt testing. " * 10
-    }, headers=headers)
+    r = client.post(
+        f"{API}/kb/documents/text",
+        json={
+            "source_id": source_id,
+            "namespace": "global",
+            "title": unique_title,
+            "text": "This is a test document for worker interrupt testing. " * 10,
+        },
+        headers=headers,
+    )
     print(f"      POST -> {r.status_code}: {r.text[:200]}")
     doc_id = r.json()["document_id"]
     print(f"      Doc id={doc_id}")
@@ -118,7 +123,9 @@ def main():
     # Worker logs
     result = subprocess.run(
         ["docker", "compose", "logs", "--tail", "100", "nexus-worker"],
-        capture_output=True, text=True, cwd=COMPOSE_DIR
+        capture_output=True,
+        text=True,
+        cwd=COMPOSE_DIR,
     )
     logs = result.stdout
 
@@ -131,8 +138,8 @@ def main():
 
     # Show recovery log lines
     print(f"\n  Recovery log lines:")
-    for line in logs.split('\n'):
-        if '[startup]' in line or 'recover' in line.lower() or '[TEST]' in line:
+    for line in logs.split("\n"):
+        if "[startup]" in line or "recover" in line.lower() or "[TEST]" in line:
             print(f"      {line.strip()[:150]}")
 
     if final_status == "ready" and len(chunks) > 0:

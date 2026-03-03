@@ -59,6 +59,7 @@ class CredentialTarget(str, Enum):
 
 class EmailCredentialRequest(BaseModel):
     """Portal request to create a mailbox or reset a password."""
+
     email: str
     password: str = Field(..., min_length=8)
     action: str = Field(..., pattern=r"^(create|reset_password)$")
@@ -74,6 +75,7 @@ class EmailCredentialResponse(BaseModel):
 
 class PbxCredentialRequest(BaseModel):
     """Portal request to provision or rotate a PBX AMI secret."""
+
     target_name: str
     ami_secret: str = Field(..., min_length=1)
 
@@ -236,7 +238,9 @@ async def provision_email_credential(
         )
 
     # Step 2: Call email_agent with vault_ref
-    endpoint = "/email/admin/mailbox/create" if req.action == "create" else "/email/admin/mailbox/password"
+    endpoint = (
+        "/email/admin/mailbox/create" if req.action == "create" else "/email/admin/mailbox/password"
+    )
     payload: dict[str, Any] = {"email": req.email, "vault_ref": alias}
 
     try:
@@ -289,4 +293,6 @@ async def provision_pbx_credential(
         raise
     except Exception as exc:
         logger.error("brain_pbx_vault_store_failed", alias=alias, error=str(exc)[:200])
-        return PbxCredentialResponse(ok=False, error=f"Failed to store credential: {str(exc)[:200]}")
+        return PbxCredentialResponse(
+            ok=False, error=f"Failed to store credential: {str(exc)[:200]}"
+        )

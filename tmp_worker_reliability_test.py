@@ -3,6 +3,7 @@
 Uses docker compose environment override files for test flags.
 Runs against a live Docker stack from the host.
 """
+
 import json
 import os
 import subprocess
@@ -16,9 +17,9 @@ COMPOSE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def section(title):
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  {title}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
 
 def docker(*args):
@@ -26,16 +27,16 @@ def docker(*args):
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=COMPOSE_DIR)
     out = result.stdout.strip()
     if out:
-        lines = [l for l in out.split('\n') if 'obsolete' not in l]
+        lines = [l for l in out.split("\n") if "obsolete" not in l]
         if lines:
             print(f"  [docker] {lines[0][:200]}")
     return result
 
 
 def get_token(client):
-    r = client.post(f"{API}/auth/login", data={
-        "username": "admin@nexus.local", "password": "admin_password"
-    })
+    r = client.post(
+        f"{API}/auth/login", data={"username": "admin@nexus.local", "password": "admin_password"}
+    )
     r.raise_for_status()
     return r.json()["access_token"]
 
@@ -61,7 +62,9 @@ def query_events(client, headers, event_type=None, limit=20):
 def worker_logs(lines=50):
     result = subprocess.run(
         ["docker", "compose", "logs", "--tail", str(lines), "nexus-worker"],
-        capture_output=True, text=True, cwd=COMPOSE_DIR
+        capture_output=True,
+        text=True,
+        cwd=COMPOSE_DIR,
     )
     return result.stdout
 
@@ -129,16 +132,20 @@ def test_url_interrupt(client, headers, source_id):
     print("  [2] Triggering URL ingest...")
     for attempt in range(3):
         try:
-            r = client.post(f"{API}/kb/documents/url", json={
-                "url": "https://example.com",
-                "source_id": source_id,
-                "namespace": "global",
-                "title": "Worker Interrupt Test URL"
-            }, headers=headers)
+            r = client.post(
+                f"{API}/kb/documents/url",
+                json={
+                    "url": "https://example.com",
+                    "source_id": source_id,
+                    "namespace": "global",
+                    "title": "Worker Interrupt Test URL",
+                },
+                headers=headers,
+            )
             print(f"      POST -> {r.status_code}: {r.text[:150]}")
             break
         except Exception as e:
-            print(f"      Attempt {attempt+1} failed: {e}")
+            print(f"      Attempt {attempt + 1} failed: {e}")
             time.sleep(3)
     else:
         return {"test": "URL Interrupt", "result": "FAIL", "reason": "API unreachable"}
@@ -220,14 +227,18 @@ def test_email_interrupt(client, headers, source_id):
 
     # Step 2: Trigger email ingest
     print("  [2] Triggering email ingest...")
-    r = client.post(f"{API}/kb/documents/email-ingest", json={
-        "source_id": source_id,
-        "namespace": "global",
-        "subject": "Worker Interrupt Test Email",
-        "body_text": "This is a test email body for reliability testing. " * 15,
-        "sender": "reliability@test.com",
-        "message_id": f"reliability-email-{int(time.time())}"
-    }, headers=headers)
+    r = client.post(
+        f"{API}/kb/documents/email-ingest",
+        json={
+            "source_id": source_id,
+            "namespace": "global",
+            "subject": "Worker Interrupt Test Email",
+            "body_text": "This is a test email body for reliability testing. " * 15,
+            "sender": "reliability@test.com",
+            "message_id": f"reliability-email-{int(time.time())}",
+        },
+        headers=headers,
+    )
     print(f"      Response: {r.status_code}: {r.text[:150]}")
 
     if r.status_code != 200:
@@ -283,12 +294,16 @@ def test_forced_failure(client, headers, source_id):
 
     # Step 2: Trigger text ingest
     print("  [2] Triggering text ingest...")
-    r = client.post(f"{API}/kb/documents/text", json={
-        "source_id": source_id,
-        "namespace": "global",
-        "title": "Forced Failure Test Doc",
-        "text": "This document will fail during chunk stage due to the test flag."
-    }, headers=headers)
+    r = client.post(
+        f"{API}/kb/documents/text",
+        json={
+            "source_id": source_id,
+            "namespace": "global",
+            "title": "Forced Failure Test Doc",
+            "text": "This document will fail during chunk stage due to the test flag.",
+        },
+        headers=headers,
+    )
     print(f"      Response: {r.status_code}: {r.text[:150]}")
 
     if r.status_code != 200:
@@ -309,10 +324,7 @@ def test_forced_failure(client, headers, source_id):
 
     # Check events
     failed_events = query_events(client, headers, "kb.document.ingest_failed")
-    has_failed_event = any(
-        str(doc_id) == str(e.get("correlation_id", ""))
-        for e in failed_events
-    )
+    has_failed_event = any(str(doc_id) == str(e.get("correlation_id", "")) for e in failed_events)
 
     # Check DLQ
     r = client.get(f"{API}/events/dlq", headers=headers)

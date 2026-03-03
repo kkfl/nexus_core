@@ -70,7 +70,10 @@ class EventBus:
         entry = event.to_stream_dict()
         # XADD with approximate MAXLEN to prevent unbounded growth
         stream_id: bytes = await self._redis.xadd(
-            stream_key, entry, maxlen=STREAM_MAXLEN, approximate=True,  # type: ignore[arg-type]
+            stream_key,
+            entry,
+            maxlen=STREAM_MAXLEN,
+            approximate=True,  # type: ignore[arg-type]
         )
         sid = stream_id.decode() if isinstance(stream_id, bytes) else str(stream_id)
         logger.debug(
@@ -154,9 +157,7 @@ class EventBus:
 
         for stream_bytes, entries in results:
             stream_key = (
-                stream_bytes.decode()
-                if isinstance(stream_bytes, bytes)
-                else str(stream_bytes)
+                stream_bytes.decode() if isinstance(stream_bytes, bytes) else str(stream_bytes)
             )
             for entry_id_bytes, fields in entries:
                 entry_id = (
@@ -232,8 +233,12 @@ class EventBus:
             try:
                 # XAUTOCLAIM: claim messages idle for > CLAIM_IDLE_MS
                 _, claimed, _ = await self._redis.xautoclaim(
-                    stream_key, group, consumer,
-                    min_idle_time=CLAIM_IDLE_MS, start_id="0-0", count=BATCH_SIZE,
+                    stream_key,
+                    group,
+                    consumer,
+                    min_idle_time=CLAIM_IDLE_MS,
+                    start_id="0-0",
+                    count=BATCH_SIZE,
                 )
                 for entry_id_bytes, fields in claimed:
                     entry_id = (
@@ -286,9 +291,7 @@ class EventBus:
         streams: list[dict[str, Any]] = []
         cursor: bytes | int = 0
         while True:
-            cursor, keys = await self._redis.scan(
-                cursor=cursor, match=b"nexus:events:*", count=100
-            )
+            cursor, keys = await self._redis.scan(cursor=cursor, match=b"nexus:events:*", count=100)
             for key_bytes in keys:
                 key = key_bytes.decode() if isinstance(key_bytes, bytes) else str(key_bytes)
                 length = await self._redis.xlen(key)
@@ -349,9 +352,7 @@ class EventBus:
 
     async def _ensure_group(self, stream_key: str, group: str) -> None:
         try:
-            await self._redis.xgroup_create(
-                stream_key, group, id="0", mkstream=True
-            )
+            await self._redis.xgroup_create(stream_key, group, id="0", mkstream=True)
         except aioredis.ResponseError as exc:
             if "BUSYGROUP" in str(exc):
                 pass  # group already exists
@@ -377,9 +378,7 @@ class EventBus:
                         count=100,
                     )
                     for k in found:
-                        keys.add(
-                            k.decode() if isinstance(k, bytes) else str(k)
-                        )
+                        keys.add(k.decode() if isinstance(k, bytes) else str(k))
                     if cursor == 0:
                         break
             else:

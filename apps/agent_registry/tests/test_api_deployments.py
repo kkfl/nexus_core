@@ -47,9 +47,7 @@ async def test_create_and_get_deployment(registry_headers):
 async def test_update_deployment(registry_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         name = f"test-update-dep-agent-{uuid.uuid4().hex[:8]}"
-        res = await ac.post(
-            "/v1/agents", json={"name": name}, headers=registry_headers
-        )
+        res = await ac.post("/v1/agents", json={"name": name}, headers=registry_headers)
         agent_id = res.json()["id"]
 
         dep_data = {"agent_id": agent_id, "env": "dev", "base_url": "http://dev-agent:8080"}

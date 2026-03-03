@@ -74,9 +74,7 @@ async def refresh_sent_stats(hours_back: int = 24) -> tuple[list[dict], str | No
     try:
         await _maybe_ensure_table()
 
-        result = await run_bridge_command(
-            "batch_sent_stats", args=[str(hours_back)], timeout=60
-        )
+        result = await run_bridge_command("batch_sent_stats", args=[str(hours_back)], timeout=60)
 
         if not isinstance(result, list):
             err_msg = str(result)[:500]
@@ -197,9 +195,9 @@ async def get_sent_stats_cached() -> dict:
             "delivered": total_delivered,
             "bounced": total_bounced,
             "deferred": total_deferred,
-            "delivery_rate": round(
-                total_delivered / total_sent * 100, 1
-            ) if total_sent > 0 else 0.0,
+            "delivery_rate": round(total_delivered / total_sent * 100, 1)
+            if total_sent > 0
+            else 0.0,
         },
     }
 
@@ -241,9 +239,7 @@ async def get_sent_detail(email: str, limit: int = 50) -> dict:
     Not cached — always hits the mail server.
     """
     try:
-        result = await run_bridge_command(
-            "sent_detail", args=[email, str(limit)], timeout=30
-        )
+        result = await run_bridge_command("sent_detail", args=[email, str(limit)], timeout=30)
 
         if not isinstance(result, list):
             err_msg = str(result)[:500]

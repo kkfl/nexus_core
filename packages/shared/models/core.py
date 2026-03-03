@@ -479,9 +479,7 @@ class BusEvent(Base):
     payload_schema_version: Mapped[int] = mapped_column(default=1)
     idempotency_key: Mapped[str | None] = mapped_column(index=True)
     stream_id: Mapped[str | None]  # Redis Stream entry ID
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=func.now(), index=True
-    )
+    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now(), index=True)
 
 
 class AskFeedback(Base):

@@ -61,9 +61,7 @@ async def create_backup(server_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{backup_id}/restore", response_model=JobCreateResponse, status_code=202)
-async def restore_backup(
-    server_id: str, backup_id: str, db: AsyncSession = Depends(get_db)
-):
+async def restore_backup(server_id: str, backup_id: str, db: AsyncSession = Depends(get_db)):
     backup = await db.get(ServerBackup, backup_id)
     if not backup or backup.instance_id != server_id:
         raise HTTPException(404, "Backup not found")

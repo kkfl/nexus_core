@@ -1,4 +1,5 @@
 """Convert implementation_plan.md to PDF using fpdf2 + markdown->HTML."""
+
 import re
 import markdown
 from fpdf import FPDF
@@ -54,11 +55,7 @@ def main():
     hr { border: none; border-top: 1px solid #ccc; }
     """
 
-    full_html = (
-        '<html><head><style>' + css + '</style></head><body>'
-        + html_body
-        + '</body></html>'
-    )
+    full_html = "<html><head><style>" + css + "</style></head><body>" + html_body + "</body></html>"
 
     pdf = PlanPDF(orientation="P", unit="mm", format="A4")
     pdf.alias_nb_pages()

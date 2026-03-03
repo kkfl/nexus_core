@@ -57,7 +57,11 @@ async def _emit_event(event_type: str, payload: dict, correlation_id: str) -> No
         r = aioredis.from_url(settings.redis_url)
         await r.xadd(
             "nexus:events",
-            {"type": event_type, "correlation_id": correlation_id, **{k: str(v) for k, v in payload.items()}},
+            {
+                "type": event_type,
+                "correlation_id": correlation_id,
+                **{k: str(v) for k, v in payload.items()},
+            },
         )
         await r.aclose()
     except Exception as exc:
@@ -155,7 +159,11 @@ async def _execute_job(job: ServerChangeJob, db: AsyncSession) -> None:
         if server_id:
             server = await db.get(ServerInstance, server_id)
             if server:
-                new_power = "running" if job.operation == "start" else ("stopped" if job.operation == "stop" else server.power_status)
+                new_power = (
+                    "running"
+                    if job.operation == "start"
+                    else ("stopped" if job.operation == "stop" else server.power_status)
+                )
                 server.power_status = new_power
                 server.status = "running" if new_power == "running" else "stopped"
 
@@ -304,7 +312,9 @@ async def process_pending_jobs() -> int:
 
                 # Emit event
                 event_type = EVENT_MAP.get(job.operation, f"server.{job.operation}")
-                await _emit_event(event_type, {"job_id": job.id, **(job.payload or {})}, correlation_id)
+                await _emit_event(
+                    event_type, {"job_id": job.id, **(job.payload or {})}, correlation_id
+                )
 
                 # Audit
                 db.add(

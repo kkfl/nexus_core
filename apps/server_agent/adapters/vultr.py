@@ -162,7 +162,9 @@ class VultrAdapter(ServerProviderAdapter):
                 backup_type="automatic",
                 size_gb=b.get("size", 0) / (1024**3) if b.get("size") else None,
                 status="complete" if b.get("status") == "complete" else "pending",
-                created_at=datetime.fromisoformat(b["date_created"]) if b.get("date_created") else None,
+                created_at=datetime.fromisoformat(b["date_created"])
+                if b.get("date_created")
+                else None,
             )
             for b in data.get("backups", [])
         ]
@@ -207,9 +209,7 @@ class VultrAdapter(ServerProviderAdapter):
             return None
 
     async def disable_backups(self, provider_id: str) -> None:
-        await self._request(
-            "PATCH", f"/v2/instances/{provider_id}", json={"backups": "disabled"}
-        )
+        await self._request("PATCH", f"/v2/instances/{provider_id}", json={"backups": "disabled"})
 
     # -- Metadata / Catalog --
 

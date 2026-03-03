@@ -139,7 +139,9 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True)),
         sa.Column("created_by_service_id", sa.String(128), nullable=False),
         sa.Column("correlation_id", sa.String(64), index=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), index=True),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), index=True
+        ),
     )
 
     # --- server_audit_events ---

@@ -144,7 +144,10 @@ async def start_server(server_id: str, db: AsyncSession = Depends(get_db)):
     if not server:
         raise HTTPException(404, "Server not found")
     job = await _create_job(
-        db, server.tenant_id, server.env, "start",
+        db,
+        server.tenant_id,
+        server.env,
+        "start",
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
@@ -157,7 +160,10 @@ async def stop_server(server_id: str, db: AsyncSession = Depends(get_db)):
     if not server:
         raise HTTPException(404, "Server not found")
     job = await _create_job(
-        db, server.tenant_id, server.env, "stop",
+        db,
+        server.tenant_id,
+        server.env,
+        "stop",
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
@@ -170,7 +176,10 @@ async def reboot_server(server_id: str, db: AsyncSession = Depends(get_db)):
     if not server:
         raise HTTPException(404, "Server not found")
     job = await _create_job(
-        db, server.tenant_id, server.env, "reboot",
+        db,
+        server.tenant_id,
+        server.env,
+        "reboot",
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
@@ -183,8 +192,15 @@ async def rebuild_server(server_id: str, os_id: str, db: AsyncSession = Depends(
     if not server:
         raise HTTPException(404, "Server not found")
     job = await _create_job(
-        db, server.tenant_id, server.env, "rebuild",
-        {"server_id": server_id, "provider_instance_id": server.provider_instance_id, "os_id": os_id},
+        db,
+        server.tenant_id,
+        server.env,
+        "rebuild",
+        {
+            "server_id": server_id,
+            "provider_instance_id": server.provider_instance_id,
+            "os_id": os_id,
+        },
         instance_id=server_id,
     )
     return JobCreateResponse(job_id=job.id)
@@ -250,7 +266,10 @@ async def sync_servers(host_id: str, db: AsyncSession = Depends(get_db)):
     if not host:
         raise HTTPException(404, "Host not found")
     job = await _create_job(
-        db, host.tenant_id, host.env, "sync",
+        db,
+        host.tenant_id,
+        host.env,
+        "sync",
         {"host_id": host_id},
     )
     return JobCreateResponse(job_id=job.id)

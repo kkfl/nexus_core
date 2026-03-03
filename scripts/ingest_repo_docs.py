@@ -9,6 +9,7 @@ This script:
 3. For each file, uploads via the text ingest API endpoint.
 4. Queues embedding for each document.
 """
+
 import argparse
 import os
 import sys
@@ -46,7 +47,11 @@ SAFE_DOC_PATHS = [
 
 # Paths that must NEVER be ingested
 DENY_LIST_PATTERNS = [
-    ".env", "secret", "credential", "private_key", "id_rsa",
+    ".env",
+    "secret",
+    "credential",
+    "private_key",
+    "id_rsa",
 ]
 
 
@@ -56,9 +61,10 @@ def is_safe(path: str) -> bool:
 
 
 def get_token(client, api_url):
-    r = client.post(f"{api_url}/auth/login", data={
-        "username": "admin@nexus.local", "password": "admin_password"
-    })
+    r = client.post(
+        f"{api_url}/auth/login",
+        data={"username": "admin@nexus.local", "password": "admin_password"},
+    )
     r.raise_for_status()
     return r.json()["access_token"]
 
@@ -71,9 +77,9 @@ def ensure_source(client, headers, api_url):
         if s.get("name") == "repo-docs":
             return s["id"]
 
-    r = client.post(f"{api_url}/kb/sources", json={
-        "name": "repo-docs", "kind": "manual"
-    }, headers=headers)
+    r = client.post(
+        f"{api_url}/kb/sources", json={"name": "repo-docs", "kind": "manual"}, headers=headers
+    )
     return r.json()["id"]
 
 
@@ -120,12 +126,16 @@ def main():
             text = f.read()
 
         title = rel_path.replace("\\", "/")
-        r = client.post(f"{args.api_url}/kb/documents/text", json={
-            "source_id": source_id,
-            "namespace": args.namespace,
-            "title": title,
-            "text": text,
-        }, headers=headers)
+        r = client.post(
+            f"{args.api_url}/kb/documents/text",
+            json={
+                "source_id": source_id,
+                "namespace": args.namespace,
+                "title": title,
+                "text": text,
+            },
+            headers=headers,
+        )
 
         if r.status_code == 200:
             doc_id = r.json().get("document_id")

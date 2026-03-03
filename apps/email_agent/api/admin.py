@@ -56,7 +56,10 @@ async def _resolve_password(password: str | None, vault_ref: str | None) -> str:
                 detail=f"Failed to resolve vault_ref '{vault_ref}': {str(exc)[:200]}",
             )
     if password:
-        _log.warning("resolve_password_inline_deprecated", msg="Raw password received; use vault_ref via Brain")
+        _log.warning(
+            "resolve_password_inline_deprecated",
+            msg="Raw password received; use vault_ref via Brain",
+        )
         return password
     raise HTTPException(status_code=422, detail="Either 'password' or 'vault_ref' must be provided")
 
@@ -69,7 +72,7 @@ async def list_mailboxes(
     result = await run_bridge_command("list_mailboxes")
     if isinstance(result, list):
         return [MailboxInfo(**m) for m in result]
-    
+
     # If not a list, it's an error dict from the bridge
     err_msg = result.get("error", str(result)) if isinstance(result, dict) else str(result)
     raise HTTPException(status_code=502, detail=f"Mail server connection failed: {err_msg}")
@@ -88,7 +91,12 @@ async def list_domains(
     for m in result:
         d = m.get("domain", "unknown")
         if d not in domain_map:
-            domain_map[d] = {"domain": d, "mailbox_count": 0, "active_count": 0, "disabled_count": 0}
+            domain_map[d] = {
+                "domain": d,
+                "mailbox_count": 0,
+                "active_count": 0,
+                "disabled_count": 0,
+            }
         domain_map[d]["mailbox_count"] += 1
         if m.get("active", 0) == 1:
             domain_map[d]["active_count"] += 1

@@ -42,8 +42,8 @@ async def _resolve_email_agent() -> tuple[str, str]:
     """Resolve email_agent base_url and auth key."""
     registry = get_registry_client()
     agent = await registry.resolve_agent("email-agent", tenant_id=None, env="prod")
-    base_url = agent.base_url if agent else os.environ.get(
-        "EMAIL_AGENT_URL", "http://email-agent:8014"
+    base_url = (
+        agent.base_url if agent else os.environ.get("EMAIL_AGENT_URL", "http://email-agent:8014")
     )
     key = os.environ.get("BRAIN_EMAIL_AGENT_KEY", "nexus-email-key-change-me")
     return base_url, key
@@ -178,7 +178,7 @@ async def dashboard_summary(
     from packages.shared.client.agent_registry import get_registry_client
 
     registry = get_registry_client()
-    
+
     # 1. Fetch agents
     from sqlalchemy import select, func
     from packages.shared.models.core import BusEvent
@@ -188,7 +188,9 @@ async def dashboard_summary(
     active_agents = 0
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"{registry.registry_base_url}/v1/agents", headers=registry.headers)
+            resp = await client.get(
+                f"{registry.registry_base_url}/v1/agents", headers=registry.headers
+            )
             if resp.status_code == 200:
                 agents_list = resp.json()
                 total_agents = len(agents_list)
@@ -197,19 +199,25 @@ async def dashboard_summary(
                     name = a.get("name")
                     if status == "active":
                         active_agents += 1
-                        
+
                     # Find latest event produced by this agent
-                    stmt = select(func.max(BusEvent.occurred_at)).where(BusEvent.produced_by == name)
+                    stmt = select(func.max(BusEvent.occurred_at)).where(
+                        BusEvent.produced_by == name
+                    )
                     result = await db.execute(stmt)
                     latest_timestamp = result.scalar()
-                    
-                    recent_activity.append({
-                        "name": name,
-                        "status": status,
-                        "last_seen_at": latest_timestamp if latest_timestamp else None
-                    })
+
+                    recent_activity.append(
+                        {
+                            "name": name,
+                            "status": status,
+                            "last_seen_at": latest_timestamp if latest_timestamp else None,
+                        }
+                    )
         # Sort activity by most recently seen
-        recent_activity.sort(key=lambda x: str(x["last_seen_at"]) if x["last_seen_at"] else "", reverse=True)
+        recent_activity.sort(
+            key=lambda x: str(x["last_seen_at"]) if x["last_seen_at"] else "", reverse=True
+        )
     except Exception as e:
         logger.warning("dashboard_fetch_agents_failed", error=str(e))
 
@@ -218,7 +226,11 @@ async def dashboard_summary(
     active_servers = 0
     try:
         server_agent = await registry.resolve_agent("server-agent", None, "prod")
-        server_base = server_agent.base_url if server_agent else os.environ.get("SERVER_AGENT_URL", "http://server-agent:8002")
+        server_base = (
+            server_agent.base_url
+            if server_agent
+            else os.environ.get("SERVER_AGENT_URL", "http://server-agent:8002")
+        )
         # server_agent gets the current identity if proxying via bearer token, but for internal reads we can just GET
         async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(f"{server_base}/v1/servers")
@@ -237,7 +249,7 @@ async def dashboard_summary(
         async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(
                 f"{email_base}/email/admin/mailbox/stats/bulk",
-                headers={"X-Service-ID": "nexus", "X-Agent-Key": email_key}
+                headers={"X-Service-ID": "nexus", "X-Agent-Key": email_key},
             )
             if resp.status_code == 200:
                 stats_res = resp.json()
@@ -254,30 +266,23 @@ async def dashboard_summary(
         result = await db.execute(stmt)
         events = result.scalars().all()
         for ev in events:
-            recent_transactions.append({
-                "timestamp": ev.occurred_at,
-                "source": ev.produced_by,
-                "action": ev.event_type,
-                "severity": ev.severity,
-            })
+            recent_transactions.append(
+                {
+                    "timestamp": ev.occurred_at,
+                    "source": ev.produced_by,
+                    "action": ev.event_type,
+                    "severity": ev.severity,
+                }
+            )
     except Exception as e:
         logger.warning("dashboard_fetch_transactions_failed", error=str(e))
 
     return {
         "metrics": {
-            "agents": {
-                "total": total_agents,
-                "active": active_agents
-            },
-            "servers": {
-                "total": total_servers,
-                "active": active_servers
-            },
-            "mail": {
-                "total_mailboxes": total_mailboxes,
-                "inbound_unread": inbound_unread
-            }
+            "agents": {"total": total_agents, "active": active_agents},
+            "servers": {"total": total_servers, "active": active_servers},
+            "mail": {"total_mailboxes": total_mailboxes, "inbound_unread": inbound_unread},
         },
         "recent_activity": recent_activity,
-        "recent_transactions": recent_transactions
+        "recent_transactions": recent_transactions,
     }

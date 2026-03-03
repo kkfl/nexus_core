@@ -82,7 +82,7 @@ async def _dme_request(
             resp = await client.request(method, url, headers=headers, **kwargs)
 
             if resp.status_code == 429:
-                delay = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+                delay = _BASE_DELAY * (2**attempt) + random.uniform(0, 1)
                 logger.warning(
                     "dme_rate_limited", path=path, wait_s=round(delay, 2), attempt=attempt
                 )
@@ -123,16 +123,12 @@ async def _dme_request(
 
         except httpx.TimeoutException as exc:
             delay = _BASE_DELAY * (2 ** (attempt - 1))
-            logger.warning(
-                "dme_timeout", path=path, attempt=attempt, retry_in=round(delay, 2)
-            )
+            logger.warning("dme_timeout", path=path, attempt=attempt, retry_in=round(delay, 2))
             last_exc = exc
             if attempt < _MAX_RETRIES:
                 await asyncio.sleep(delay)
 
-    raise RuntimeError(
-        f"DNSMadeEasy API request failed after {_MAX_RETRIES} attempts: {last_exc}"
-    )
+    raise RuntimeError(f"DNSMadeEasy API request failed after {_MAX_RETRIES} attempts: {last_exc}")
 
 
 def _parse_dme_record(r: dict) -> RecordMeta:

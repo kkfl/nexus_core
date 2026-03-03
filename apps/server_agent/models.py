@@ -90,7 +90,9 @@ class ServerInstance(ServerBase):
     )
 
     host = relationship("ServerHost", back_populates="instances")
-    snapshots = relationship("ServerSnapshot", back_populates="instance", cascade="all, delete-orphan")
+    snapshots = relationship(
+        "ServerSnapshot", back_populates="instance", cascade="all, delete-orphan"
+    )
     backups = relationship("ServerBackup", back_populates="instance", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -106,7 +108,10 @@ class ServerSnapshot(ServerBase):
 
     id: str = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     instance_id: str = Column(
-        String(36), ForeignKey("server_instances.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("server_instances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     provider_snapshot_id: str = Column(String(255))
     name: str = Column(String(255), nullable=False)
@@ -125,7 +130,10 @@ class ServerBackup(ServerBase):
 
     id: str = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     instance_id: str = Column(
-        String(36), ForeignKey("server_instances.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("server_instances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     provider_backup_id: str = Column(String(255))
     backup_type: str = Column(String(32), nullable=False, default="manual")

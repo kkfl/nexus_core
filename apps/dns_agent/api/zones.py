@@ -166,7 +166,12 @@ async def create_zone(
     try:
         await emit_event(
             event_type="dns.zone.created",
-            payload={"zone_name": payload.zone_name, "provider": payload.provider, "tenant_id": payload.tenant_id, "env": payload.env},
+            payload={
+                "zone_name": payload.zone_name,
+                "provider": payload.provider,
+                "tenant_id": payload.tenant_id,
+                "env": payload.env,
+            },
             produced_by="dns-agent",
             tenant_id=payload.tenant_id,
             correlation_id=identity.correlation_id,
@@ -255,7 +260,9 @@ async def import_provider_zones(
             continue
 
         try:
-            zone = await store.create_zone(db, payload.tenant_id, payload.env, name, payload.provider)
+            zone = await store.create_zone(
+                db, payload.tenant_id, payload.env, name, payload.provider
+            )
         except IntegrityError:
             await db.rollback()
             # Zone was created between the check and the insert — fetch it
@@ -287,6 +294,7 @@ async def import_provider_zones(
             except Exception as exc:
                 # Non-fatal — zone is imported; records can be pulled via sync later
                 import structlog
+
                 structlog.get_logger().warning(
                     "dns_import_records_failed",
                     zone=name,
@@ -308,7 +316,12 @@ async def import_provider_zones(
         try:
             await emit_event(
                 event_type="dns.zone.imported",
-                payload={"zone_name": name, "provider": payload.provider, "tenant_id": payload.tenant_id, "env": payload.env},
+                payload={
+                    "zone_name": name,
+                    "provider": payload.provider,
+                    "tenant_id": payload.tenant_id,
+                    "env": payload.env,
+                },
                 produced_by="dns-agent",
                 tenant_id=payload.tenant_id,
                 correlation_id=identity.correlation_id,
@@ -327,9 +340,15 @@ async def import_provider_zones(
         await db.refresh(
             z,
             attribute_names=[
-                "id", "tenant_id", "env", "zone_name", "provider",
-                "provider_zone_id", "is_active", "created_at", "updated_at",
+                "id",
+                "tenant_id",
+                "env",
+                "zone_name",
+                "provider",
+                "provider_zone_id",
+                "is_active",
+                "created_at",
+                "updated_at",
             ],
         )
     return [ZoneOut.model_validate(z) for z in imported]
-

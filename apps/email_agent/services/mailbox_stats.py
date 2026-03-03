@@ -82,7 +82,9 @@ async def refresh_stats() -> tuple[list[dict], str | None]:
 
         if not isinstance(result, list):
             err_msg = str(result)[:500]
-            logger.error("batch_stats_bad_response", result_type=type(result).__name__, detail=err_msg)
+            logger.error(
+                "batch_stats_bad_response", result_type=type(result).__name__, detail=err_msg
+            )
             return [], f"Bridge returned {type(result).__name__}: {err_msg}"
 
         logger.info("batch_stats_fetched", count=len(result))

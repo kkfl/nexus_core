@@ -39,9 +39,7 @@ async def test_update_agent(registry_headers):
         res = await ac.post("/v1/agents", json=agent_data, headers=registry_headers)
 
         update_data = {"status": "disabled", "description": "Offline"}
-        res_patch = await ac.patch(
-            f"/v1/agents/{name}", json=update_data, headers=registry_headers
-        )
+        res_patch = await ac.patch(f"/v1/agents/{name}", json=update_data, headers=registry_headers)
         assert res_patch.status_code == 200
         updated = res_patch.json()
         assert updated["status"] == "disabled"

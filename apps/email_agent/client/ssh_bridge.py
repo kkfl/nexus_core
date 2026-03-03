@@ -35,7 +35,7 @@ def _build_ssh_client(host, port, username, pem):
 _SCRIPT_ERROR_HINTS: dict[str, dict[int, str]] = {
     "create_mailbox": {
         1: "Mailbox creation failed. The domain may not be hosted on this mail server, "
-           "or the mailbox may already exist. Only domains configured in iRedMail are allowed.",
+        "or the mailbox may already exist. Only domains configured in iRedMail are allowed.",
         2: "Permission denied on mail server. Check SSH bridge credentials.",
         126: "Mail admin script is not executable on the server.",
         127: "Mail admin script not found on the server.",

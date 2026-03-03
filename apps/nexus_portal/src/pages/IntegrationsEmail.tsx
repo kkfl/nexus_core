@@ -295,12 +295,14 @@ export default function IntegrationsEmail() {
     const domains = [...new Set(mergedMailboxes.map(m => m.domain))];
 
     // Stale indicator
-    const statsAge = bulkStats?.collected_at
-        ? Math.round((Date.now() - new Date(bulkStats.collected_at).getTime()) / 1000)
-        : null;
-    const statsAgeLabel = statsAge !== null
-        ? statsAge < 60 ? `${statsAge}s ago` : `${Math.round(statsAge / 60)}m ago`
-        : 'never';
+    const statsAgeLabel = useMemo(() => {
+        const age = bulkStats?.collected_at
+            ? Math.round((Date.now() - new Date(bulkStats.collected_at).getTime()) / 1000)
+            : null;
+        return age !== null
+            ? age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`
+            : 'never';
+    }, [bulkStats?.collected_at]);
 
 
 

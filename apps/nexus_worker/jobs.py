@@ -598,11 +598,14 @@ async def _embed_document(document_id: int):
         doc.error_message = None
         await db.commit()
 
-        await _emit("kb.document.ingest_started", {
-            "document_id": document_id,
-            "title": doc.title,
-            "content_type": doc.content_type,
-        })
+        await _emit(
+            "kb.document.ingest_started",
+            {
+                "document_id": document_id,
+                "title": doc.title,
+                "content_type": doc.content_type,
+            },
+        )
 
         try:
             # ── Stage 1: Extract ─────────────────────────────────────
@@ -613,6 +616,7 @@ async def _embed_document(document_id: int):
             if doc.content_type == "application/pdf":
                 import io
                 import pypdf
+
                 pdf_file = io.BytesIO(raw_bytes)
                 reader = pypdf.PdfReader(pdf_file)
                 text_content = ""
@@ -627,21 +631,30 @@ async def _embed_document(document_id: int):
             # Dedup: if checksum matches and doc already indexed, skip
             if doc.checksum == content_hash and doc.ingest_status == "ready":
                 print(f"Document {document_id} unchanged (checksum match), skipping.")
-                await _emit("kb.document.indexed", {
-                    "document_id": document_id, "skipped": True, "reason": "checksum_match",
-                })
+                await _emit(
+                    "kb.document.indexed",
+                    {
+                        "document_id": document_id,
+                        "skipped": True,
+                        "reason": "checksum_match",
+                    },
+                )
                 return
 
             doc.checksum = content_hash
 
-            await _emit("kb.document.text_extracted", {
-                "document_id": document_id,
-                "text_length": len(text_content),
-            })
+            await _emit(
+                "kb.document.text_extracted",
+                {
+                    "document_id": document_id,
+                    "text_length": len(text_content),
+                },
+            )
 
             # ── TEST HOOK: slow stage (for interrupt testing) ────────
             if os.environ.get("RAG_TEST_SLOW_STAGE") == "1":
                 import time as _time
+
                 print(f"[TEST] RAG_TEST_SLOW_STAGE: sleeping 30s for doc {document_id}")
                 _time.sleep(30)
 
@@ -649,10 +662,13 @@ async def _embed_document(document_id: int):
             chunker = DocumentChunker()
             chunk_infos = chunker.chunk_text_with_offsets(text_content)
 
-            await _emit("kb.document.chunked", {
-                "document_id": document_id,
-                "chunk_count": len(chunk_infos),
-            })
+            await _emit(
+                "kb.document.chunked",
+                {
+                    "document_id": document_id,
+                    "chunk_count": len(chunk_infos),
+                },
+            )
 
             # ── TEST HOOK: forced chunk failure ──────────────────────
             if os.environ.get("RAG_TEST_FAIL_STAGE") == "chunk":
@@ -663,11 +679,14 @@ async def _embed_document(document_id: int):
             chunk_texts = [c.text for c in chunk_infos]
             embeddings = provider.embed_texts(chunk_texts)
 
-            await _emit("kb.document.embedded", {
-                "document_id": document_id,
-                "chunk_count": len(embeddings),
-                "model": provider.model_name,
-            })
+            await _emit(
+                "kb.document.embedded",
+                {
+                    "document_id": document_id,
+                    "chunk_count": len(embeddings),
+                    "model": provider.model_name,
+                },
+            )
 
             # ── TEST HOOK: forced embed failure ──────────────────────
             if os.environ.get("RAG_TEST_FAIL_STAGE") == "embed":
@@ -685,9 +704,7 @@ async def _embed_document(document_id: int):
                 )
                 await db.execute(KbChunk.__table__.delete().where(KbChunk.document_id == doc.id))
 
-            for i, (chunk_info, embedding) in enumerate(
-                zip(chunk_infos, embeddings, strict=False)
-            ):
+            for i, (chunk_info, embedding) in enumerate(zip(chunk_infos, embeddings, strict=False)):
                 db_chunk = KbChunk(
                     document_id=doc.id,
                     chunk_index=i,
@@ -717,11 +734,14 @@ async def _embed_document(document_id: int):
             await db.commit()
 
             print(f"Successfully embedded document {document_id} into {len(chunk_infos)} chunks.")
-            await _emit("kb.document.indexed", {
-                "document_id": document_id,
-                "chunk_count": len(chunk_infos),
-                "version": doc.version,
-            })
+            await _emit(
+                "kb.document.indexed",
+                {
+                    "document_id": document_id,
+                    "chunk_count": len(chunk_infos),
+                    "version": doc.version,
+                },
+            )
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -730,10 +750,13 @@ async def _embed_document(document_id: int):
             doc.ingest_status = "failed"
             doc.error_message = error_msg[:2000]  # truncate for safety
             await db.commit()
-            await _emit("kb.document.ingest_failed", {
-                "document_id": document_id,
-                "error": error_msg[:500],
-            })
+            await _emit(
+                "kb.document.ingest_failed",
+                {
+                    "document_id": document_id,
+                    "error": error_msg[:500],
+                },
+            )
 
 
 async def _ingest_url(url: str, source_id: int, namespace: str, title: str):

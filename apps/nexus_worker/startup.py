@@ -1,4 +1,5 @@
 """Worker startup — recover documents stuck in 'processing' after a crash."""
+
 import asyncio
 
 from sqlalchemy.future import select
@@ -11,9 +12,7 @@ from packages.shared.queue import task_queue
 async def recover_stuck_documents():
     """Find docs stuck in 'processing' and re-enqueue them."""
     async with get_db_context() as db:
-        res = await db.execute(
-            select(KbDocument).where(KbDocument.ingest_status == "processing")
-        )
+        res = await db.execute(select(KbDocument).where(KbDocument.ingest_status == "processing"))
         stuck = res.scalars().all()
 
         if not stuck:

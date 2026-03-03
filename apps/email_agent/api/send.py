@@ -68,4 +68,3 @@ async def send_email(
         logger.warning("event_emit_failed", event_type="email.message.sent")
 
     return SendResponse(**result)
-

@@ -41,9 +41,7 @@ class ServerVaultClient:
         Uses the 2-step pattern: list -> find by alias -> read decrypted value.
         Never cache the result.
         """
-        async with httpx.AsyncClient(
-            base_url=self._base_url, timeout=10
-        ) as client:
+        async with httpx.AsyncClient(base_url=self._base_url, timeout=10) as client:
             # Step 1: List secrets for tenant/env and find matching alias
             list_resp = await client.get(
                 "/v1/secrets",

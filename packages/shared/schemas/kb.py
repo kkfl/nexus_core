@@ -107,6 +107,7 @@ class KbSearchResponse(BaseModel):
 
 # ── Ask Nexus ──────────────────────────────────────────────────────
 
+
 class AskNexusRequest(BaseModel):
     query: str
     top_k: int = 5

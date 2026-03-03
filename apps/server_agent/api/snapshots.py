@@ -32,9 +32,7 @@ async def list_snapshots(server_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=JobCreateResponse, status_code=202)
-async def create_snapshot(
-    server_id: str, body: SnapshotCreate, db: AsyncSession = Depends(get_db)
-):
+async def create_snapshot(server_id: str, body: SnapshotCreate, db: AsyncSession = Depends(get_db)):
     server = await db.get(ServerInstance, server_id)
     if not server:
         raise HTTPException(404, "Server not found")
@@ -61,9 +59,7 @@ async def create_snapshot(
 
 
 @router.delete("/{snapshot_id}", response_model=JobCreateResponse, status_code=202)
-async def delete_snapshot(
-    server_id: str, snapshot_id: str, db: AsyncSession = Depends(get_db)
-):
+async def delete_snapshot(server_id: str, snapshot_id: str, db: AsyncSession = Depends(get_db)):
     snap = await db.get(ServerSnapshot, snapshot_id)
     if not snap or snap.instance_id != server_id:
         raise HTTPException(404, "Snapshot not found")
@@ -89,9 +85,7 @@ async def delete_snapshot(
 
 
 @router.post("/{snapshot_id}/restore", response_model=JobCreateResponse, status_code=202)
-async def restore_snapshot(
-    server_id: str, snapshot_id: str, db: AsyncSession = Depends(get_db)
-):
+async def restore_snapshot(server_id: str, snapshot_id: str, db: AsyncSession = Depends(get_db)):
     snap = await db.get(ServerSnapshot, snapshot_id)
     if not snap or snap.instance_id != server_id:
         raise HTTPException(404, "Snapshot not found")

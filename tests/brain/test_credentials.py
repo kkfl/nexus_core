@@ -55,7 +55,9 @@ class TestVaultAliasConventions:
 class TestStoreCredentialInVault:
     @pytest.mark.asyncio
     async def test_creates_new_secret_when_alias_not_found(self):
-        with patch("apps.nexus_api.brain.credentials._vault_request", new_callable=AsyncMock) as mock_req:
+        with patch(
+            "apps.nexus_api.brain.credentials._vault_request", new_callable=AsyncMock
+        ) as mock_req:
             # First call: list secrets returns empty
             mock_req.side_effect = [
                 [],  # GET /v1/secrets
@@ -76,15 +78,15 @@ class TestStoreCredentialInVault:
 
     @pytest.mark.asyncio
     async def test_rotates_when_alias_exists(self):
-        with patch("apps.nexus_api.brain.credentials._vault_request", new_callable=AsyncMock) as mock_req:
+        with patch(
+            "apps.nexus_api.brain.credentials._vault_request", new_callable=AsyncMock
+        ) as mock_req:
             mock_req.side_effect = [
                 [{"id": "existing-id", "alias": "test.alias"}],  # GET /v1/secrets
                 {"id": "existing-id", "rotated_at": "2026-01-01T00:00:00Z"},  # POST /rotate
             ]
 
-            result = await store_credential_in_vault(
-                alias="test.alias", value="new-secret-value"
-            )
+            result = await store_credential_in_vault(alias="test.alias", value="new-secret-value")
 
             assert mock_req.call_count == 2
             second_call = mock_req.call_args_list[1]
@@ -101,7 +103,9 @@ class TestStoreCredentialInVault:
 class TestProvisionPbxCredential:
     @pytest.mark.asyncio
     async def test_provision_stores_and_returns_alias(self):
-        with patch("apps.nexus_api.brain.credentials.store_credential_in_vault", new_callable=AsyncMock) as mock_store:
+        with patch(
+            "apps.nexus_api.brain.credentials.store_credential_in_vault", new_callable=AsyncMock
+        ) as mock_store:
             mock_store.return_value = {"id": "new-id", "alias": "pbx.ami.test_pbx.secret"}
 
             req = PbxCredentialRequest(target_name="test_pbx", ami_secret="my-ami-secret")
@@ -116,7 +120,9 @@ class TestProvisionPbxCredential:
 
     @pytest.mark.asyncio
     async def test_provision_returns_error_on_failure(self):
-        with patch("apps.nexus_api.brain.credentials.store_credential_in_vault", new_callable=AsyncMock) as mock_store:
+        with patch(
+            "apps.nexus_api.brain.credentials.store_credential_in_vault", new_callable=AsyncMock
+        ) as mock_store:
             mock_store.side_effect = RuntimeError("Vault connection failed")
 
             req = PbxCredentialRequest(target_name="bad_pbx", ami_secret="secret")
@@ -137,7 +143,9 @@ class TestEmailCredentialRequestValidation:
         assert req.action == "create"
 
     def test_valid_reset_action(self):
-        req = EmailCredentialRequest(email="user@test.com", password="12345678", action="reset_password")
+        req = EmailCredentialRequest(
+            email="user@test.com", password="12345678", action="reset_password"
+        )
         assert req.action == "reset_password"
 
     def test_password_min_length(self):

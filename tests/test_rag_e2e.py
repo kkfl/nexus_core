@@ -57,7 +57,6 @@ def fail(msg: str):
 async def run():
     results: dict[str, str] = {}
     async with httpx.AsyncClient(base_url=API_URL, timeout=15) as client:
-
         # ── Step 1: Login ─────────────────────────────────────────────
         banner("Step 1: Login")
         resp = await client.post(
