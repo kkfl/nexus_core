@@ -25,6 +25,7 @@ import {
     MailOutlined,
     GlobalOutlined,
     QuestionCircleOutlined,
+    TeamOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -114,6 +115,15 @@ export default function AdminLayout() {
             icon: <ReadOutlined />,
             label: 'Pilot Docs',
         },
+        // Settings — admin only
+        ...(user?.role === 'admin' ? [{
+            key: 'settings',
+            icon: <SettingOutlined />,
+            label: 'Settings',
+            children: [
+                { key: '/settings/users', label: 'User Management', icon: <TeamOutlined /> },
+            ],
+        }] : []),
     ];
 
     return (

@@ -29,6 +29,7 @@ import InfrastructureServers from './pages/InfrastructureServers';
 import MailboxInbox from './pages/MailboxInbox';
 import Secrets from './pages/Secrets';
 import Docs from './pages/Docs';
+import Users from './pages/Users';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -102,6 +103,13 @@ function App() {
 
             {/* Docs */}
             <Route path="docs" element={<Docs />} />
+
+            {/* Settings (admin only) */}
+            <Route path="settings/users" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Users />
+              </ProtectedRoute>
+            } />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -27,6 +27,7 @@ from apps.nexus_api.routers import (
     storage,
     task_routes,
     tasks,
+    users,
 )
 
 logger = structlog.get_logger()
@@ -227,6 +228,7 @@ app.include_router(carrier.router, prefix="/carrier", tags=["carrier"])
 app.include_router(docs.router, prefix="/docs", tags=["docs"])
 app.include_router(brain_routes.router, prefix="/brain", tags=["brain"])
 app.include_router(events.router, prefix="/events", tags=["events"])
+app.include_router(users.router, prefix="/users", tags=["users"])
 
 
 @app.get("/healthz", tags=["health"])
