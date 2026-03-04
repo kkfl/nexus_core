@@ -92,7 +92,9 @@ async def create_user(
         is_active=True,
     )
     db.add(user)
-    log_audit_event(db, "user_create", "user", admin, None, {"email": body.email, "role": body.role})
+    log_audit_event(
+        db, "user_create", "user", admin, None, {"email": body.email, "role": body.role}
+    )
     await db.commit()
     await db.refresh(user)
     return UserOut.from_user(user)
