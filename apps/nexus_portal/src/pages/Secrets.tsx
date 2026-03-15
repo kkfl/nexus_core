@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Table, Button, Card, Space, Tag, Input, Typography, Tabs } from 'antd';
+import { Table, Button, Space, Tag, Input, Typography, Tabs } from 'antd';
 import { KeyOutlined, PlusOutlined, SearchOutlined, HistoryOutlined, SafetyOutlined, EditOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
 
-// Components
 import SecretCreateModal from '../components/Secrets/SecretCreateModal';
 import SecretEditModal from '../components/Secrets/SecretEditModal';
 import SecretRotateModal from '../components/Secrets/SecretRotateModal';
@@ -16,6 +17,8 @@ const { Title, Text } = Typography;
 
 export default function Secrets() {
     const [searchQuery, setSearchQuery] = useState('');
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [editingSecret, setEditingSecret] = useState<any>(null);
     const [rotatingSecret, setRotatingSecret] = useState<any>(null);
@@ -106,9 +109,13 @@ export default function Secrets() {
     );
 
     return (
-        <div style={{ width: '100%' }}>
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
             <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' }}>
-                <Title level={2} style={{ margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>Secrets & Credentials Management</Title>
+                <div>
+                    <Title level={2} style={{ margin: 0, whiteSpace: 'nowrap', flexShrink: 0, color: t.text }}><KeyOutlined style={{ marginRight: 10, color: t.accent }} />Secrets & Credentials</Title>
+                    <Text style={{ color: t.muted }}>Manage encrypted secrets and credentials</Text>
+                </div>
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
                     Add Secret
                 </Button>
@@ -116,7 +123,7 @@ export default function Secrets() {
 
             <Tabs defaultActiveKey="secrets">
                 <Tabs.TabPane tab={<span><KeyOutlined />Secrets</span>} key="secrets">
-                    <Card style={{ marginTop: 16 }}>
+                    <div className="nx-table" style={{ ...cardStyle(t), marginTop: 16, padding: 20 }}>
                         <div style={{ marginBottom: 16 }}>
                             <Input
                                 placeholder="Search by alias or tenant..."
@@ -133,12 +140,12 @@ export default function Secrets() {
                             loading={isLoading}
                             scroll={{ x: 1200 }}
                         />
-                    </Card>
+                    </div>
                 </Tabs.TabPane>
                 <Tabs.TabPane tab={<span><HistoryOutlined />Audit Log</span>} key="audit">
-                    <Card style={{ marginTop: 16 }}>
+                    <div style={{ ...cardStyle(t), marginTop: 16, padding: 20 }}>
                         <SecretAuditTable />
-                    </Card>
+                    </div>
                 </Tabs.TabPane>
             </Tabs>
 

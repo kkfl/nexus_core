@@ -7,24 +7,10 @@ import {
     WarningOutlined, RightOutlined, DashboardOutlined,
     CheckCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, cardStyle, tableStyleOverrides, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
-
-// ── Midnight palette (consistent with Server Admin / DNS pages) ──
-const MN = {
-    bg: '#0f1623', card: '#131b2e', border: '#1e293b',
-    text: '#e2e8f0', muted: '#94a3b8', accent: '#3b82f6',
-    green: '#4ade80', red: '#f87171', orange: '#fb923c', purple: '#a78bfa',
-    cyan: '#22d3ee',
-};
-
-const cardStyle = (glow = MN.accent): React.CSSProperties => ({
-    background: MN.card, borderRadius: 12,
-    border: `1px solid ${MN.border}`,
-    boxShadow: `0 0 20px ${glow}10`,
-    padding: 20, height: '100%',
-    transition: 'all 0.2s ease',
-});
 
 interface DashboardSummary {
     metrics: {
@@ -38,6 +24,9 @@ interface DashboardSummary {
 
 export default function Dashboard() {
     const navigate = useNavigate();
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
+
     const { data, isLoading, isError } = useQuery<DashboardSummary>({
         queryKey: ['dashboard-summary'],
         queryFn: async () => (await apiClient.get('/brain/dashboard/summary')).data,
@@ -45,14 +34,14 @@ export default function Dashboard() {
     });
 
     const getTransactionStatus = (action: string) => {
-        if (!action) return { text: 'Unknown', color: MN.muted, bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
+        if (!action) return { text: 'Unknown', color: t.muted, bg: `${t.muted}18`, border: `${t.muted}40` };
         const a = action.toLowerCase();
-        if (a.endsWith('.requested')) return { text: 'Requested', color: MN.accent, bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)' };
-        if (a.endsWith('.started') || a.endsWith('.processing')) return { text: 'In Progress', color: MN.orange, bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.3)' };
-        if (a.endsWith('.completed') || a.endsWith('.succeeded') || a.endsWith('.retrieved')) return { text: 'Completed', color: MN.green, bg: 'rgba(34,197,94,0.15)', border: 'rgba(34,197,94,0.3)' };
-        if (a.endsWith('.failed') || a.endsWith('.error')) return { text: 'Failed', color: MN.red, bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' };
-        if (a.endsWith('.ping')) return { text: 'System', color: MN.purple, bg: 'rgba(167,139,250,0.15)', border: 'rgba(167,139,250,0.3)' };
-        return { text: 'Action', color: MN.muted, bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
+        if (a.endsWith('.requested')) return { text: 'Requested', color: t.accent, bg: `${t.accent}18`, border: `${t.accent}40` };
+        if (a.endsWith('.started') || a.endsWith('.processing')) return { text: 'In Progress', color: t.orange, bg: `${t.orange}18`, border: `${t.orange}40` };
+        if (a.endsWith('.completed') || a.endsWith('.succeeded') || a.endsWith('.retrieved')) return { text: 'Completed', color: t.green, bg: `${t.green}18`, border: `${t.green}40` };
+        if (a.endsWith('.failed') || a.endsWith('.error')) return { text: 'Failed', color: t.red, bg: `${t.red}18`, border: `${t.red}40` };
+        if (a.endsWith('.ping')) return { text: 'System', color: t.purple, bg: `${t.purple}18`, border: `${t.purple}40` };
+        return { text: 'Action', color: t.muted, bg: `${t.muted}18`, border: `${t.muted}40` };
     };
 
     const transactionColumns = [
@@ -60,23 +49,23 @@ export default function Dashboard() {
             title: 'TIME', dataIndex: 'timestamp', key: 'timestamp', width: 200,
             render: (date: string) => (
                 <Space>
-                    <ClockCircleOutlined style={{ color: MN.muted }} />
-                    <Text style={{ color: MN.muted, fontSize: 12 }}>{new Date(date).toLocaleString()}</Text>
+                    <ClockCircleOutlined style={{ color: t.muted }} />
+                    <Text style={{ color: t.muted, fontSize: 12 }}>{new Date(date).toLocaleString()}</Text>
                 </Space>
             )
         },
         {
             title: 'SOURCE', dataIndex: 'source', key: 'source', width: 180,
             render: (source: string) => (
-                <Text style={{ color: MN.cyan, fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>{source}</Text>
+                <Text style={{ color: t.cyan, fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>{source}</Text>
             )
         },
         {
             title: 'ACTION', dataIndex: 'action', key: 'action',
             render: (action: string) => (
                 <Tag style={{
-                    background: 'rgba(59,130,246,0.15)', color: MN.accent,
-                    border: '1px solid rgba(59,130,246,0.3)', fontFamily: 'monospace', fontSize: 11
+                    background: `${t.accent}18`, color: t.accent,
+                    border: `1px solid ${t.accent}40`, fontFamily: 'monospace', fontSize: 11
                 }}>{action}</Tag>
             )
         },
@@ -99,12 +88,12 @@ export default function Dashboard() {
             title: 'SEVERITY', dataIndex: 'severity', key: 'severity', width: 100,
             render: (sev: string) => {
                 const map: Record<string, { color: string; bg: string; border: string }> = {
-                    info: { color: MN.accent, bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)' },
-                    warning: { color: MN.orange, bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.3)' },
-                    error: { color: MN.red, bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
-                    critical: { color: MN.red, bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
+                    info: { color: t.accent, bg: `${t.accent}18`, border: `${t.accent}40` },
+                    warning: { color: t.orange, bg: `${t.orange}18`, border: `${t.orange}40` },
+                    error: { color: t.red, bg: `${t.red}18`, border: `${t.red}40` },
+                    critical: { color: t.red, bg: `${t.red}18`, border: `${t.red}40` },
                 };
-                const s = map[sev] || { color: MN.muted, bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' };
+                const s = map[sev] || { color: t.muted, bg: `${t.muted}18`, border: `${t.muted}40` };
                 return <Tag style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}`, fontSize: 10 }}>{sev?.toUpperCase()}</Tag>;
             }
         },
@@ -118,48 +107,39 @@ export default function Dashboard() {
 
     const summaryCards = [
         {
-            label: 'MICRO-AGENTS', icon: <ApiOutlined />, glow: MN.accent,
+            label: 'MICRO-AGENTS', icon: <ApiOutlined />, glow: t.accent,
             value: metrics.agents.total, sub: `${metrics.agents.active} Online`,
-            subColor: metrics.agents.active > 0 ? MN.green : MN.muted,
+            subColor: metrics.agents.active > 0 ? t.green : t.muted,
             subIcon: metrics.agents.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/agents'),
         },
         {
-            label: 'MANAGED SERVERS', icon: <DatabaseOutlined />, glow: MN.cyan,
+            label: 'MANAGED SERVERS', icon: <DatabaseOutlined />, glow: t.cyan,
             value: metrics.servers.total, sub: `${metrics.servers.active} Running`,
-            subColor: metrics.servers.active > 0 ? MN.green : MN.muted,
+            subColor: metrics.servers.active > 0 ? t.green : t.muted,
             subIcon: metrics.servers.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/infrastructure/servers'),
         },
         {
-            label: 'MAILBOXES', icon: <MailOutlined />, glow: MN.purple,
+            label: 'MAILBOXES', icon: <MailOutlined />, glow: t.purple,
             value: metrics.mail.total_mailboxes, sub: `${metrics.mail.inbound_unread} Unread`,
-            subColor: metrics.mail.inbound_unread > 0 ? MN.orange : MN.muted,
+            subColor: metrics.mail.inbound_unread > 0 ? t.orange : t.muted,
             subIcon: metrics.mail.inbound_unread > 0 ? <WarningOutlined /> : <CheckCircleOutlined />,
             clickable: false,
         },
     ];
 
     return (
-        <div style={{ background: MN.bg, margin: -32, padding: 32, minHeight: 'calc(100vh - 64px)' }}>
-            <style>{`
-                .cmd-table .ant-table { background: transparent !important; }
-                .cmd-table .ant-table-thead > tr > th { background: rgba(30,41,59,0.6) !important; color: ${MN.muted} !important; border-bottom: 1px solid ${MN.border} !important; font-size: 11px !important; letter-spacing: 0.5px; }
-                .cmd-table .ant-table-tbody > tr > td { border-bottom: 1px solid ${MN.border} !important; background: transparent !important; }
-                .cmd-table .ant-table-tbody > tr:hover > td { background: rgba(59,130,246,0.05) !important; }
-                .cmd-table .ant-table-cell { color: ${MN.text} !important; }
-                .cmd-table .ant-empty-description { color: ${MN.muted} !important; }
-                .cmd-table .ant-table-placeholder { background: transparent !important; }
-                .cmd-table .ant-table-placeholder:hover > td { background: transparent !important; }
-            `}</style>
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'cmd-table')}</style>
 
             {/* ═══ Header ═══ */}
             <div style={{ marginBottom: 28 }}>
-                <Title level={2} style={{ margin: 0, color: MN.text }}>
-                    <DashboardOutlined style={{ marginRight: 10, color: MN.accent }} />
+                <Title level={2} style={{ margin: 0, color: t.text }}>
+                    <DashboardOutlined style={{ marginRight: 10, color: t.accent }} />
                     Command Center
                 </Title>
-                <Text style={{ color: MN.muted, marginTop: 4, display: 'block' }}>
+                <Text style={{ color: t.muted, marginTop: 4, display: 'block' }}>
                     System overview and micro-agent health
                 </Text>
             </div>
@@ -167,9 +147,9 @@ export default function Dashboard() {
             {isError && (
                 <div style={{
                     marginBottom: 20, padding: '12px 20px', borderRadius: 10,
-                    background: 'rgba(239,68,68,0.1)', border: `1px solid rgba(239,68,68,0.3)`,
+                    background: `${t.red}15`, border: `1px solid ${t.red}40`,
                 }}>
-                    <Text style={{ color: MN.red }}>
+                    <Text style={{ color: t.red }}>
                         <WarningOutlined style={{ marginRight: 8 }} />
                         Failed to load dashboard summary. Check API connectivity.
                     </Text>
@@ -183,7 +163,7 @@ export default function Dashboard() {
                         key={card.label}
                         onClick={card.clickable ? card.onClick : undefined}
                         style={{
-                            ...cardStyle(card.glow),
+                            ...cardStyle(t, card.glow),
                             cursor: card.clickable ? 'pointer' : 'default',
                             position: 'relative',
                             overflow: 'hidden',
@@ -196,8 +176,8 @@ export default function Dashboard() {
                         }}
                         onMouseLeave={(e) => {
                             if (card.clickable) {
-                                (e.currentTarget as HTMLElement).style.borderColor = MN.border;
-                                (e.currentTarget as HTMLElement).style.boxShadow = `0 0 20px ${card.glow}10`;
+                                (e.currentTarget as HTMLElement).style.borderColor = t.border;
+                                (e.currentTarget as HTMLElement).style.boxShadow = t.glow(card.glow);
                             }
                         }}
                     >
@@ -208,14 +188,14 @@ export default function Dashboard() {
                             opacity: 0.6,
                         }} />
 
-                        <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                        <Text style={{ color: t.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
                             <span style={{ color: card.glow, marginRight: 8 }}>{card.icon}</span>
                             {card.label}
                         </Text>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                             <div>
-                                <div style={{ color: '#fff', fontSize: 36, fontWeight: 700, lineHeight: 1 }}>
+                                <div style={{ color: t.text, fontSize: 36, fontWeight: 700, lineHeight: 1 }}>
                                     {isLoading ? '—' : card.value}
                                 </div>
                                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -228,7 +208,7 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             {card.clickable && (
-                                <Text style={{ color: MN.muted, fontSize: 12 }}>
+                                <Text style={{ color: t.muted, fontSize: 12 }}>
                                     <RightOutlined /> View All
                                 </Text>
                             )}
@@ -238,17 +218,17 @@ export default function Dashboard() {
             </div>
 
             {/* ═══ System Activity Log ═══ */}
-            <div style={{ ...cardStyle(), padding: 0, overflow: 'hidden' }}>
+            <div style={{ ...cardStyle(t), padding: 0, overflow: 'hidden' }}>
                 <div style={{
                     padding: '14px 20px',
-                    borderBottom: `1px solid ${MN.border}`,
+                    borderBottom: `1px solid ${t.border}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 }}>
-                    <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1 }}>
-                        <ClockCircleOutlined style={{ marginRight: 8, color: MN.accent }} />
+                    <Text style={{ color: t.muted, fontSize: 11, letterSpacing: 1 }}>
+                        <ClockCircleOutlined style={{ marginRight: 8, color: t.accent }} />
                         SYSTEM ACTIVITY LOG
                     </Text>
-                    <Text style={{ color: MN.muted, fontSize: 11 }}>
+                    <Text style={{ color: t.muted, fontSize: 11 }}>
                         {data?.recent_transactions?.length || 0} recent events
                     </Text>
                 </div>

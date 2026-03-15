@@ -67,10 +67,11 @@ def sanitize_dict(data: dict[str, Any], *, depth: int = 0) -> dict[str, Any]:
         return data
     result: dict[str, Any] = {}
     for k, v in data.items():
-        if isinstance(k, str) and any(p.search(k) for p in _SECRET_KEY_PATTERNS):
-            result[k] = _REDACTED
-        elif isinstance(v, dict):
+        if isinstance(v, dict):
+            # Always recurse into nested dicts, even if the key looks secret-like
             result[k] = sanitize_dict(v, depth=depth + 1)
+        elif isinstance(k, str) and any(p.search(k) for p in _SECRET_KEY_PATTERNS):
+            result[k] = _REDACTED
         else:
             result[k] = v
     return result

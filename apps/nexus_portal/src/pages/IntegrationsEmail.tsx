@@ -5,21 +5,12 @@ import { apiClient } from '../api/client';
 import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    MailOutlined,
-    PlusOutlined,
-    LockOutlined,
-    StopOutlined,
-    LinkOutlined,
-    CheckCircleOutlined,
-    ReloadOutlined,
-    InboxOutlined,
-    WarningOutlined,
-    CloudServerOutlined,
-    SyncOutlined,
-    SendOutlined,
-    GlobalOutlined,
-    ArrowRightOutlined,
+    MailOutlined, PlusOutlined, LockOutlined, StopOutlined, LinkOutlined,
+    CheckCircleOutlined, ReloadOutlined, InboxOutlined, WarningOutlined,
+    CloudServerOutlined, SyncOutlined, SendOutlined, GlobalOutlined, ArrowRightOutlined,
 } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
 
@@ -111,6 +102,8 @@ interface SentStatsResponse {
 export default function IntegrationsEmail() {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
     const [createOpen, setCreateOpen] = useState(false);
     const [passwordOpen, setPasswordOpen] = useState(false);
     const [aliasOpen, setAliasOpen] = useState(false);
@@ -493,7 +486,7 @@ export default function IntegrationsEmail() {
     const maxBar = Math.max(...outboundBars.map(b => b.value), 1);
 
     return (
-        <div style={{ background: '#0f1623', margin: -24, padding: 24, minHeight: 'calc(100vh - 64px)' }}>
+        <div style={pageContainer(t)}>
             <style>{`
                 .${panelCardHover}:hover {
                     transform: translateY(-3px);

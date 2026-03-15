@@ -3,14 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useState } from 'react';
+import { FileTextOutlined, PlusOutlined } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 export default function KbSources() {
     const queryClient = useQueryClient();
     const role = useAuthStore(s => s.user?.role);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [form] = Form.useForm();
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
 
     const { data: sources, isLoading } = useQuery({
         queryKey: ['kb_sources'],
@@ -29,22 +34,26 @@ export default function KbSources() {
     });
 
     const columns = [
-        { title: 'ID', dataIndex: 'id', key: 'id' },
-        { title: 'Name', dataIndex: 'name', key: 'name', render: (n: string) => <strong>{n}</strong> },
-        { title: 'Kind', dataIndex: 'kind', key: 'kind', render: (k: string) => <Tag color="blue">{k}</Tag> },
-        { title: 'Config', dataIndex: 'config', key: 'config', render: (cfg: any) => cfg ? JSON.stringify(cfg) : '-' },
-        { title: 'Created', dataIndex: 'created_at', key: 'created_at', render: (date: string) => new Date(date).toLocaleString() },
+        { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
+        { title: 'Name', dataIndex: 'name', key: 'name', render: (n: string) => <Text style={{ color: t.text, fontWeight: 600 }}>{n}</Text> },
+        { title: 'Kind', dataIndex: 'kind', key: 'kind', render: (k: string) => <Tag style={{ background: `${t.accent}18`, color: t.accent, border: `1px solid ${t.accent}40` }}>{k}</Tag> },
+        { title: 'Config', dataIndex: 'config', key: 'config', render: (cfg: any) => cfg ? <Text style={{ color: t.muted, fontFamily: 'monospace', fontSize: 11 }}>{JSON.stringify(cfg)}</Text> : <Text style={{ color: t.muted }}>—</Text> },
+        { title: 'Created', dataIndex: 'created_at', key: 'created_at', render: (date: string) => <Text style={{ color: t.muted, fontSize: 12 }}>{new Date(date).toLocaleString()}</Text> },
     ];
 
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                <Title level={3}>Knowledge Base Sources</Title>
-                {role !== 'reader' && <Button type="primary" onClick={() => setIsModalOpen(true)}>Add Source</Button>}
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div>
+                    <Title level={3} style={{ margin: 0, color: t.text }}><FileTextOutlined style={{ marginRight: 10, color: t.accent }} />Knowledge Base Sources</Title>
+                    <Text style={{ color: t.muted }}>Manage ingestion sources for the knowledge base</Text>
+                </div>
+                {role !== 'reader' && <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Add Source</Button>}
             </div>
-
-            <Table dataSource={sources} columns={columns} rowKey="id" loading={isLoading} size="middle" />
-
+            <div className="nx-table" style={{ ...cardStyle(t), padding: 0, overflow: 'hidden' }}>
+                <Table dataSource={sources} columns={columns} rowKey="id" loading={isLoading} size="middle" />
+            </div>
             <Modal title="Create KB Source" open={isModalOpen} onCancel={() => setIsModalOpen(false)} onOk={() => form.submit()} confirmLoading={createSource.isPending}>
                 <Form form={form} layout="vertical" onFinish={createSource.mutate} initialValues={{ kind: 'manual' }}>
                     <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>

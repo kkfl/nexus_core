@@ -1,4 +1,4 @@
-import { Layout, Menu, Button, Dropdown, Space, Typography, ConfigProvider, theme } from 'antd';
+import { Layout, Menu, Button, Dropdown, Space, Typography, ConfigProvider, Tooltip } from 'antd';
 import {
     DashboardOutlined,
     UserOutlined,
@@ -26,17 +26,30 @@ import {
     GlobalOutlined,
     QuestionCircleOutlined,
     TeamOutlined,
+    SunOutlined,
+    MoonOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useThemeStore } from '../stores/themeStore';
+import { getAntTheme, getTokens } from '../theme';
+import { useEffect } from 'react';
+import NexusBrain from '../components/NexusBrain';
 
 const { Header, Content, Sider, Footer } = Layout;
 const { Text } = Typography;
 
 export default function AdminLayout() {
     const { user, logout } = useAuthStore();
+    const { mode, toggleMode } = useThemeStore();
     const navigate = useNavigate();
     const location = useLocation();
+    const t = getTokens(mode);
+
+    // Sync data-theme attribute on mount
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', mode);
+    }, [mode]);
 
     const handleLogout = () => {
         logout();
@@ -127,20 +140,45 @@ export default function AdminLayout() {
     ];
 
     return (
-        <ConfigProvider
-            theme={{
-                algorithm: theme.defaultAlgorithm,
-                token: {
-                    colorPrimary: '#1677ff',
-                    borderRadius: 8,
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                },
-            }}
-        >
+        <ConfigProvider theme={getAntTheme(mode)}>
             <Layout className="root-layout" style={{ minHeight: '100vh' }}>
-                <Sider width={260} theme="dark" style={{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 10 }}>
-                    <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#001529', color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: '-0.5px' }}>
-                        Nexus Core
+                <Sider
+                    width={260}
+                    theme="dark"
+                    style={{
+                        overflow: 'auto',
+                        height: '100vh',
+                        position: 'fixed',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        zIndex: 10,
+                        background: t.siderBg,
+                        borderRight: `1px solid ${t.border}`,
+                    }}
+                >
+                    <div style={{
+                        height: 64,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(0,0,0,0.2)',
+                        borderBottom: `1px solid ${t.border}`,
+                    }}>
+                        <NexusBrain size={36} />
+                        <span style={{
+                            color: '#fff',
+                            fontSize: 22,
+                            fontWeight: 800,
+                            letterSpacing: '3px',
+                            background: `linear-gradient(135deg, #00CED1, #4169E1)`,
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                            marginLeft: 10,
+                            textTransform: 'uppercase' as const,
+                        }}>
+                            NEXUS
+                        </span>
                     </div>
                     <Menu
                         theme="dark"
@@ -149,29 +187,87 @@ export default function AdminLayout() {
                         defaultOpenKeys={['orchestration', 'personas', 'kb', 'sor', 'integrations']}
                         items={navItems}
                         onClick={(e) => navigate(e.key)}
+                        style={{ background: 'transparent', borderRight: 0 }}
                     />
                 </Sider>
-                <Layout className="main-layout" style={{ marginLeft: 260, minHeight: '100vh' }}>
-                    <Header style={{ padding: '0 32px', background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 1, width: '100%' }}>
-                        <Space size="large">
-                            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 600 }}>{user?.role.toUpperCase()}</Text>
+                <Layout className="main-layout" style={{ marginLeft: 260, minHeight: '100vh', background: t.bg }}>
+                    <Header style={{
+                        padding: '0 28px',
+                        background: t.headerBg,
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        alignItems: 'center',
+                        borderBottom: `1px solid ${t.border}`,
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 1,
+                        width: '100%',
+                        backdropFilter: 'blur(12px)',
+                    }}>
+                        <Space size="middle">
+                            <Tooltip title={mode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
+                                <Button
+                                    type="text"
+                                    icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+                                    onClick={toggleMode}
+                                    style={{
+                                        color: t.muted,
+                                        fontSize: 16,
+                                        width: 36,
+                                        height: 36,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        borderRadius: 8,
+                                        border: `1px solid ${t.border}`,
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                />
+                            </Tooltip>
+                            <Text style={{ fontSize: 11, fontWeight: 600, color: t.muted, letterSpacing: 0.5 }}>
+                                {user?.role.toUpperCase()}
+                            </Text>
                             <Dropdown menu={{
                                 items: [
-                                    { key: 'email', label: <Text disabled>{user?.email}</Text> },
+                                    { key: 'email', label: <Text style={{ color: t.muted }}>{user?.email}</Text>, disabled: true },
                                     { type: 'divider' },
                                     { key: 'logout', label: 'Log Out', icon: <LogoutOutlined />, onClick: handleLogout }
                                 ]
                             }} placement="bottomRight">
-                                <Button type="text" icon={<UserOutlined />} style={{ display: 'flex', alignItems: 'center' }}>
+                                <Button
+                                    type="text"
+                                    icon={<UserOutlined />}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        color: t.text,
+                                        border: `1px solid ${t.border}`,
+                                        borderRadius: 8,
+                                        height: 36,
+                                        gap: 6,
+                                    }}
+                                >
                                     {user?.email}
                                 </Button>
                             </Dropdown>
                         </Space>
                     </Header>
-                    <Content style={{ margin: '24px', padding: '32px', background: '#fff', borderRadius: 12 }}>
+                    <Content style={{
+                        margin: 0,
+                        padding: 0,
+                        background: t.bg,
+                        minHeight: 'calc(100vh - 64px - 52px)',
+                    }}>
                         <Outlet />
                     </Content>
-                    <Footer style={{ textAlign: 'center', color: '#8c8c8c', padding: '16px 50px' }}>
+                    <Footer style={{
+                        textAlign: 'center',
+                        color: t.muted,
+                        padding: '14px 50px',
+                        background: 'transparent',
+                        fontSize: 12,
+                        borderTop: `1px solid ${t.border}`,
+                    }}>
                         Nexus Portal v{import.meta.env.VITE_APP_VERSION || '0.1.0'} ©{new Date().getFullYear()} Created by Nexus Core • System of Record
                     </Footer>
                 </Layout>

@@ -3,12 +3,14 @@ import { apiClient } from '../api/client';
 import { useState } from 'react';
 import {
     Table, Button, Tag, Space, Modal, Form, Input, Select, Switch, message, Typography,
-    Tooltip, Card, Row, Col, Statistic, Badge,
+    Tooltip, Row, Col, Statistic, Badge,
 } from 'antd';
 import {
     UserAddOutlined, EditOutlined, KeyOutlined, TeamOutlined,
     CrownOutlined, SafetyCertificateOutlined, EyeOutlined,
 } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
 
 const { Title, Text } = Typography;
 
@@ -40,6 +42,8 @@ export default function Users() {
     const [createForm] = Form.useForm();
     const [editForm] = Form.useForm();
     const [resetForm] = Form.useForm();
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
 
     // ── Queries ──
     const { data: users = [], isLoading } = useQuery<UserRecord[]>({
@@ -162,63 +166,38 @@ export default function Users() {
     ];
 
     return (
-        <div>
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>
-                        <TeamOutlined style={{ marginRight: 8 }} />
+                    <Title level={3} style={{ margin: 0, color: t.text }}>
+                        <TeamOutlined style={{ marginRight: 8, color: t.accent }} />
                         User Management
                     </Title>
-                    <Text type="secondary">Manage portal access, roles, and credentials</Text>
+                    <Text style={{ color: t.muted }}>Manage portal access, roles, and credentials</Text>
                 </div>
-                <Button
-                    type="primary"
-                    icon={<UserAddOutlined />}
-                    onClick={() => setCreateOpen(true)}
-                    size="large"
-                >
-                    Create User
-                </Button>
+                <Button type="primary" icon={<UserAddOutlined />} onClick={() => setCreateOpen(true)} size="large">Create User</Button>
             </div>
 
             {/* Stats */}
             <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic title="Total Users" value={totalUsers} prefix={<TeamOutlined />} />
-                    </Card>
-                </Col>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic
-                            title="Active Users"
-                            value={activeUsers}
-                            valueStyle={{ color: '#52c41a' }}
-                        />
-                    </Card>
-                </Col>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic
-                            title="Administrators"
-                            value={adminCount}
-                            prefix={<CrownOutlined />}
-                            valueStyle={{ color: '#f5222d' }}
-                        />
-                    </Card>
-                </Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Total Users</Text>} value={totalUsers} prefix={<TeamOutlined />} valueStyle={{ color: t.text }} /></div></Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Active Users</Text>} value={activeUsers} valueStyle={{ color: t.green }} /></div></Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Administrators</Text>} value={adminCount} prefix={<CrownOutlined />} valueStyle={{ color: t.red }} /></div></Col>
             </Row>
 
             {/* Table */}
-            <Table
-                columns={columns}
-                dataSource={users}
-                rowKey="id"
-                loading={isLoading}
-                pagination={{ pageSize: 20, showSizeChanger: false }}
-                size="middle"
-            />
+            <div className="nx-table" style={{ ...cardStyle(t), padding: 0, overflow: 'hidden' }}>
+                <Table
+                    columns={columns}
+                    dataSource={users}
+                    rowKey="id"
+                    loading={isLoading}
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
+                    size="middle"
+                />
+            </div>
 
             {/* Create Modal */}
             <Modal

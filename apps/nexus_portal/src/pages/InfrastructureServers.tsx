@@ -13,25 +13,15 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { serverClient } from '../api/serverClient';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, cardStyle as centralCardStyle, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
 
-// ── Midnight palette (consistent with DNS page) ──
-const MN = {
-    bg: '#0f1623', card: '#131b2e', border: '#1e293b',
-    text: '#e2e8f0', muted: '#94a3b8', accent: '#3b82f6',
-    green: '#4ade80', red: '#f87171', orange: '#fb923c', purple: '#a78bfa',
-    cyan: '#22d3ee',
-};
-
-const cardStyle = (glow = MN.accent): React.CSSProperties => ({
-    background: MN.card, borderRadius: 12,
-    border: `1px solid ${MN.border}`,
-    boxShadow: `0 0 20px ${glow}10`,
-    padding: 20, height: '100%',
-});
-
 export default function InfrastructureServers() {
+    const { mode } = useThemeStore();
+    const MN = getTokens(mode);
+    const cardStyle = (glow = MN.accent): React.CSSProperties => centralCardStyle(MN, glow);
     const qc = useQueryClient();
     const [selectedServer, setSelectedServer] = useState<any>(null);
     const [searchText, setSearchText] = useState('');
@@ -294,7 +284,7 @@ export default function InfrastructureServers() {
     ];
 
     return (
-        <div style={{ background: MN.bg, margin: -32, padding: 32, minHeight: 'calc(100vh - 64px)' }}>
+        <div style={pageContainer(MN)}>
             <style>{`
                 .srv-table .ant-table { background: transparent !important; }
                 .srv-table .ant-table-thead > tr > th { background: rgba(30,41,59,0.6) !important; color: ${MN.muted} !important; border-bottom: 1px solid ${MN.border} !important; font-size: 11px !important; letter-spacing: 0.5px; }

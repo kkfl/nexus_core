@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Typography, List, Card, Spin, Alert, Empty } from 'antd';
-import { FileMarkdownOutlined } from '@ant-design/icons';
+import { Typography, List, Spin, Alert, Empty } from 'antd';
+import { FileMarkdownOutlined, ReadOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { apiClient } from '../api/client';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle } from '../theme';
 
 const { Title, Text } = Typography;
 
@@ -12,6 +14,8 @@ export default function Docs() {
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
 
     useEffect(() => {
         apiClient.get('/docs/list')
@@ -20,57 +24,55 @@ export default function Docs() {
     }, []);
 
     const loadDoc = async (name: string) => {
-        setLoading(true);
-        setSelectedDoc(name);
-        setContent('');
-        try {
-            const res = await apiClient.get(`/docs/${name}`);
-            setContent(res.data);
-        } catch {
-            setContent('');
-            setError(`Failed to load ${name}`);
-        } finally {
-            setLoading(false);
-        }
+        setLoading(true); setSelectedDoc(name); setContent('');
+        try { const res = await apiClient.get(`/docs/${name}`); setContent(res.data); }
+        catch { setContent(''); setError(`Failed to load ${name}`); }
+        finally { setLoading(false); }
     };
 
     return (
-        <div style={{ display: 'flex', gap: 24, height: '100%' }}>
-            <div style={{ width: 240, flexShrink: 0 }}>
-                <Title level={5} style={{ marginBottom: 12 }}>Documents</Title>
+        <div style={{ ...pageContainer(t), display: 'flex', gap: 24 }}>
+            <div style={{ marginBottom: 20, position: 'absolute', top: 28, left: 28 }}>
+                <Title level={3} style={{ margin: 0, color: t.text }}><ReadOutlined style={{ marginRight: 10, color: t.accent }} />Pilot Docs</Title>
+            </div>
+            <div style={{ width: 240, flexShrink: 0, paddingTop: 60 }}>
+                <Text style={{ color: t.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>DOCUMENTS</Text>
                 <List
-                    bordered
                     dataSource={docList}
                     renderItem={item => (
                         <List.Item
                             onClick={() => loadDoc(item.name)}
                             style={{
                                 cursor: 'pointer',
-                                background: selectedDoc === item.name ? '#e6f4ff' : undefined,
-                                borderLeft: selectedDoc === item.name ? '3px solid #1677ff' : '3px solid transparent',
+                                background: selectedDoc === item.name ? `${t.accent}12` : 'transparent',
+                                borderLeft: selectedDoc === item.name ? `3px solid ${t.accent}` : `3px solid transparent`,
                                 padding: '10px 16px',
+                                borderRadius: 6,
+                                marginBottom: 2,
+                                border: 'none',
+                                borderBottom: 'none',
+                                transition: 'all 0.15s ease',
                             }}
                         >
-                            <FileMarkdownOutlined style={{ marginRight: 8, color: '#1677ff' }} />
-                            <Text>{item.title}</Text>
+                            <FileMarkdownOutlined style={{ marginRight: 8, color: t.accent }} />
+                            <Text style={{ color: t.text }}>{item.title}</Text>
                         </List.Item>
                     )}
                     locale={{ emptyText: <Empty description="No docs found" /> }}
                 />
             </div>
-
-            <Card style={{ flex: 1, overflow: 'auto' }} >
+            <div style={{ ...cardStyle(t), flex: 1, overflow: 'auto', marginTop: 60, padding: 28 }}>
                 {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} closable onClose={() => setError(null)} />}
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" /></div>
                 ) : content ? (
-                    <div style={{ fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
+                    <div style={{ fontFamily: 'Inter, sans-serif', lineHeight: 1.7, color: t.text }}>
                         <ReactMarkdown>{content}</ReactMarkdown>
                     </div>
                 ) : (
                     <Empty description="Select a document from the list to read it." style={{ marginTop: 60 }} />
                 )}
-            </Card>
+            </div>
         </div>
     );
 }

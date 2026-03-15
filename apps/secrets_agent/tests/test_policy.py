@@ -1,10 +1,12 @@
 """Unit tests for the Policy Engine."""
 
-from apps.secrets_agent.models import VaultPolicy
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 from apps.secrets_agent.policy.engine import PolicyEngine
 
 
-def _make_policy(**kwargs) -> VaultPolicy:
+def _make_policy(**kwargs) -> SimpleNamespace:
     defaults = dict(
         id="test-id",
         name="test-policy",
@@ -15,14 +17,11 @@ def _make_policy(**kwargs) -> VaultPolicy:
         actions=["read"],
         priority=100,
         is_active=True,
-        created_at=__import__("datetime").datetime.utcnow(),
-        updated_at=__import__("datetime").datetime.utcnow(),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     defaults.update(kwargs)
-    p = VaultPolicy.__new__(VaultPolicy)
-    for k, v in defaults.items():
-        setattr(p, k, v)
-    return p
+    return SimpleNamespace(**defaults)
 
 
 def test_default_deny_no_policies():

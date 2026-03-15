@@ -1,4 +1,4 @@
-import { Table, Modal, Typography, Space, Tag, Button, Tabs, Form, Input, Select, Switch, message, Card, Row, Col, Statistic, Tooltip, Badge } from 'antd';
+import { Table, Modal, Typography, Space, Tag, Button, Tabs, Form, Input, Select, Switch, message, Row, Col, Statistic, Tooltip, Badge } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useState } from 'react';
@@ -6,6 +6,8 @@ import {
     HddOutlined, PlusOutlined, EditOutlined, ApiOutlined, CheckCircleOutlined,
     CloudServerOutlined, DatabaseOutlined,
 } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
 
 const { Title, Text } = Typography;
 
@@ -35,6 +37,8 @@ interface StorageJob {
 
 export default function IntegrationsStorage() {
     const queryClient = useQueryClient();
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
     const [selectedJob, setSelectedJob] = useState<StorageJob | null>(null);
     const [createOpen, setCreateOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<StorageTarget | null>(null);
@@ -173,15 +177,16 @@ export default function IntegrationsStorage() {
     ];
 
     return (
-        <div>
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>
-                        <HddOutlined style={{ marginRight: 8 }} />
+                    <Title level={3} style={{ margin: 0, color: t.text }}>
+                        <HddOutlined style={{ marginRight: 8, color: t.accent }} />
                         Storage Administration
                     </Title>
-                    <Text type="secondary">Manage S3-compatible storage targets (MinIO, Synology, etc.)</Text>
+                    <Text style={{ color: t.muted }}>Manage S3-compatible storage targets (MinIO, Synology, etc.)</Text>
                 </div>
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)} size="large">
                     Add Storage Target
@@ -190,21 +195,9 @@ export default function IntegrationsStorage() {
 
             {/* Stats */}
             <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic title="Storage Targets" value={totalTargets} prefix={<CloudServerOutlined />} />
-                    </Card>
-                </Col>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic title="Active Targets" value={activeTargets} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
-                    </Card>
-                </Col>
-                <Col span={8}>
-                    <Card size="small">
-                        <Statistic title="Total Jobs" value={totalJobs} prefix={<DatabaseOutlined />} />
-                    </Card>
-                </Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Storage Targets</Text>} value={totalTargets} prefix={<CloudServerOutlined />} valueStyle={{ color: t.text }} /></div></Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Active Targets</Text>} value={activeTargets} valueStyle={{ color: t.green }} prefix={<CheckCircleOutlined />} /></div></Col>
+                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Total Jobs</Text>} value={totalJobs} prefix={<DatabaseOutlined />} valueStyle={{ color: t.text }} /></div></Col>
             </Row>
 
             {/* Tabs */}
@@ -361,7 +354,7 @@ export default function IntegrationsStorage() {
                         <Text><strong>Kind:</strong> <Tag color="blue">{selectedJob.kind}</Tag></Text>
                         <Text><strong>Status:</strong> <Tag color={selectedJob.status === 'succeeded' ? 'green' : 'red'}>{selectedJob.status}</Tag></Text>
                         <Text strong>Summary:</Text>
-                        <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, fontSize: 12 }}>
+                        <pre style={{ background: t.bg, padding: 12, borderRadius: 8, fontSize: 12, color: t.text, border: `1px solid ${t.border}` }}>
                             {JSON.stringify(selectedJob.summary, null, 2)}
                         </pre>
                     </Space>

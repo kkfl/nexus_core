@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 
 import httpx
 import structlog
@@ -70,8 +71,9 @@ async def _twilio_request(
             if resp.status_code >= 400:
                 # Twilio errors include a message — safe to surface (no credentials in error body)
                 body = resp.json() if resp.content else {}
+                safe_url = re.sub(r"/Accounts/AC[A-Za-z0-9_]+", "/Accounts/[REDACTED]", url)
                 raise RuntimeError(
-                    f"Twilio {method} {url} → {resp.status_code}: {body.get('message', resp.text[:200])}"
+                    f"Twilio {method} {safe_url} → {resp.status_code}: {body.get('message', resp.text[:200])}"
                 )
             return resp.json() if resp.content else {}
         except httpx.TimeoutException as exc:

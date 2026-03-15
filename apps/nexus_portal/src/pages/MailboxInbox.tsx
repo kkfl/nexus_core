@@ -1,23 +1,15 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Table, Button, Typography, Space, Card, Input, Tooltip, Drawer, Tabs, Empty, Spin, message, Descriptions, Tag } from 'antd';
+import { Table, Button, Typography, Space, Input, Tooltip, Drawer, Tabs, Empty, Spin, message, Descriptions, Tag, Card } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emailClient } from '../api/emailClient';
 import { useState } from 'react';
 import {
-    ArrowLeftOutlined,
-    ReloadOutlined,
-    MailOutlined,
-    PaperClipOutlined,
-    EyeOutlined,
-    EyeInvisibleOutlined,
-    SearchOutlined,
-    DownloadOutlined,
-    FileTextOutlined,
-    SendOutlined,
-    CheckCircleOutlined,
-    CloseCircleOutlined,
-    ClockCircleOutlined,
+    ArrowLeftOutlined, ReloadOutlined, MailOutlined, PaperClipOutlined,
+    EyeOutlined, EyeInvisibleOutlined, SearchOutlined, DownloadOutlined,
+    FileTextOutlined, SendOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, tableStyleOverrides } from '../theme';
 
 const { Title, Text, Paragraph } = Typography;
 const { Search } = Input;
@@ -77,6 +69,8 @@ export default function MailboxInbox() {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [searchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'sent' ? 'sent' : 'inbox');
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
 
     // Message list
     const { data: messages, isLoading, refetch } = useQuery<MessageItem[]>({
@@ -277,13 +271,14 @@ export default function MailboxInbox() {
     ];
 
     return (
-        <div>
+        <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <Space>
                     <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/integrations/email')}>Back</Button>
-                    <Title level={4} style={{ margin: 0 }}>
-                        <MailOutlined style={{ marginRight: 8 }} />
+                    <Title level={4} style={{ margin: 0, color: t.text }}>
+                        <MailOutlined style={{ marginRight: 8, color: t.accent }} />
                         {decodedEmail}
                     </Title>
                 </Space>
@@ -334,7 +329,7 @@ export default function MailboxInbox() {
                                         onClick: () => openMessage(record.uid),
                                         style: {
                                             cursor: 'pointer',
-                                            backgroundColor: record.is_read ? undefined : '#f0f5ff',
+                                            backgroundColor: record.is_read ? undefined : t.hoverBg,
                                         },
                                     })}
                                 />
@@ -420,11 +415,11 @@ export default function MailboxInbox() {
                                     label: 'Body',
                                     children: messageDetail.body_html ? (
                                         <div
-                                            style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 12, background: '#fff', maxHeight: 500, overflow: 'auto' }}
+                                            style={{ border: `1px solid ${t.border}`, borderRadius: 6, padding: 12, background: t.cardBg, maxHeight: 500, overflow: 'auto' }}
                                             dangerouslySetInnerHTML={{ __html: messageDetail.body_html }}
                                         />
                                     ) : messageDetail.body_text ? (
-                                        <Paragraph style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13, background: '#fafafa', padding: 12, borderRadius: 6 }}>
+                                        <Paragraph style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 13, background: t.bg, padding: 12, borderRadius: 6, color: t.text }}>
                                             {messageDetail.body_text}
                                         </Paragraph>
                                     ) : (

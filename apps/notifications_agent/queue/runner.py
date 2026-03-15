@@ -99,7 +99,21 @@ async def _deliver_channel(
             elapsed = asyncio.get_event_loop().time() * 1000 - start_ms
             metrics.record_latency(elapsed)
             sent_attempt = attempt
-            break  # send succeeded — exit retry loop, NEVER re-send
+
+            if result.success:
+                break  # send succeeded — exit retry loop, NEVER re-send
+
+            # Channel returned a failure result — retry if attempts remain
+            logger.error(
+                "delivery_send_returned_failure",
+                job_id=job_id,
+                channel=channel_name,
+                attempt=attempt,
+            )
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                await asyncio.sleep(delay)
+                result = None  # reset so next attempt can overwrite
 
         except Exception as exc:
             safe = _safe_error(exc)
