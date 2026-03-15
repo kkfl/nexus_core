@@ -46,7 +46,8 @@ from apps.server_agent.api import backups, catalog, hosts, jobs, servers, snapsh
 from apps.server_agent.config import get_settings
 from apps.server_agent.jobs.worker import run_worker_loop
 from apps.server_agent.models import ServerBase
-from apps.server_agent.store.postgres import _get_engine
+from apps.server_agent.seed_hosts import seed_hosts_from_vault
+from apps.server_agent.store.postgres import _get_engine, _get_session_factory
 
 logger = structlog.get_logger(__name__)
 
@@ -60,6 +61,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await conn.run_sync(ServerBase.metadata.create_all)
     except Exception as exc:
         logger.warning("server_table_create_skipped", error=str(exc))
+
+    # Auto-seed hosts from vault credentials
+    try:
+        factory = _get_session_factory()
+        async with factory() as session:
+            created = await seed_hosts_from_vault(session)
+            if created:
+                logger.info("seed_hosts_registered", count=created)
+    except Exception as exc:
+        logger.warning("seed_hosts_startup_error", error=str(exc))
 
     # Start job worker as background task
     worker_task = asyncio.create_task(run_worker_loop())

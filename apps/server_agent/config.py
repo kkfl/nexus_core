@@ -37,6 +37,8 @@ class ServerAgentSettings(BaseSettings):
     # Provider defaults
     vultr_api_base: str = "https://api.vultr.com"
     proxmox_verify_ssl: bool = True
+    proxmox_base_url: str = ""  # e.g. https://192.168.1.100:8006
+    proxmox_node: str = "pve"  # default Proxmox node name
 
     # Sync
     sync_interval: int = 300

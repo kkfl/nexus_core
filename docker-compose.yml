@@ -187,6 +187,8 @@ services:
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
       - PROXMOX_ENABLE_SNAPSHOTS=${PROXMOX_ENABLE_SNAPSHOTS:-false}
       - PROXMOX_VERIFY_SSL=${PROXMOX_VERIFY_SSL:-false}
+      - PROXMOX_BASE_URL=${PROXMOX_BASE_URL:-}
+      - PROXMOX_NODE=${PROXMOX_NODE:-pve}
     ports:
       - "8010:8010"
     depends_on:
