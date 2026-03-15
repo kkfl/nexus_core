@@ -268,7 +268,7 @@ export default function AdminLayout() {
                         fontSize: 12,
                         borderTop: `1px solid ${t.border}`,
                     }}>
-                        Nexus Portal v{import.meta.env.VITE_APP_VERSION || '0.1.0'} ©{new Date().getFullYear()} Created by Nexus Core • System of Record
+                        Nexus Portal v0.5.0 ©{new Date().getFullYear()} Created by Nexus Core • System of Record
                     </Footer>
                 </Layout>
             </Layout>

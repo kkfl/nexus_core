@@ -1,54 +1,140 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to Nexus Core are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
 
-## [0.2.0] - 2026-03-01
-
-### Added
-
-#### Event Bus (Redis Streams + Postgres)
-- Redis Streams-backed event bus with at-least-once delivery, consumer groups, and DLQ.
-- Persistent event store in `bus_events` Postgres table (Alembic migration 024).
-- Admin endpoints: `/events/streams`, `/events`, `/events/dlq`, `/events/replay`.
-
-#### RAG Ingestion Pipeline V1
-- Full KB ingestion pipeline: URL, text, email, and reingest support.
-- Chunking, embedding (BAAI/bge-small-en-v1.5), and vector search with cosine similarity.
-- Worker reliability: retry on mid-ingest interruption, idempotent re-ingestion.
-- Repo docs seeding script (`scripts/ingest_repo_docs.py`) with safe doc selection.
-- Evaluation harness (`scripts/eval_runner.py`) with golden set and PASS/FAIL reporting.
-
-#### Ask Nexus V1
-- `POST /kb/ask` endpoint: retrieves top_k chunks with citations from the knowledge base.
-- Citation-ready response payload: document_id, title, chunk_index, score, excerpt.
-- Portal UI page (`/kb/ask`): question input, answer display, expandable citations.
-
-#### Ask Nexus Production Hardening
-- RBAC enforcement via `RequireRole(["admin", "operator", "reader"])`.
-- Redis-based rate limiting (30 req / 5 min per user, configurable via env vars).
-- Pydantic input validation (query 3-2000 chars, top_k clamped 1-10).
-- Structured logging with `structlog` (correlation_id, user_id, timing metrics).
-- Event persistence: ask.requested, ask.retrieved, ask.responded, ask.failed events to bus_events.
-- Feedback loop: `POST /kb/ask/feedback`, `ask_feedback` table (Alembic migration 026), portal thumbs up/down UI.
-- Namespace isolation: reader role silently scoped to `["global"]`; admin/operator pass-through.
-
-#### Smoke Check
-- Post-deployment health verification script (`scripts/smoke_check.py`).
-- 7 checks: API health, KB ingest, ingest poll, Ask Nexus + citations, bus_events, feedback, rate limiter.
-- Idempotent, env-configurable, CI-safe (exit code 0/1).
-
-## [0.1.0] - 2026-02-21
+## [0.5.0] — 2026-03-15
 
 ### Added
-- Initial V1 release of Nexus Core.
-- Central API server (`nexus-api`) handling users, authentication, schemas, and task dispatching.
-- Async `nexus-worker` utilizing Redis Queue (RQ) for autonomous agent proxying.
-- Canonical System of Record (Entities & Audit trails) powered by Postgres & SQLAlchemy.
-- Secure Credentials Vault using AES-GCM envelope encryption.
-- Robust Persona limits (Tools Policy, Deny Task Types) enforced proactively.
-- Complete ecosystem of autonomous agents (Carrier, Monitoring, Storage, PBX).
-- Nexus Portal React-based Admin UI.
-- Local developer Docker Compose environments.
+- Centralized theme system (`theme.ts`) with `NexusTokens` design tokens
+- Dark/light mode toggle with `themeStore.ts` (zustand, localStorage-persisted)
+- Sun/moon toggle button in portal header
+
+### Changed
+- Migrated all 25 portal pages from hardcoded `MN.*` color tokens to `getTokens(mode)` pattern
+- `AdminLayout.tsx` uses `ConfigProvider` with `getAntTheme(mode)`
+- `App.css` stripped to minimal overrides (theming now in TypeScript)
+
+### Fixed
+- Backend formatting (twilio adapter, redaction module, notification runner)
+
+---
+
+## [0.4.0] — 2026-03-14
+
+### Added
+- Ask Nexus LLM synthesis layer (`packages/shared/rag/llm.py`)
+- `OpenAILLMProvider` (gpt-4o-mini) with graceful fallback to V1 excerpts
+- KB seed script (`scripts/seed_external_docs.py`) — 11 curated docs (Vultr, Cloudflare, iRedMail, Nexus)
+- `external-docs` namespace for third-party documentation
+
+### Changed
+- `/kb/ask` endpoint uses LLM for coherent answer synthesis instead of raw excerpt concatenation
+- `AskNexus.tsx` updated with new placeholder and external-docs namespace
+
+---
+
+## [0.3.0] — 2026-03-13
+
+### Added
+- User Management page and API (`/settings/users`)
+- Storage Targets redesign with MinIO S3-compatible target management
+
+---
+
+## [0.2.1] — 2026-03-12
+
+### Fixed
+- Alembic migration chain repair (025-027)
+- CI lint fixes: ruff formatting, eslint, react-hooks/purity rules
+
+---
+
+## [0.2.0] — 2026-03-07
+
+### Added
+- Dashboard Command Center redesign with system activity log
+- Transaction heartbeat monitoring for micro-agents
+- Complete production configs for all services (Docker, nginx proxy)
+
+---
+
+## [0.1.7] — 2026-03-04
+
+### Added
+- Batch mailbox stats: single SSH call + Postgres cache + background refresh
+
+### Fixed
+- `collected_at` datetime parse + timezone import
+
+---
+
+## [0.1.6] — 2026-03-03
+
+### Added
+- Email Admin v2: stats dashboard, drill-down inbox, server tiles
+
+---
+
+## [0.1.5] — 2026-03-02
+
+### Fixed
+- Notifications: STARTTLS cert validation for internal mail servers
+- Notifications: STARTTLS fix for port 587 + email smoke test
+- Portal auth + proxy email-agent route
+
+---
+
+## [0.1.4] — 2026-03-01
+
+### Fixed
+- Registry: idempotent seeding + `auth_secret_alias` for all agents
+- CI python-lint (ruff format + ruff check)
+
+---
+
+## [0.1.3] — 2026-02-28
+
+### Added
+- Portal Secrets UI + break-glass reveal (120s auto-expiry)
+- DNSMadeEasy live write smoke test
+
+### Fixed
+- CI failures: ruff formatting + eslint declaration order
+- CI: unused imports + async setState in effect
+
+---
+
+## [0.1.2] — 2026-02-26
+
+### Fixed
+- Dockerfile path fixes for repo-root build context (nexus_portal)
+- Hatchling wheel package config for monorepo build
+- Dev extras install so pytest is found in CI
+- Skip DB-integration tests when `RUN_INTEGRATION_TESTS` not set
+
+---
+
+## [0.1.1] — 2026-02-24
+
+### Fixed
+- CI python-lint + frontend build
+- Pin ruff==0.9.10, fix all violations, restore strict config
+- Remove temp diagnostic scripts from CI commit
+
+---
+
+## [0.1.0] — 2026-02-22
+
+### Added
+- Initial Nexus Core V1 platform
+- All agents productionized (server, email, DNS, carrier, storage, secrets, notifications, PBX)
+- Agent registry with heartbeat monitoring
+- Knowledge Base with RAG pipeline (pgvector embeddings)
+- Nexus Portal (React + Ant Design)
+- Event bus (Postgres-backed)
+- System status automations (sync, checks, daily digest)
+- Full end-to-end test suite (93 tests)
