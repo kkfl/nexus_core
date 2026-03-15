@@ -260,16 +260,40 @@ async def get_console(server_id: str, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/sync", response_model=JobCreateResponse, status_code=202)
-async def sync_servers(host_id: str, db: AsyncSession = Depends(get_db)):
-    host = await db.get(ServerHost, host_id)
-    if not host:
-        raise HTTPException(404, "Host not found")
-    job = await _create_job(
-        db,
-        host.tenant_id,
-        host.env,
-        "sync",
-        {"host_id": host_id},
+@router.post("/sync", status_code=202)
+async def sync_servers(host_id: str | None = None, db: AsyncSession = Depends(get_db)):
+    if host_id:
+        # Sync a single host
+        host = await db.get(ServerHost, host_id)
+        if not host:
+            raise HTTPException(404, "Host not found")
+        job = await _create_job(
+            db,
+            host.tenant_id,
+            host.env,
+            "sync",
+            {"host_id": host_id},
+        )
+        return JobCreateResponse(job_id=job.id)
+
+    # Sync ALL active hosts
+    result = await db.execute(
+        select(ServerHost).where(ServerHost.is_active.is_(True))
     )
-    return JobCreateResponse(job_id=job.id)
+    hosts = result.scalars().all()
+    if not hosts:
+        raise HTTPException(404, "No active hosts registered")
+
+    job_ids = []
+    for host in hosts:
+        job = await _create_job(
+            db,
+            host.tenant_id,
+            host.env,
+            "sync",
+            {"host_id": host.id},
+        )
+        job_ids.append(job.id)
+        logger.info("sync_queued", host_id=host.id, provider=host.provider, label=host.label)
+
+    return {"job_ids": job_ids, "status": "pending", "message": f"Sync queued for {len(hosts)} hosts"}
