@@ -54,6 +54,24 @@ class HostOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class HostResourcesOut(BaseModel):
+    """Node-level resource stats (Proxmox only)."""
+
+    node: str
+    provider: str
+    cpu_cores: int = 0
+    cpu_usage_pct: float = 0.0
+    ram_total_gb: float = 0.0
+    ram_used_gb: float = 0.0
+    ram_free_gb: float = 0.0
+    ram_usage_pct: float = 0.0
+    disk_total_gb: float = 0.0
+    disk_used_gb: float = 0.0
+    disk_free_gb: float = 0.0
+    disk_usage_pct: float = 0.0
+    uptime_seconds: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Server schemas
 # ---------------------------------------------------------------------------

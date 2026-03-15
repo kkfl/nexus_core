@@ -68,6 +68,42 @@ class ProxmoxAdapter(ServerProviderAdapter):
         data = r.json()
         return data.get("data", data)
 
+    async def get_node_status(self) -> dict:
+        """Fetch node-level resource stats (CPU, RAM, disk, uptime)."""
+        data = await self._request("GET", f"/api2/json/nodes/{self._node}/status")
+        if not isinstance(data, dict):
+            return {}
+
+        cpu_info = data.get("cpuinfo", {})
+        mem = data.get("memory", {})
+        rootfs = data.get("rootfs", {})
+
+        cpu_total = cpu_info.get("cores", 0) * cpu_info.get("sockets", 1)
+        cpu_usage_pct = round(data.get("cpu", 0) * 100, 1)
+
+        ram_total = mem.get("total", 0)
+        ram_used = mem.get("used", 0)
+        ram_free = mem.get("free", 0)
+
+        disk_total = rootfs.get("total", 0)
+        disk_used = rootfs.get("used", 0)
+        disk_free = rootfs.get("free", 0)
+
+        return {
+            "node": self._node,
+            "cpu_cores": cpu_total,
+            "cpu_usage_pct": cpu_usage_pct,
+            "ram_total_gb": round(ram_total / (1024 ** 3), 1),
+            "ram_used_gb": round(ram_used / (1024 ** 3), 1),
+            "ram_free_gb": round(ram_free / (1024 ** 3), 1),
+            "ram_usage_pct": round((ram_used / ram_total * 100) if ram_total else 0, 1),
+            "disk_total_gb": round(disk_total / (1024 ** 3), 1),
+            "disk_used_gb": round(disk_used / (1024 ** 3), 1),
+            "disk_free_gb": round(disk_free / (1024 ** 3), 1),
+            "disk_usage_pct": round((disk_used / disk_total * 100) if disk_total else 0, 1),
+            "uptime_seconds": data.get("uptime", 0),
+        }
+
     def _parse_instance(self, raw: dict, ip_v4: str = "", ip_v6: str = "") -> InstanceMeta:
         status = raw.get("status", "unknown")
         ostype = raw.get("ostype", "")

@@ -53,6 +53,19 @@ export default function InfrastructureServers() {
         refetchInterval: 10000,
     });
 
+    // ── Host resources (Proxmox only) ──
+    const selectedHost = hosts.find((h: any) => h.id === selectedHostId);
+    const isProxmoxHost = selectedHost?.provider === 'proxmox';
+    const { data: hostResources } = useQuery({
+        queryKey: ['host-resources', selectedHostId],
+        queryFn: async () => {
+            const r = await serverClient.get(`/servers/v1/hosts/${selectedHostId}/resources`);
+            return r.data;
+        },
+        enabled: !!selectedHostId && isProxmoxHost,
+        refetchInterval: 30000,
+    });
+
     // ── Mutations ──
     const syncMut = useMutation({
         mutationFn: async (hostId?: string) => {
@@ -363,20 +376,67 @@ export default function InfrastructureServers() {
                 {/* Resources Panel */}
                 <div style={cardStyle()}>
                     <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
-                        <ThunderboltOutlined style={{ marginRight: 6 }} /> RESOURCES
+                        <ThunderboltOutlined style={{ marginRight: 6 }} />
+                        {isProxmoxHost && hostResources ? 'HOST RESOURCES' : 'RESOURCES'}
                     </Text>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 4 }}>
-                        {[
-                            { label: 'vCPUs', value: stats.totalVcpu, icon: '⚡' },
-                            { label: 'RAM', value: `${stats.totalRam} GB`, icon: '💾' },
-                            { label: 'Disk', value: `${stats.totalDisk} GB`, icon: '💿' },
-                        ].map(item => (
-                            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
-                                <Text style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>{item.value}</Text>
-                            </div>
-                        ))}
-                    </div>
+                    {isProxmoxHost && hostResources ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginTop: 4 }}>
+                            {[
+                                {
+                                    label: 'CPU',
+                                    icon: '⚡',
+                                    pct: hostResources.cpu_usage_pct,
+                                    detail: `${hostResources.cpu_cores} cores`,
+                                    color: hostResources.cpu_usage_pct > 80 ? MN.red : hostResources.cpu_usage_pct > 50 ? MN.orange : MN.green,
+                                },
+                                {
+                                    label: 'RAM',
+                                    icon: '💾',
+                                    pct: hostResources.ram_usage_pct,
+                                    detail: `${hostResources.ram_free_gb} GB free / ${hostResources.ram_total_gb} GB`,
+                                    color: hostResources.ram_usage_pct > 85 ? MN.red : hostResources.ram_usage_pct > 60 ? MN.orange : MN.green,
+                                },
+                                {
+                                    label: 'Disk',
+                                    icon: '💿',
+                                    pct: hostResources.disk_usage_pct,
+                                    detail: `${hostResources.disk_free_gb} GB free / ${hostResources.disk_total_gb} GB`,
+                                    color: hostResources.disk_usage_pct > 85 ? MN.red : hostResources.disk_usage_pct > 60 ? MN.orange : MN.green,
+                                },
+                            ].map(item => (
+                                <div key={item.label}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
+                                        <Text style={{ color: '#fff', fontWeight: 600, fontSize: 12 }}>{item.pct}%</Text>
+                                    </div>
+                                    <div style={{ background: 'rgba(30,41,59,0.8)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                                        <div style={{
+                                            width: `${Math.min(item.pct, 100)}%`,
+                                            height: '100%',
+                                            background: `linear-gradient(90deg, ${item.color}, ${item.color}88)`,
+                                            borderRadius: 4,
+                                            transition: 'width 0.6s ease',
+                                            boxShadow: `0 0 8px ${item.color}44`,
+                                        }} />
+                                    </div>
+                                    <Text style={{ color: MN.muted, fontSize: 10, marginTop: 2, display: 'block' }}>{item.detail}</Text>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 4 }}>
+                            {[
+                                { label: 'vCPUs', value: stats.totalVcpu, icon: '⚡' },
+                                { label: 'RAM', value: `${stats.totalRam} GB`, icon: '💾' },
+                                { label: 'Disk', value: `${stats.totalDisk} GB`, icon: '💿' },
+                            ].map(item => (
+                                <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
+                                    <Text style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>{item.value}</Text>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Jobs Panel */}
