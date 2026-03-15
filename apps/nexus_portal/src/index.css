@@ -1,98 +1,99 @@
-html,
-body {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  min-width: 100vw !important;
-  min-height: 100vh !important;
-  overflow-x: hidden !important;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ═══ Global Reset ═══ */
+html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 100vw !important;
+    min-height: 100vh !important;
+    overflow-x: hidden !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* ═══ Layout Structure ═══ */
+
+#root {
+    width: 100vw !important;
+    max-width: none !important;
+    min-height: 100vh;
+    display: flex !important;
+    flex-direction: column !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-
-button:hover {
-  border-color: #646cff;
-}
-
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-
-  a:hover {
-    color: #747bff;
-  }
-
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-/* 
-  FORCE LAYOUT EXPANSION 
-  Prevents the "vertical text" issue where the content area is squeezed.
-*/
 .ant-layout {
-  display: flex !important;
-  flex: 1 !important;
-  width: 100% !important;
-}
-
-min-width: 0 !important;
-}
-
-/* Fix Ant Design Table Header Contrast */
-.ant-table-wrapper .ant-table-thead>tr>th {
-  background-color: #f0f0f0 !important;
-  color: #1f1f1f !important;
-  font-weight: 600 !important;
+    display: flex !important;
+    flex: 1 !important;
+    width: 100% !important;
 }
 
 .ant-layout-sider {
-  flex: 0 0 260px !important;
-  max-width: 260px !important;
-  min-width: 260px !important;
-  width: 260px !important;
+    flex: 0 0 260px !important;
+    max-width: 260px !important;
+    min-width: 260px !important;
+    width: 260px !important;
 }
 
 .ant-layout-content {
-  flex: 1 !important;
-  min-width: 0 !important;
-  width: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
 
-/* Ensure headers and titles don't wrap letter-by-letter */
-h1,
-h2,
-h3,
-.ant-typography {
-  white-space: nowrap !important;
+/* ═══ Scrollbar (dark-mode aware) ═══ */
+[data-theme="dark"] ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.02);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.18);
+}
+
+/* ═══ Typography ═══ */
+h1, h2, h3, .ant-typography {
+    white-space: nowrap !important;
 }
 
 .ant-table-cell {
-  white-space: nowrap !important;
+    white-space: nowrap !important;
+}
+
+/* ═══ Smooth transitions ═══ */
+.ant-layout,
+.ant-layout-header,
+.ant-layout-content,
+.ant-layout-footer,
+.ant-card,
+.ant-table-wrapper,
+.ant-btn {
+    transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease !important;
+}
+
+/* ═══ Sidebar menu refinements ═══ */
+.ant-menu-dark .ant-menu-item-selected {
+    background: rgba(59,130,246,0.15) !important;
+    border-right: 2px solid #3b82f6;
+}
+
+.ant-menu-dark .ant-menu-item:hover {
+    background: rgba(255,255,255,0.04) !important;
+}
+
+/* ═══ Button hover glow ═══ */
+.ant-btn-primary:hover {
+    box-shadow: 0 0 16px rgba(59,130,246,0.3);
 }

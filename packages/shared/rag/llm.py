@@ -122,9 +122,7 @@ def build_rag_prompt(citations: list[dict]) -> str:
         title = c.get("title", "Untitled")
         excerpt = c.get("excerpt", "")
         score = c.get("score", 0)
-        context_parts.append(
-            f"### Document {i}: {title} (relevance: {score:.0%})\n{excerpt}"
-        )
+        context_parts.append(f"### Document {i}: {title} (relevance: {score:.0%})\n{excerpt}")
 
     context_block = "\n\n---\n\n".join(context_parts)
     return _SYSTEM_PROMPT.replace("{context}", context_block)

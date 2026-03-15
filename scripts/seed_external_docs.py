@@ -740,9 +740,7 @@ def get_token(client: httpx.Client, api_url: str) -> str:
     return r.json()["access_token"]
 
 
-def ensure_source(
-    client: httpx.Client, headers: dict, api_url: str, source_name: str
-) -> int:
+def ensure_source(client: httpx.Client, headers: dict, api_url: str, source_name: str) -> int:
     """Get or create a KB source."""
     r = client.get(f"{api_url}/kb/sources", headers=headers)
     sources = r.json()

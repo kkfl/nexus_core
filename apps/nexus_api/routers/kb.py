@@ -715,8 +715,7 @@ async def ask_nexus(
         if citations and llm:
             try:
                 citation_dicts = [
-                    {"title": c.title, "excerpt": c.excerpt, "score": c.score}
-                    for c in citations
+                    {"title": c.title, "excerpt": c.excerpt, "score": c.score} for c in citations
                 ]
                 system_prompt = build_rag_prompt(citation_dicts)
                 answer = llm.complete(system_prompt, req.query)
