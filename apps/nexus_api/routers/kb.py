@@ -708,8 +708,42 @@ async def ask_nexus(
                 )
             )
 
-        # Compose answer from retrieved context (V1 — no LLM)
-        if citations:
+        # ── Answer synthesis (LLM if available, else V1 excerpts) ────
+        from packages.shared.rag.llm import build_rag_prompt, get_llm_provider
+
+        llm = get_llm_provider()
+        if citations and llm:
+            try:
+                citation_dicts = [
+                    {"title": c.title, "excerpt": c.excerpt, "score": c.score}
+                    for c in citations
+                ]
+                system_prompt = build_rag_prompt(citation_dicts)
+                answer = llm.complete(system_prompt, req.query)
+                ask_logger.info(
+                    "ask_llm_synthesized",
+                    correlation_id=correlation_id,
+                    model=llm.model_name,
+                    citation_count=len(citations),
+                )
+            except Exception as llm_exc:
+                # LLM failed — fall back to V1 excerpt mode
+                ask_logger.warning(
+                    "ask_llm_fallback",
+                    correlation_id=correlation_id,
+                    error=str(llm_exc)[:200],
+                )
+                answer = (
+                    f"Based on {len(citations)} relevant document(s) from the knowledge base:\n\n"
+                    + "\n\n---\n\n".join(
+                        f"**{c.title}** (score: {c.score:.0%})\n{c.excerpt[:300]}..."
+                        if len(c.excerpt) > 300
+                        else f"**{c.title}** (score: {c.score:.0%})\n{c.excerpt}"
+                        for c in citations[:3]
+                    )
+                )
+        elif citations:
+            # No LLM configured — V1 excerpt fallback
             answer = (
                 f"Based on {len(citations)} relevant document(s) from the knowledge base:\n\n"
                 + "\n\n---\n\n".join(

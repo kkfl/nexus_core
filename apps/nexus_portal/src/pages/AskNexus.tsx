@@ -3,6 +3,8 @@ import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useState } from 'react';
 import { QuestionCircleOutlined, FileTextOutlined, LinkOutlined, LikeOutlined, DislikeOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { useThemeStore } from '../stores/themeStore';
+import { getTokens, pageContainer, cardStyle } from '../theme';
 
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
@@ -37,13 +39,15 @@ export default function AskNexus() {
     const [form] = Form.useForm();
     const [response, setResponse] = useState<AskResponse | null>(null);
     const [feedbackSent, setFeedbackSent] = useState(false);
+    const { mode } = useThemeStore();
+    const t = getTokens(mode);
 
     const askMutation = useMutation({
         mutationFn: async (values: any) => {
             const payload = {
                 query: values.query,
                 top_k: values.top_k || 5,
-                namespaces: ['global', 'repo-docs'],
+                namespaces: ['global', 'repo-docs', 'external-docs'],
             };
             return (await apiClient.post('/kb/ask', payload)).data;
         },
@@ -74,21 +78,21 @@ export default function AskNexus() {
     };
 
     return (
-        <div>
-            <Title level={3}>
-                <QuestionCircleOutlined style={{ marginRight: 8 }} />
+        <div style={pageContainer(t)}>
+            <Title level={3} style={{ color: t.text }}>
+                <QuestionCircleOutlined style={{ marginRight: 8, color: t.accent }} />
                 Ask Nexus
             </Title>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
+            <Text style={{ display: 'block', marginBottom: 24, color: t.muted }}>
                 Ask a question and get answers with citations from the knowledge base.
             </Text>
 
-            <Card style={{ marginBottom: 24 }}>
+            <div style={{ ...cardStyle(t), marginBottom: 24, padding: 24 }}>
                 <Form form={form} layout="vertical" onFinish={askMutation.mutate} initialValues={{ top_k: 5 }}>
                     <Form.Item name="query" label="Your Question" rules={[{ required: true, message: 'Please enter a question (3+ characters)' }]}>
                         <Input.TextArea
                             rows={3}
-                            placeholder="e.g. What RBAC roles does Nexus implement?"
+                            placeholder="e.g. How do I provision a new VM on Vultr via Nexus?"
                             style={{ fontSize: 15 }}
                             maxLength={2000}
                             showCount
@@ -117,7 +121,7 @@ export default function AskNexus() {
                         </Col>
                     </Row>
                 </Form>
-            </Card>
+            </div>
 
             {askMutation.isPending && (
                 <div style={{ textAlign: 'center', padding: 48 }}>
@@ -142,20 +146,20 @@ export default function AskNexus() {
                     <Card
                         title={
                             <Space>
-                                <Text strong style={{ fontSize: 16 }}>Answer</Text>
-                                <Tag color="blue">{response.citations.length} citation(s)</Tag>
-                                <Tag>{response.retrieval_debug.model}</Tag>
+                                <Text strong style={{ fontSize: 16, color: t.text }}>Answer</Text>
+                                <Tag style={{ background: `${t.accent}18`, color: t.accent, border: `1px solid ${t.accent}40` }}>{response.citations.length} citation(s)</Tag>
+                                <Tag style={{ background: `${t.muted}18`, color: t.muted, border: `1px solid ${t.muted}40` }}>{response.retrieval_debug.model}</Tag>
                                 {response.retrieval_debug.total_ms && (
-                                    <Tag color="green">{response.retrieval_debug.total_ms}ms</Tag>
+                                    <Tag style={{ background: `${t.green}18`, color: t.green, border: `1px solid ${t.green}40` }}>{response.retrieval_debug.total_ms}ms</Tag>
                                 )}
                             </Space>
                         }
                         style={{ marginBottom: 24 }}
                     >
-                        <Paragraph style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8 }}>
+                        <Paragraph style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8, color: t.text }}>
                             {response.answer}
                         </Paragraph>
-                        <div style={{ marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                        <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
                             <Text type="secondary" style={{ fontSize: 12 }}>
                                 Correlation ID: {response.correlation_id} &bull;
                                 Top-K: {response.retrieval_debug.top_k} &bull;
@@ -164,7 +168,7 @@ export default function AskNexus() {
                         </div>
 
                         {/* Feedback */}
-                        <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+                        <div style={{ marginTop: 16, borderTop: `1px solid ${t.border}`, paddingTop: 16 }}>
                             {feedbackSent ? (
                                 <Space>
                                     <CheckCircleOutlined style={{ color: '#52c41a' }} />
@@ -233,11 +237,13 @@ export default function AskNexus() {
                                             whiteSpace: 'pre-wrap',
                                             fontFamily: 'monospace',
                                             fontSize: 13,
-                                            background: '#f5f5f5',
+                                            background: t.bg,
                                             padding: 16,
                                             borderRadius: 8,
                                             maxHeight: 300,
                                             overflow: 'auto',
+                                            color: t.text,
+                                            border: `1px solid ${t.border}`,
                                         }}
                                     >
                                         {citation.excerpt}
