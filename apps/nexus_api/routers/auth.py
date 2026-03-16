@@ -150,6 +150,216 @@ async def verify_password_endpoint(
     return {"verified": True}
 
 
+# ---------------------------------------------------------------------------
+# Forgot / Reset Password
+# ---------------------------------------------------------------------------
+
+import os
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import structlog
+from jose import jwt, JWTError
+
+_log = structlog.get_logger(__name__)
+
+_RESET_TOKEN_TTL = timedelta(minutes=15)
+_PORTAL_ORIGIN = os.environ.get("PORTAL_ORIGIN", "https://nexus.gsmcall.com")
+
+
+def _build_reset_email_html(reset_url: str, user_email: str) -> str:
+    """Premium branded Nexus password-reset email (inline HTML)."""
+    logo_url = f"{_PORTAL_ORIGIN}/nexus-brain.png"
+    year = datetime.now(timezone.utc).year
+    return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0a0e1a;font-family:'Segoe UI',Roboto,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0e1a;">
+<tr><td align="center" style="padding:40px 20px;">
+
+<!-- Card -->
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="
+  background:linear-gradient(145deg,#111827,#0f172a);
+  border:1px solid rgba(59,130,246,0.15);
+  border-radius:16px;
+  box-shadow:0 0 60px rgba(59,130,246,0.06),0 20px 40px rgba(0,0,0,0.5);
+">
+  <!-- Logo -->
+  <tr><td align="center" style="padding:36px 40px 12px;">
+    <img src="{logo_url}" alt="Nexus" width="64" height="64"
+         style="display:block;border:0;outline:none;">
+  </td></tr>
+
+  <!-- Title -->
+  <tr><td align="center" style="padding:0 40px 8px;">
+    <h1 style="margin:0;font-size:22px;font-weight:700;
+      background:linear-gradient(135deg,#3b82f6,#06b6d4);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      background-clip:text;letter-spacing:1px;">
+      NEXUS
+    </h1>
+    <p style="margin:4px 0 0;color:#64748b;font-size:11px;letter-spacing:2px;text-transform:uppercase;">
+      System Administration Console
+    </p>
+  </td></tr>
+
+  <!-- Divider -->
+  <tr><td style="padding:0 40px;">
+    <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,0.25),transparent);"></div>
+  </td></tr>
+
+  <!-- Body -->
+  <tr><td style="padding:28px 40px 0;">
+    <p style="margin:0 0 6px;color:#e2e8f0;font-size:15px;font-weight:600;">
+      Password Reset Request
+    </p>
+    <p style="margin:0 0 20px;color:#94a3b8;font-size:13px;line-height:1.6;">
+      We received a request to reset the password for
+      <span style="color:#06b6d4;font-weight:600;">{user_email}</span>.
+      Click the button below to choose a new password.
+    </p>
+  </td></tr>
+
+  <!-- Button -->
+  <tr><td align="center" style="padding:0 40px 24px;">
+    <a href="{reset_url}" target="_blank" style="
+      display:inline-block;padding:12px 36px;
+      background:linear-gradient(135deg,#0891b2,#06b6d4);
+      color:#ffffff;font-size:14px;font-weight:700;
+      text-decoration:none;border-radius:10px;
+      letter-spacing:0.5px;
+      box-shadow:0 4px 14px rgba(6,182,212,0.3);
+    ">Reset Password</a>
+  </td></tr>
+
+  <!-- Expiry Warning -->
+  <tr><td style="padding:0 40px 24px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="
+      background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);
+      border-radius:8px;
+    ">
+    <tr><td style="padding:10px 14px;">
+      <p style="margin:0;color:#f59e0b;font-size:11px;line-height:1.5;">
+        ⏱ This link expires in <strong>15 minutes</strong>.
+        If you did not request this, you can safely ignore this email.
+      </p>
+    </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Divider -->
+  <tr><td style="padding:0 40px;">
+    <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,0.15),transparent);"></div>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td align="center" style="padding:20px 40px 28px;">
+    <p style="margin:0;color:#475569;font-size:10px;line-height:1.5;">
+      &copy; {year} Nexus &mdash; Intelligent Infrastructure Management<br>
+      This is an automated message. Please do not reply.
+    </p>
+  </td></tr>
+</table>
+
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
+class _ForgotPasswordRequest(_BaseModel):
+    email: str
+
+
+class _ResetPasswordRequest(_BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: _ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Send a password-reset email (unauthenticated, rate-limited)."""
+    check_rate_limit(request)
+
+    # Always return the same response to prevent user enumeration
+    safe_response = {"ok": True, "message": "If that email exists, a reset link has been sent."}
+
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalars().first()
+    if not user:
+        return safe_response
+
+    # Build JWT reset token
+    token_payload = {
+        "sub": str(user.id),
+        "purpose": "password_reset",
+        "exp": datetime.now(timezone.utc) + _RESET_TOKEN_TTL,
+    }
+    token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    reset_url = f"{_PORTAL_ORIGIN}/reset-password/{token}"
+
+    # Build branded email
+    html = _build_reset_email_html(reset_url, user.email)
+
+    # Send via email-agent
+    try:
+        from apps.nexus_api.routers.brain_routes import _resolve_email_agent
+
+        email_base, email_key = await _resolve_email_agent()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{email_base.rstrip('/')}/email/send",
+                json={
+                    "to": [user.email],
+                    "subject": "Nexus — Password Reset",
+                    "body_text": f"Reset your Nexus password: {reset_url}\n\nThis link expires in 15 minutes.",
+                    "body_html": html,
+                },
+                headers={"X-Service-ID": "nexus", "X-Agent-Key": email_key},
+            )
+            if resp.status_code != 200:
+                _log.error("forgot_password_email_failed", status=resp.status_code)
+    except Exception as exc:
+        _log.error("forgot_password_email_error", error=str(exc)[:200])
+
+    return safe_response
+
+
+@router.post("/reset-password")
+async def reset_password(
+    payload: _ResetPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Reset password using a valid JWT reset token."""
+    check_rate_limit(request)
+
+    try:
+        data = jwt.decode(payload.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Reset link has expired or is invalid")
+
+    if data.get("purpose") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid reset link")
+
+    user_id = data.get("sub")
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid reset link")
+
+    user.password_hash = get_password_hash(payload.new_password)
+    await db.commit()
+    _log.info("password_reset_success", user_id=user_id)
+    return {"ok": True}
+
+
 @router.post("/api-keys", response_model=ApiKeyOut)
 async def create_api_key(
     key_in: ApiKeyCreate,

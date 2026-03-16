@@ -7,6 +7,7 @@ import AdminLayout from './layouts/AdminLayout';
 
 // Pages
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Agents from './pages/Agents';
 import TaskRoutes from './pages/TaskRoutes';
@@ -65,6 +66,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
 
           <Route path="/" element={
             <ProtectedRoute>

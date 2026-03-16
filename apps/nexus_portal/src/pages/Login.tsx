@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Form, Input, Button, Typography, message, ConfigProvider } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, ArrowLeftOutlined, MailOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
@@ -10,8 +10,12 @@ import NexusBrain from '../components/NexusBrain';
 
 const { Title, Text } = Typography;
 
+const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
 export default function Login() {
     const [loading, setLoading] = useState(false);
+    const [forgotMode, setForgotMode] = useState(false);
+    const [forgotSent, setForgotSent] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
     const setToken = useAuthStore((s) => s.setToken);
@@ -27,7 +31,7 @@ export default function Login() {
             params.append('username', values.username);
             params.append('password', values.password);
 
-            const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/auth/login`, params, {
+            const res = await axios.post(`${API}/auth/login`, params, {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
             });
 
@@ -40,6 +44,23 @@ export default function Login() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const onForgot = async (values: any) => {
+        setLoading(true);
+        try {
+            await axios.post(`${API}/auth/forgot-password`, { email: values.email });
+            setForgotSent(true);
+        } catch (err: any) {
+            message.error(err.response?.data?.detail || 'Something went wrong');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const resetForgotState = () => {
+        setForgotMode(false);
+        setForgotSent(false);
     };
 
     return (
@@ -76,52 +97,152 @@ export default function Login() {
                         }}>
                             Nexus Portal
                         </Title>
-                        <Text style={{ color: t.muted, fontSize: 13 }}>System Administration Console</Text>
+                        <Text style={{ color: t.muted, fontSize: 13 }}>
+                            {forgotMode ? 'Password Recovery' : 'System Administration Console'}
+                        </Text>
                     </div>
-                    <Form name="login" onFinish={onFinish} layout="vertical" size="large">
-                        <Form.Item name="username" rules={[{ required: true, message: 'Provide email' }]}>
-                            <Input
-                                prefix={<UserOutlined style={{ color: t.muted }} />}
-                                placeholder="Email"
-                                style={{
-                                    background: t.inputBg,
-                                    borderColor: t.border,
-                                    color: t.text,
-                                    borderRadius: 10,
-                                    height: 44,
-                                }}
-                            />
-                        </Form.Item>
-                        <Form.Item name="password" rules={[{ required: true, message: 'Provide password' }]}>
-                            <Input.Password
-                                prefix={<LockOutlined style={{ color: t.muted }} />}
-                                placeholder="Password"
-                                style={{
-                                    background: t.inputBg,
-                                    borderColor: t.border,
-                                    color: t.text,
-                                    borderRadius: 10,
-                                    height: 44,
-                                }}
-                            />
-                        </Form.Item>
-                        <Form.Item style={{ marginBottom: 0 }}>
+
+                    {/* ── Login Form ──────────────────────── */}
+                    {!forgotMode && (
+                        <Form name="login" onFinish={onFinish} layout="vertical" size="large">
+                            <Form.Item name="username" rules={[{ required: true, message: 'Provide email' }]}>
+                                <Input
+                                    prefix={<UserOutlined style={{ color: t.muted }} />}
+                                    placeholder="Email"
+                                    style={{
+                                        background: t.inputBg,
+                                        borderColor: t.border,
+                                        color: t.text,
+                                        borderRadius: 10,
+                                        height: 44,
+                                    }}
+                                />
+                            </Form.Item>
+                            <Form.Item name="password" rules={[{ required: true, message: 'Provide password' }]}>
+                                <Input.Password
+                                    prefix={<LockOutlined style={{ color: t.muted }} />}
+                                    placeholder="Password"
+                                    style={{
+                                        background: t.inputBg,
+                                        borderColor: t.border,
+                                        color: t.text,
+                                        borderRadius: 10,
+                                        height: 44,
+                                    }}
+                                />
+                            </Form.Item>
+                            <Form.Item style={{ marginBottom: 12 }}>
+                                <Button
+                                    type="primary"
+                                    htmlType="submit"
+                                    loading={loading}
+                                    block
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 10,
+                                        fontWeight: 600,
+                                        fontSize: 14,
+                                    }}
+                                >
+                                    Log In
+                                </Button>
+                            </Form.Item>
+                            <div style={{ textAlign: 'center' }}>
+                                <Button
+                                    type="link"
+                                    onClick={() => setForgotMode(true)}
+                                    style={{ color: t.cyan, fontSize: 12, padding: 0 }}
+                                >
+                                    Forgot password?
+                                </Button>
+                            </div>
+                        </Form>
+                    )}
+
+                    {/* ── Forgot Password Form ──────────────── */}
+                    {forgotMode && !forgotSent && (
+                        <Form name="forgot" onFinish={onForgot} layout="vertical" size="large">
+                            <div style={{
+                                marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+                                background: mode === 'dark' ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)',
+                                border: `1px solid ${mode === 'dark' ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.1)'}`,
+                            }}>
+                                <Text style={{ color: t.muted, fontSize: 12, lineHeight: '18px' }}>
+                                    Enter the email address associated with your account and we'll send you a link to reset your password.
+                                </Text>
+                            </div>
+                            <Form.Item name="email" rules={[
+                                { required: true, message: 'Provide email' },
+                                { type: 'email', message: 'Invalid email' },
+                            ]}>
+                                <Input
+                                    prefix={<MailOutlined style={{ color: t.muted }} />}
+                                    placeholder="Email address"
+                                    style={{
+                                        background: t.inputBg,
+                                        borderColor: t.border,
+                                        color: t.text,
+                                        borderRadius: 10,
+                                        height: 44,
+                                    }}
+                                />
+                            </Form.Item>
+                            <Form.Item style={{ marginBottom: 12 }}>
+                                <Button
+                                    type="primary"
+                                    htmlType="submit"
+                                    loading={loading}
+                                    block
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 10,
+                                        fontWeight: 600,
+                                        fontSize: 14,
+                                    }}
+                                >
+                                    Send Reset Link
+                                </Button>
+                            </Form.Item>
+                            <div style={{ textAlign: 'center' }}>
+                                <Button
+                                    type="link"
+                                    icon={<ArrowLeftOutlined />}
+                                    onClick={resetForgotState}
+                                    style={{ color: t.muted, fontSize: 12, padding: 0 }}
+                                >
+                                    Back to login
+                                </Button>
+                            </div>
+                        </Form>
+                    )}
+
+                    {/* ── Success Message ──────────────── */}
+                    {forgotMode && forgotSent && (
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{
+                                width: 56, height: 56, borderRadius: '50%',
+                                background: 'rgba(6,182,212,0.1)',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                marginBottom: 16,
+                            }}>
+                                <MailOutlined style={{ fontSize: 24, color: t.cyan }} />
+                            </div>
+                            <Title level={4} style={{ color: t.text, margin: '0 0 8px' }}>
+                                Check your email
+                            </Title>
+                            <Text style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24 }}>
+                                If an account exists with that email, you'll receive a password reset link shortly.
+                            </Text>
                             <Button
-                                type="primary"
-                                htmlType="submit"
-                                loading={loading}
-                                block
-                                style={{
-                                    height: 44,
-                                    borderRadius: 10,
-                                    fontWeight: 600,
-                                    fontSize: 14,
-                                }}
+                                type="link"
+                                icon={<ArrowLeftOutlined />}
+                                onClick={resetForgotState}
+                                style={{ color: t.cyan, fontSize: 13 }}
                             >
-                                Log In
+                                Back to login
                             </Button>
-                        </Form.Item>
-                    </Form>
+                        </div>
+                    )}
                 </div>
             </div>
         </ConfigProvider>
