@@ -180,7 +180,7 @@ async def dashboard_summary(
     registry = get_registry_client()
 
     # 1. Fetch agents
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     from packages.shared.models.core import BusEvent
 

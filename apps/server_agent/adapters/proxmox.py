@@ -94,13 +94,13 @@ class ProxmoxAdapter(ServerProviderAdapter):
             "node": self._node,
             "cpu_cores": cpu_total,
             "cpu_usage_pct": cpu_usage_pct,
-            "ram_total_gb": round(ram_total / (1024 ** 3), 1),
-            "ram_used_gb": round(ram_used / (1024 ** 3), 1),
-            "ram_free_gb": round(ram_free / (1024 ** 3), 1),
+            "ram_total_gb": round(ram_total / (1024**3), 1),
+            "ram_used_gb": round(ram_used / (1024**3), 1),
+            "ram_free_gb": round(ram_free / (1024**3), 1),
             "ram_usage_pct": round((ram_used / ram_total * 100) if ram_total else 0, 1),
-            "disk_total_gb": round(disk_total / (1024 ** 3), 1),
-            "disk_used_gb": round(disk_used / (1024 ** 3), 1),
-            "disk_free_gb": round(disk_free / (1024 ** 3), 1),
+            "disk_total_gb": round(disk_total / (1024**3), 1),
+            "disk_used_gb": round(disk_used / (1024**3), 1),
+            "disk_free_gb": round(disk_free / (1024**3), 1),
             "disk_usage_pct": round((disk_used / disk_total * 100) if disk_total else 0, 1),
             "uptime_seconds": data.get("uptime", 0),
         }
@@ -265,12 +265,12 @@ class ProxmoxAdapter(ServerProviderAdapter):
 
         mem_used = data.get("mem", 0)
         mem_total = data.get("maxmem", 0)
-        mem_used_mb = mem_used // (1024 ** 2) if mem_used else 0
-        mem_total_mb = mem_total // (1024 ** 2) if mem_total else 0
+        mem_used_mb = mem_used // (1024**2) if mem_used else 0
+        mem_total_mb = mem_total // (1024**2) if mem_total else 0
         mem_pct = round((mem_used / mem_total * 100) if mem_total else 0, 1)
 
         disk_total = data.get("maxdisk", 0)
-        disk_total_gb = round(disk_total / (1024 ** 3), 1) if disk_total else 0
+        disk_total_gb = round(disk_total / (1024**3), 1) if disk_total else 0
 
         return InstanceResourceMeta(
             provider="proxmox",

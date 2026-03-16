@@ -86,9 +86,7 @@ async def seed_hosts_from_vault(db: AsyncSession) -> int:
             label = f"{info['label_prefix']} Production"
 
             # Check if host already exists for this alias
-            existing = await db.execute(
-                select(ServerHost).where(ServerHost.secret_alias == alias)
-            )
+            existing = await db.execute(select(ServerHost).where(ServerHost.secret_alias == alias))
             if existing.scalars().first():
                 logger.debug("seed_hosts_exists", alias=alias, provider=provider)
                 break

@@ -110,7 +110,11 @@ async def batch_upsert(
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.record.upserted")
 
-    send_alert("dns_record_upsert", identity.service_id, f"Zone: {payload.zone} — {len(payload.records)} record(s)")
+    send_alert(
+        "dns_record_upsert",
+        identity.service_id,
+        f"Zone: {payload.zone} — {len(payload.records)} record(s)",
+    )
 
     return JobCreateResponse(
         job_id=job.id,
@@ -172,7 +176,11 @@ async def batch_delete(
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.record.deleted")
 
-    send_alert("dns_record_delete", identity.service_id, f"Zone: {payload.zone} — {len(payload.records)} record(s)")
+    send_alert(
+        "dns_record_delete",
+        identity.service_id,
+        f"Zone: {payload.zone} — {len(payload.records)} record(s)",
+    )
 
     return JobCreateResponse(
         job_id=job.id,

@@ -184,7 +184,11 @@ async def create_zone(
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.zone.created")
 
-    send_alert("dns_zone_create", identity.service_id, f"Zone: {payload.zone_name} (provider: {payload.provider})")
+    send_alert(
+        "dns_zone_create",
+        identity.service_id,
+        f"Zone: {payload.zone_name} (provider: {payload.provider})",
+    )
 
     return ZoneOut.model_validate(zone)
 

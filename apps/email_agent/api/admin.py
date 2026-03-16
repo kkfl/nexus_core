@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from apps.email_agent.auth.identity import verify_service_identity
 from apps.email_agent.client import vault
 from apps.email_agent.client.ssh_bridge import run_bridge_command
-from packages.shared.alerts import send_alert
 from apps.email_agent.config import config
 from apps.email_agent.schemas import (
     AddAliasRequest,
@@ -33,6 +32,7 @@ from apps.email_agent.services.sent_stats import (
     refresh_sent_stats,
 )
 from apps.email_agent.services.server_stats import get_server_stats
+from packages.shared.alerts import send_alert
 
 _log = structlog.get_logger(__name__)
 

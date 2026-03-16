@@ -5,10 +5,9 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from packages.shared.alerts import send_alert
 
 from apps.server_agent.adapters.factory import get_adapter
 from apps.server_agent.client.vault_client import ServerVaultClient
@@ -21,6 +20,7 @@ from apps.server_agent.schemas import (
     ServerResourcesOut,
 )
 from apps.server_agent.store.postgres import get_db
+from packages.shared.alerts import send_alert
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/v1/servers", tags=["servers"])
@@ -273,7 +273,9 @@ async def rebuild_server(server_id: str, os_id: str, db: AsyncSession = Depends(
         },
         instance_id=server_id,
     )
-    send_alert("server_rebuild", "server-agent", f"Server: {server.label or server_id} (OS: {os_id})")
+    send_alert(
+        "server_rebuild", "server-agent", f"Server: {server.label or server_id} (OS: {os_id})"
+    )
     return JobCreateResponse(job_id=job.id)
 
 
@@ -348,9 +350,7 @@ async def sync_servers(host_id: str | None = None, db: AsyncSession = Depends(ge
         return JobCreateResponse(job_id=job.id)
 
     # Sync ALL active hosts
-    result = await db.execute(
-        select(ServerHost).where(ServerHost.is_active.is_(True))
-    )
+    result = await db.execute(select(ServerHost).where(ServerHost.is_active.is_(True)))
     hosts = result.scalars().all()
     if not hosts:
         raise HTTPException(404, "No active hosts registered")
@@ -367,4 +367,8 @@ async def sync_servers(host_id: str | None = None, db: AsyncSession = Depends(ge
         job_ids.append(job.id)
         logger.info("sync_queued", host_id=host.id, provider=host.provider, label=host.label)
 
-    return {"job_ids": job_ids, "status": "pending", "message": f"Sync queued for {len(hosts)} hosts"}
+    return {
+        "job_ids": job_ids,
+        "status": "pending",
+        "message": f"Sync queued for {len(hosts)} hosts",
+    }

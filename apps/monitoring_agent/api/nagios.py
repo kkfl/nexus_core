@@ -85,17 +85,13 @@ class NagiosServiceDefIn(BaseModel):
     check_command: str = Field(
         ..., description="Check command, e.g. check_ping!100.0,20%!500.0,60%"
     )
-    check_interval: float | None = Field(
-        None, description="Check interval in minutes"
-    )
+    check_interval: float | None = Field(None, description="Check interval in minutes")
 
 
 class NagiosHostCreate(BaseModel):
     hostname: str = Field(..., description="FQDN or hostname for the new host")
     alias: str = Field(..., description="Short alias/label for the host")
-    address: str = Field(
-        ..., description="IP address or DNS name for connectivity checks"
-    )
+    address: str = Field(..., description="IP address or DNS name for connectivity checks")
     hostgroup: str = Field("pbx", description="Host group membership")
     services: list[NagiosServiceDefIn] = Field(
         default_factory=list,
@@ -221,9 +217,7 @@ async def nagios_host_services(hostname: str):
         # Could be host not found or host has no services
         host = await get_host(hostname)
         if not host:
-            raise HTTPException(
-                404, f"Host '{hostname}' not found in Nagios"
-            )
+            raise HTTPException(404, f"Host '{hostname}' not found in Nagios")
     return [_service_to_out(s) for s in services]
 
 
@@ -283,9 +277,7 @@ async def nagios_create_host(body: NagiosHostCreate):
 async def nagios_update_host(hostname: str, body: NagiosHostUpdate):
     """Update an existing host's config."""
     try:
-        svc_defs = (
-            _service_defs_from_input(body.services) if body.services is not None else None
-        )
+        svc_defs = _service_defs_from_input(body.services) if body.services is not None else None
         result = await edit_host(
             hostname=hostname,
             alias=body.alias,
@@ -327,4 +319,3 @@ async def nagios_host_config(hostname: str):
     except Exception as exc:
         logger.error("nagios_host_config_error", err=str(exc))
         raise HTTPException(502, f"Nagios error: {exc}")
-

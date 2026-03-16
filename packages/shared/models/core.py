@@ -40,7 +40,6 @@ class ApiKey(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
 
-
 class Agent(Base):
     __tablename__ = "agents"
 
@@ -505,4 +504,3 @@ class IpAllowlistEntry(Base):
     label: Mapped[str]  # human-readable label, e.g. 'Office VPN'
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
-

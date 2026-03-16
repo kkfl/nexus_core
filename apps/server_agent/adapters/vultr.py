@@ -135,8 +135,8 @@ class VultrAdapter(ServerProviderAdapter):
             # Sum all monthly entries (bytes -> GB)
             total_in = sum(day.get("incoming_bytes", 0) for day in bw.values())
             total_out = sum(day.get("outgoing_bytes", 0) for day in bw.values())
-            bw_in_gb = round(total_in / (1024 ** 3), 2)
-            bw_out_gb = round(total_out / (1024 ** 3), 2)
+            bw_in_gb = round(total_in / (1024**3), 2)
+            bw_out_gb = round(total_out / (1024**3), 2)
         except Exception:
             logger.debug("vultr_bandwidth_unavailable", provider_id=provider_id)
 
@@ -144,7 +144,7 @@ class VultrAdapter(ServerProviderAdapter):
             provider="vultr",
             status=inst.get("power_status", "unknown"),
             cpu_cores=inst.get("vcpu_count", 0),
-            ram_used_mb=inst.get("ram", 0),      # allocated (Vultr doesn't expose live)
+            ram_used_mb=inst.get("ram", 0),  # allocated (Vultr doesn't expose live)
             ram_total_mb=inst.get("ram", 0),
             disk_total_gb=inst.get("disk", 0),
             bandwidth_in_gb=bw_in_gb,

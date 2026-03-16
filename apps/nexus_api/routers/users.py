@@ -100,7 +100,8 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     send_security_alert(
-        "user_create", admin.email,
+        "user_create",
+        admin.email,
         f"New user: {body.email} (role: {body.role})",
     )
     return UserOut.from_user(user)
@@ -180,7 +181,8 @@ async def reset_password(
     log_audit_event(db, "user_password_reset", "user", admin, str(user_id))
     await db.commit()
     send_security_alert(
-        "user_password_reset", admin.email,
+        "user_password_reset",
+        admin.email,
         f"Password reset for: {user.email}",
     )
     return {"status": "password_reset", "user_id": user_id}

@@ -138,6 +138,7 @@ async def list_devices(force_refresh: bool = False) -> list[MeshDevice]:
 def _normalize(s: str) -> str:
     """Normalize a name for fuzzy matching: lowercase, strip hyphens/spaces/underscores."""
     import re
+
     return re.sub(r"[\s\-_]+", "", s.lower())
 
 
@@ -170,7 +171,6 @@ async def get_device(name: str, ip: str | None = None) -> MeshDevice | None:
                 return d
 
     return None
-
 
 
 def _parse_device(raw: dict) -> MeshDevice:

@@ -16,9 +16,9 @@ from apps.nexus_api.dependencies import (
     get_password_hash,
     verify_password,
 )
+from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared import metrics as metrics_emitter
 from packages.shared.audit import log_audit_event
-from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.config import settings
 from packages.shared.db import get_db
 from packages.shared.models import ApiKey, User
@@ -157,7 +157,8 @@ async def create_api_key(
     await db.refresh(db_api_key)
 
     send_security_alert(
-        "api_key_create", current_user.email,
+        "api_key_create",
+        current_user.email,
         f"Key: {key_in.name} (owner: {key_in.owner_type}/{key_in.owner_id})",
     )
 
@@ -195,7 +196,8 @@ async def rotate_api_key(
     log_audit_event(db, "api_key_rotate", "api_key", current_user, str(db_key.id))
     await db.commit()
     send_security_alert(
-        "api_key_rotate", current_user.email,
+        "api_key_rotate",
+        current_user.email,
         f"Key rotated: {db_key.name} (id: {db_key.id})",
     )
     return {"id": db_key.id, "raw_key": raw_key, "status": "rotated"}
@@ -219,7 +221,8 @@ async def toggle_api_key(
     log_audit_event(db, action, "api_key", current_user, str(db_key.id))
     await db.commit()
     send_security_alert(
-        "api_key_toggle", current_user.email,
+        "api_key_toggle",
+        current_user.email,
         f"Key {'enabled' if db_key.is_active else 'disabled'}: {db_key.name} (id: {db_key.id})",
     )
     return {"id": db_key.id, "is_active": db_key.is_active}
@@ -242,8 +245,8 @@ async def revoke_api_key(
     log_audit_event(db, "api_key_revoke", "api_key", current_user, str(id))
     await db.commit()
     send_security_alert(
-        "api_key_delete", current_user.email,
+        "api_key_delete",
+        current_user.email,
         f"Key deleted: {key_name} (id: {id})",
     )
     return {"status": "revoked"}
-

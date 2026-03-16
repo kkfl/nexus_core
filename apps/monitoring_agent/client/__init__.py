@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import asyncssh
@@ -105,11 +105,8 @@ def _parse_status_dat(raw: str) -> dict[str, Any]:
                     max_attempts=int(kv.get("max_check_attempts", 0)),
                     has_been_checked=kv.get("has_been_checked", "0") == "1",
                     notifications_enabled=kv.get("notifications_enabled", "1") == "1",
-                    problem_acknowledged=kv.get("problem_has_been_acknowledged", "0")
-                    == "1",
-                    scheduled_downtime_depth=int(
-                        kv.get("scheduled_downtime_depth", 0)
-                    ),
+                    problem_acknowledged=kv.get("problem_has_been_acknowledged", "0") == "1",
+                    scheduled_downtime_depth=int(kv.get("scheduled_downtime_depth", 0)),
                 )
             )
         elif block_type == "servicestatus":
@@ -129,11 +126,8 @@ def _parse_status_dat(raw: str) -> dict[str, Any]:
                     max_attempts=int(kv.get("max_check_attempts", 0)),
                     has_been_checked=kv.get("has_been_checked", "0") == "1",
                     notifications_enabled=kv.get("notifications_enabled", "1") == "1",
-                    problem_acknowledged=kv.get("problem_has_been_acknowledged", "0")
-                    == "1",
-                    scheduled_downtime_depth=int(
-                        kv.get("scheduled_downtime_depth", 0)
-                    ),
+                    problem_acknowledged=kv.get("problem_has_been_acknowledged", "0") == "1",
+                    scheduled_downtime_depth=int(kv.get("scheduled_downtime_depth", 0)),
                     check_command=kv.get("check_command", ""),
                 )
             )
@@ -364,9 +358,7 @@ def generate_host_config(
             ]
         )
         if svc.check_interval is not None:
-            lines.append(
-                f"        check_interval                  {svc.check_interval}"
-            )
+            lines.append(f"        check_interval                  {svc.check_interval}")
         lines.extend(["        initial_state                   u", "        }", ""])
 
     return "\n".join(lines) + "\n"
@@ -600,4 +592,3 @@ async def get_host_config(hostname: str) -> str:
 
     result = await _ssh_run(f"cat {cfg_file}")
     return result.stdout or ""
-

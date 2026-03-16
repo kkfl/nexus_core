@@ -4,6 +4,7 @@ IP Allowlist — Settings → Security
 CRUD for IP allowlist entries + enforcement middleware.
 When entries exist, only matching CIDRs can access the API (fail-open if empty).
 """
+
 import ipaddress
 from typing import Any
 
@@ -53,9 +54,7 @@ async def list_ip_allowlist(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(RequireRole(["admin"])),
 ) -> Any:
-    res = await db.execute(
-        select(IpAllowlistEntry).order_by(IpAllowlistEntry.created_at.desc())
-    )
+    res = await db.execute(select(IpAllowlistEntry).order_by(IpAllowlistEntry.created_at.desc()))
     return res.scalars().all()
 
 
@@ -68,13 +67,18 @@ async def create_ip_allowlist_entry(
     entry = IpAllowlistEntry(cidr=body.cidr, label=body.label)
     db.add(entry)
     log_audit_event(
-        db, "ip_allowlist_add", "ip_allowlist", current_user, None,
+        db,
+        "ip_allowlist_add",
+        "ip_allowlist",
+        current_user,
+        None,
         {"cidr": body.cidr, "label": body.label},
     )
     await db.commit()
     await db.refresh(entry)
     send_security_alert(
-        "ip_allowlist_add", current_user.email,
+        "ip_allowlist_add",
+        current_user.email,
         f"CIDR: {body.cidr} — {body.label}",
     )
     return entry
@@ -92,12 +96,17 @@ async def toggle_ip_entry(
         raise HTTPException(status_code=404, detail="Entry not found")
     entry.is_active = not entry.is_active
     log_audit_event(
-        db, "ip_allowlist_toggle", "ip_allowlist", current_user, str(entry_id),
+        db,
+        "ip_allowlist_toggle",
+        "ip_allowlist",
+        current_user,
+        str(entry_id),
         {"cidr": entry.cidr, "is_active": entry.is_active},
     )
     await db.commit()
     send_security_alert(
-        "ip_allowlist_toggle", current_user.email,
+        "ip_allowlist_toggle",
+        current_user.email,
         f"CIDR: {entry.cidr} — {'enabled' if entry.is_active else 'disabled'}",
     )
     return {"id": entry.id, "is_active": entry.is_active}
@@ -116,12 +125,17 @@ async def delete_ip_allowlist_entry(
     cidr = entry.cidr
     await db.delete(entry)
     log_audit_event(
-        db, "ip_allowlist_remove", "ip_allowlist", current_user, str(entry_id),
+        db,
+        "ip_allowlist_remove",
+        "ip_allowlist",
+        current_user,
+        str(entry_id),
         {"cidr": cidr},
     )
     await db.commit()
     send_security_alert(
-        "ip_allowlist_remove", current_user.email,
+        "ip_allowlist_remove",
+        current_user.email,
         f"CIDR removed: {cidr}",
     )
     return {"status": "deleted"}
