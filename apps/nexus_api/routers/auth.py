@@ -129,6 +129,27 @@ async def logout(
     return {"status": "logged_out"}
 
 
+from pydantic import BaseModel as _BaseModel
+
+
+class _VerifyPasswordRequest(_BaseModel):
+    password: str
+
+
+@router.post("/verify-password")
+async def verify_password_endpoint(
+    payload: _VerifyPasswordRequest,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Break-glass password re-verification for destructive actions."""
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid password",
+        )
+    return {"verified": True}
+
+
 @router.post("/api-keys", response_model=ApiKeyOut)
 async def create_api_key(
     key_in: ApiKeyCreate,

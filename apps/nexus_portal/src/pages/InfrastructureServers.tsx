@@ -8,11 +8,12 @@ import {
     CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
     ReloadOutlined, LoadingOutlined, PoweroffOutlined,
     PlayCircleOutlined, PauseCircleOutlined, DesktopOutlined,
-    InfoCircleOutlined,
-    SearchOutlined, ThunderboltOutlined, HddOutlined,
+    InfoCircleOutlined, DeleteOutlined, ExclamationCircleOutlined,
+    SearchOutlined, ThunderboltOutlined, HddOutlined, LockOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { serverClient } from '../api/serverClient';
+import { apiClient } from '../api/client';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, cardStyle as centralCardStyle, pageContainer } from '../theme';
 
@@ -26,6 +27,10 @@ export default function InfrastructureServers() {
     const [selectedServer, setSelectedServer] = useState<any>(null);
     const [searchText, setSearchText] = useState('');
     const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deletePassword, setDeletePassword] = useState('');
+    const [deleteVerifying, setDeleteVerifying] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
 
     // ── Queries ──
     const { data: servers = [], isLoading: serversLoading } = useQuery({
@@ -135,6 +140,37 @@ export default function InfrastructureServers() {
         },
         onError: (e: any) => message.error(e?.response?.data?.detail || 'Console unavailable'),
     });
+
+    const deleteMut = useMutation({
+        mutationFn: async (id: string) => {
+            const r = await serverClient.delete(`/servers/v1/servers/${id}`);
+            return r.data;
+        },
+        onSuccess: () => {
+            message.success('Server delete job queued — it will be destroyed shortly');
+            setSelectedServer(null);
+            setDeleteModalOpen(false);
+            setDeletePassword('');
+            setDeleteError('');
+            qc.invalidateQueries({ queryKey: ['servers'] });
+            qc.invalidateQueries({ queryKey: ['server-jobs'] });
+        },
+        onError: (e: any) => message.error(e?.response?.data?.detail || 'Delete failed'),
+    });
+
+    const handleDeleteConfirm = async () => {
+        if (!selectedServer || !deletePassword) return;
+        setDeleteVerifying(true);
+        setDeleteError('');
+        try {
+            await apiClient.post('/auth/verify-password', { password: deletePassword });
+            deleteMut.mutate(selectedServer.id);
+        } catch (e: any) {
+            setDeleteError(e?.response?.data?.detail || 'Invalid password');
+        } finally {
+            setDeleteVerifying(false);
+        }
+    };
 
     // ── Host-filtered base set ──
     const hostFilteredServers = useMemo(() => {
@@ -646,6 +682,15 @@ export default function InfrastructureServers() {
                 extra={
                     selectedServer && (
                         <Space>
+                            {selectedServer.power_status !== 'running' && (
+                                <Tooltip title="Permanently destroy this server">
+                                    <Button size="small" icon={<DeleteOutlined />}
+                                        onClick={() => { setDeleteModalOpen(true); setDeletePassword(''); setDeleteError(''); }}
+                                        style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.25)', color: MN.red }}>
+                                        Delete
+                                    </Button>
+                                </Tooltip>
+                            )}
                             <Button size="small" icon={<DesktopOutlined />} onClick={() => consoleMut.mutate(selectedServer.id)}
                                 style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: MN.purple }}>
                                 Console
@@ -947,6 +992,59 @@ export default function InfrastructureServers() {
                     </div>
                 )}
             </Drawer>
+
+            {/* ═══ Break-Glass Delete Confirmation Modal ═══ */}
+            <Modal
+                title={
+                    <span style={{ color: MN.red }}>
+                        <ExclamationCircleOutlined style={{ marginRight: 8 }} />
+                        Delete Server — Break Glass
+                    </span>
+                }
+                open={deleteModalOpen}
+                onCancel={() => { setDeleteModalOpen(false); setDeletePassword(''); setDeleteError(''); }}
+                onOk={handleDeleteConfirm}
+                okText={deleteVerifying ? 'Verifying…' : 'Permanently Delete'}
+                okButtonProps={{ danger: true, disabled: !deletePassword || deleteVerifying, loading: deleteVerifying }}
+                cancelButtonProps={{ style: { borderColor: MN.border, color: MN.muted } }}
+                styles={{
+                    header: { background: MN.bg, borderBottom: `1px solid ${MN.border}` },
+                    body: { background: MN.bg, padding: '20px 24px' },
+                    footer: { background: MN.bg, borderTop: `1px solid ${MN.border}` },
+                }}
+                destroyOnClose
+            >
+                <div style={{ marginBottom: 16 }}>
+                    <Text style={{ color: MN.text, fontSize: 14 }}>
+                        You are about to permanently destroy{' '}
+                        <strong style={{ color: '#fff' }}>{selectedServer?.label}</strong>.
+                    </Text>
+                    <div style={{
+                        marginTop: 12, padding: '10px 14px', borderRadius: 8,
+                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                    }}>
+                        <Text style={{ color: MN.red, fontSize: 12 }}>
+                            ⚠ This action cannot be undone. The server will be destroyed at the provider level.
+                        </Text>
+                    </div>
+                </div>
+                <div>
+                    <Text style={{ color: MN.muted, fontSize: 12, display: 'block', marginBottom: 8 }}>
+                        <LockOutlined style={{ marginRight: 4 }} /> Enter your password to confirm:
+                    </Text>
+                    <Input.Password
+                        value={deletePassword}
+                        onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                        onPressEnter={handleDeleteConfirm}
+                        placeholder="Your portal password"
+                        status={deleteError ? 'error' : undefined}
+                        style={{ background: MN.card, borderColor: deleteError ? MN.red : MN.border, color: MN.text }}
+                    />
+                    {deleteError && (
+                        <Text style={{ color: MN.red, fontSize: 12, marginTop: 4, display: 'block' }}>{deleteError}</Text>
+                    )}
+                </div>
+            </Modal>
         </div>
     );
 }
