@@ -163,13 +163,13 @@ export default function Login() {
                     {forgotMode && !forgotSent && (
                         <Form name="forgot" onFinish={onForgot} layout="vertical" size="large">
                             <div style={{
-                                marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+                                marginBottom: 16, padding: '12px 14px', borderRadius: 8,
                                 background: mode === 'dark' ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)',
                                 border: `1px solid ${mode === 'dark' ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.1)'}`,
                             }}>
-                                <Text style={{ color: t.muted, fontSize: 12, lineHeight: '18px' }}>
-                                    Enter the email address associated with your account and we'll send you a link to reset your password.
-                                </Text>
+                                <span style={{ color: t.muted, fontSize: 12, lineHeight: '18px' }}>
+                                    Enter your account email and we'll send a password reset link.
+                                </span>
                             </div>
                             <Form.Item name="email" rules={[
                                 { required: true, message: 'Provide email' },
