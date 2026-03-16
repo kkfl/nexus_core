@@ -1025,7 +1025,7 @@ export default function InfrastructureServers() {
                         background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
                         wordBreak: 'break-word',
                     }}>
-                        <Text style={{ color: MN.red, fontSize: 12 }}>
+                        <Text style={{ color: MN.red, fontSize: 12, whiteSpace: 'normal' }}>
                             ⚠ This action cannot be undone. The server will be destroyed at the provider level.
                         </Text>
                     </div>
