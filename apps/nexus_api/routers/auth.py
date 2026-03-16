@@ -26,7 +26,7 @@ from packages.shared.schemas.core import ApiKeyCreate, ApiKeyOut, RefreshTokenRe
 
 router = APIRouter()
 
-# Simple in-memory rate limiter (5 req / minute / IP)
+# Simple in-memory rate limiter (15 req / minute / IP)
 _rate_limits = {}
 
 
@@ -39,7 +39,7 @@ def check_rate_limit(request: Request):
         _rate_limits[ip] = [t for t in _rate_limits[ip] if now - t < 60]
 
     reqs = _rate_limits.get(ip, [])
-    if len(reqs) >= 5:
+    if len(reqs) >= 15:
         raise HTTPException(status_code=429, detail="Too many requests")
 
     reqs.append(now)
