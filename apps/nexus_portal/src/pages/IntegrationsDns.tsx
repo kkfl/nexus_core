@@ -1,14 +1,14 @@
 import { useState, useMemo } from 'react';
 import {
     Table, Button, Space, Tag, Typography, Tooltip, Drawer, Modal, Form,
-    Input, Select, InputNumber, Progress, Empty, Tabs, Badge, message,
+    Input, Select, InputNumber, Progress, Empty, Tabs, Badge, message, Popconfirm,
 } from 'antd';
 import {
     GlobalOutlined, PlusOutlined, SyncOutlined,
     FileTextOutlined, CheckCircleOutlined,
     CloseCircleOutlined, ClockCircleOutlined,
     ReloadOutlined, LoadingOutlined, SearchOutlined,
-    ImportOutlined, DeleteOutlined,
+    ImportOutlined, DeleteOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dnsClient } from '../api/dnsClient';
@@ -25,6 +25,8 @@ export default function IntegrationsDns() {
     const [selectedZone, setSelectedZone] = useState<any>(null);
     const [addZoneOpen, setAddZoneOpen] = useState(false);
     const [addRecordOpen, setAddRecordOpen] = useState(false);
+    const [editingRecord, setEditingRecord] = useState<any>(null);
+    const [recordSearch, setRecordSearch] = useState('');
     const [discoverOpen, setDiscoverOpen] = useState(false);
     const [discoverProvider, setDiscoverProvider] = useState('dnsmadeeasy');
     const [selectedImports, setSelectedImports] = useState<string[]>([]);
@@ -91,6 +93,24 @@ export default function IntegrationsDns() {
             recordForm.resetFields();
         },
         onError: (e: any) => message.error(e?.response?.data?.detail || 'Failed'),
+    });
+
+    const deleteRecordMut = useMutation({
+        mutationFn: async (rec: any) => {
+            const r = await dnsClient.post('/dns/v1/records/delete', {
+                tenant_id: selectedZone.tenant_id,
+                env: selectedZone.env,
+                zone: selectedZone.zone_name,
+                records: [{ name: rec.name, record_type: rec.record_type }],
+            });
+            return r.data;
+        },
+        onSuccess: () => {
+            message.success('Delete job queued');
+            qc.invalidateQueries({ queryKey: ['dns-records', selectedZone?.id] });
+            qc.invalidateQueries({ queryKey: ['dns-jobs'] });
+        },
+        onError: (e: any) => message.error(e?.response?.data?.detail || 'Delete failed'),
     });
 
     const syncMut = useMutation({
@@ -269,6 +289,17 @@ export default function IntegrationsDns() {
         },
     ];
 
+    // ── Filtered records ──
+    const filteredRecords = useMemo(() => {
+        if (!recordSearch.trim()) return zoneRecords;
+        const q = recordSearch.toLowerCase();
+        return zoneRecords.filter((r: any) =>
+            r.name?.toLowerCase().includes(q) ||
+            r.value?.toLowerCase().includes(q) ||
+            r.record_type?.toLowerCase().includes(q)
+        );
+    }, [zoneRecords, recordSearch]);
+
     // ── Record table columns ──
     const recCols = [
         {
@@ -303,6 +334,44 @@ export default function IntegrationsDns() {
             render: (t: string | null) => t
                 ? <Text style={{ color: MN.green, fontSize: 12 }}>{new Date(t).toLocaleString()}</Text>
                 : <Text style={{ color: MN.muted, fontStyle: 'italic' }}>Never</Text>,
+        },
+        {
+            title: 'ACTIONS', key: 'actions', width: 100,
+            render: (_: any, rec: any) => (
+                <Space size={4}>
+                    <Tooltip title="Edit Record">
+                        <Button size="small" onClick={() => {
+                            setEditingRecord(rec);
+                            recordForm.setFieldsValue({
+                                record_type: rec.record_type,
+                                name: rec.name,
+                                value: rec.value,
+                                ttl: rec.ttl,
+                                priority: rec.priority,
+                            });
+                            setAddRecordOpen(true);
+                        }}
+                            style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: MN.accent }}>
+                            <EditOutlined />
+                        </Button>
+                    </Tooltip>
+                    <Popconfirm
+                        title={<span style={{ color: MN.text }}>Delete this record?</span>}
+                        description={<span style={{ color: MN.muted }}>{rec.record_type} {rec.name} → {rec.value}</span>}
+                        onConfirm={() => deleteRecordMut.mutate(rec)}
+                        okText="Delete"
+                        okButtonProps={{ danger: true }}
+                        cancelText="Cancel"
+                    >
+                        <Tooltip title="Delete Record">
+                            <Button size="small" danger
+                                style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: MN.red }}>
+                                <DeleteOutlined />
+                            </Button>
+                        </Tooltip>
+                    </Popconfirm>
+                </Space>
+            ),
         },
     ];
 
@@ -557,7 +626,16 @@ export default function IntegrationsDns() {
                 }}
                 extra={
                     <Space>
-                        <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => setAddRecordOpen(true)}>
+                        <Input
+                            prefix={<SearchOutlined style={{ color: MN.muted }} />}
+                            placeholder="Search records..."
+                            value={recordSearch}
+                            onChange={(e) => setRecordSearch(e.target.value)}
+                            allowClear
+                            style={{ width: 220, background: MN.card, borderColor: MN.border, color: MN.text }}
+                            size="small"
+                        />
+                        <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditingRecord(null); recordForm.resetFields(); setAddRecordOpen(true); }}>
                             Add Record
                         </Button>
                         <Button size="small" icon={<SyncOutlined />}
@@ -590,11 +668,11 @@ export default function IntegrationsDns() {
                         <div className="dns-table">
                             <Table
                                 columns={recCols}
-                                dataSource={zoneRecords}
+                                dataSource={filteredRecords}
                                 rowKey="id"
                                 loading={recordsLoading}
-                                pagination={{ pageSize: 20, showTotal: (t) => <span style={{ color: MN.muted }}>{t} records</span> }}
-                                locale={{ emptyText: <Empty description={<span style={{ color: MN.muted }}>No records for this zone</span>} /> }}
+                                pagination={{ pageSize: 20, showTotal: (t) => <span style={{ color: MN.muted }}>{t} records{recordSearch && ` (filtered)`}</span> }}
+                                locale={{ emptyText: <Empty description={<span style={{ color: MN.muted }}>{recordSearch ? 'No matching records' : 'No records for this zone'}</span>} /> }}
                             />
                         </div>
                     </div>
@@ -633,11 +711,11 @@ export default function IntegrationsDns() {
                 </Form>
             </Modal>
 
-            {/* ═══ Add Record Modal ═══ */}
+            {/* ═══ Add/Edit Record Modal ═══ */}
             <Modal
-                title={<span style={{ color: MN.text }}><FileTextOutlined style={{ marginRight: 8, color: MN.accent }} />Add DNS Record</span>}
+                title={<span style={{ color: MN.text }}><FileTextOutlined style={{ marginRight: 8, color: MN.accent }} />{editingRecord ? 'Edit DNS Record' : 'Add DNS Record'}</span>}
                 open={addRecordOpen}
-                onCancel={() => setAddRecordOpen(false)}
+                onCancel={() => { setAddRecordOpen(false); setEditingRecord(null); recordForm.resetFields(); }}
                 onOk={() => recordForm.submit()}
                 confirmLoading={upsertRecordMut.isPending}
                 styles={{ header: { background: MN.bg, borderBottom: `1px solid ${MN.border}` }, body: { background: MN.bg }, footer: { background: MN.bg, borderTop: `1px solid ${MN.border}` } }}
