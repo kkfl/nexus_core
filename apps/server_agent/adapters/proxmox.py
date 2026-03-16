@@ -102,17 +102,21 @@ class ProxmoxAdapter(ServerProviderAdapter):
                     s_used = pool.get("used", 0)
                     s_avail = pool.get("avail", 0)
                     s_pct = round((s_used / s_total * 100) if s_total else 0, 1)
-                    storage_pools.append(
-                        {
-                            "name": pool.get("storage", "unknown"),
-                            "type": pool.get("type", "unknown"),
-                            "content": pool.get("content", ""),
-                            "total_gb": round(s_total / (1024**3), 1),
-                            "used_gb": round(s_used / (1024**3), 1),
-                            "free_gb": round(s_avail / (1024**3), 1),
-                            "usage_pct": s_pct,
-                        }
-                    )
+                    pool_entry = {
+                        "name": pool.get("storage", "unknown"),
+                        "type": pool.get("type", "unknown"),
+                        "content": pool.get("content", ""),
+                        "total_gb": round(s_total / (1024**3), 1),
+                        "used_gb": round(s_used / (1024**3), 1),
+                        "free_gb": round(s_avail / (1024**3), 1),
+                        "usage_pct": s_pct,
+                    }
+                    # Skip dir-type pools whose total matches rootfs — they are
+                    # the same physical partition (e.g. local, Mouhab share rootfs).
+                    rootfs_total_gb = round(disk_total / (1024**3), 1)
+                    if pool_entry["type"] == "dir" and pool_entry["total_gb"] == rootfs_total_gb:
+                        continue
+                    storage_pools.append(pool_entry)
         except Exception as e:
             logger.warning("storage_pools_fetch_failed", error=str(e))
 
