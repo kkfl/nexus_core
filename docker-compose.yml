@@ -46,11 +46,6 @@ services:
       - "9000:9000"
       - "9001:9001"
     restart: unless-stopped
-    healthcheck:
-      test: [ "CMD-SHELL", "bash -c ':> /dev/tcp/localhost/9000'" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   nexus-api:
     build:
@@ -77,7 +72,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ./docs:/app/docs:ro
     restart: unless-stopped
