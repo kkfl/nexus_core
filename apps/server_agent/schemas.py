@@ -54,6 +54,18 @@ class HostOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class StoragePoolOut(BaseModel):
+    """Individual storage pool on a Proxmox node."""
+
+    name: str
+    type: str = "unknown"
+    content: str = ""
+    total_gb: float = 0.0
+    used_gb: float = 0.0
+    free_gb: float = 0.0
+    usage_pct: float = 0.0
+
+
 class HostResourcesOut(BaseModel):
     """Node-level resource stats (Proxmox only)."""
 
@@ -69,6 +81,7 @@ class HostResourcesOut(BaseModel):
     disk_used_gb: float = 0.0
     disk_free_gb: float = 0.0
     disk_usage_pct: float = 0.0
+    storage_pools: list[StoragePoolOut] = []
     uptime_seconds: int = 0
 
 

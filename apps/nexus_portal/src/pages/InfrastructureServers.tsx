@@ -423,12 +423,20 @@ export default function InfrastructureServers() {
                                     color: hostResources.ram_usage_pct > 85 ? MN.red : hostResources.ram_usage_pct > 60 ? MN.orange : MN.green,
                                 },
                                 {
-                                    label: 'Disk',
+                                    label: 'Disk (rootfs)',
                                     icon: '💿',
                                     pct: hostResources.disk_usage_pct,
                                     detail: `${hostResources.disk_free_gb} GB free / ${hostResources.disk_total_gb} GB`,
                                     color: hostResources.disk_usage_pct > 85 ? MN.red : hostResources.disk_usage_pct > 60 ? MN.orange : MN.green,
                                 },
+                                // Append storage pools as additional disk bars
+                                ...(hostResources.storage_pools || []).map((pool: any) => ({
+                                    label: `${pool.name}`,
+                                    icon: '🗄️',
+                                    pct: pool.usage_pct,
+                                    detail: `${pool.free_gb} GB free / ${pool.total_gb} GB  ·  ${pool.type}`,
+                                    color: pool.usage_pct > 85 ? MN.red : pool.usage_pct > 60 ? MN.orange : MN.green,
+                                })),
                             ].map(item => (
                                 <div key={item.label}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>

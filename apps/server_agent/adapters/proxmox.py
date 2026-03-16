@@ -90,6 +90,32 @@ class ProxmoxAdapter(ServerProviderAdapter):
         disk_used = rootfs.get("used", 0)
         disk_free = rootfs.get("free", 0)
 
+        # Fetch all storage pools (local-lvm, ZFS, NFS, etc.)
+        storage_pools: list[dict] = []
+        try:
+            storage_data = await self._request("GET", f"/api2/json/nodes/{self._node}/storage")
+            if isinstance(storage_data, list):
+                for pool in storage_data:
+                    if not pool.get("active"):
+                        continue
+                    s_total = pool.get("total", 0)
+                    s_used = pool.get("used", 0)
+                    s_avail = pool.get("avail", 0)
+                    s_pct = round((s_used / s_total * 100) if s_total else 0, 1)
+                    storage_pools.append(
+                        {
+                            "name": pool.get("storage", "unknown"),
+                            "type": pool.get("type", "unknown"),
+                            "content": pool.get("content", ""),
+                            "total_gb": round(s_total / (1024**3), 1),
+                            "used_gb": round(s_used / (1024**3), 1),
+                            "free_gb": round(s_avail / (1024**3), 1),
+                            "usage_pct": s_pct,
+                        }
+                    )
+        except Exception as e:
+            logger.warning("storage_pools_fetch_failed", error=str(e))
+
         return {
             "node": self._node,
             "cpu_cores": cpu_total,
@@ -102,6 +128,7 @@ class ProxmoxAdapter(ServerProviderAdapter):
             "disk_used_gb": round(disk_used / (1024**3), 1),
             "disk_free_gb": round(disk_free / (1024**3), 1),
             "disk_usage_pct": round((disk_used / disk_total * 100) if disk_total else 0, 1),
+            "storage_pools": storage_pools,
             "uptime_seconds": data.get("uptime", 0),
         }
 
