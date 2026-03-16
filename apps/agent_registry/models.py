@@ -31,6 +31,7 @@ class RegistryAgent(Base):
     tags = Column(ARRAY(String), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
     updated_at = Column(DateTime(timezone=True), nullable=True, onupdate=_now)
+    last_heartbeat = Column(DateTime(timezone=True), nullable=True)
 
     deployments = relationship(
         "RegistryDeployment", back_populates="agent", cascade="all, delete-orphan"

@@ -35,6 +35,7 @@ class ApiKeyOut(BaseModel):
     owner_type: str
     owner_id: int
     name: str
+    is_active: bool = True
     last_used_at: datetime.datetime | None
     created_at: datetime.datetime
     key: str | None = None  # Only returned on creation

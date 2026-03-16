@@ -38,6 +38,7 @@ class AgentOut(BaseModel):
     tags: list[str] | None
     created_at: datetime.datetime
     updated_at: datetime.datetime | None
+    last_heartbeat: datetime.datetime | None
 
     model_config = {"from_attributes": True}
 

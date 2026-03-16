@@ -32,12 +32,16 @@ _worker_task = None
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _worker_task
     logger.info("pbx_agent_startup", port=config.port, mock=config.pbx_mock)
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("pbx-agent")
     _worker_task = asyncio.create_task(
         run_worker_loop(tick_interval=config.job_worker_tick_seconds)
     )
     yield
     if _worker_task:
         _worker_task.cancel()
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
     logger.info("pbx_agent_shutdown")
 
 

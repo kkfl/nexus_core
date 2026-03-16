@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from apps.email_agent.auth.identity import verify_service_identity
 from apps.email_agent.client import vault
 from apps.email_agent.client.ssh_bridge import run_bridge_command
+from packages.shared.alerts import send_alert
 from apps.email_agent.config import config
 from apps.email_agent.schemas import (
     AddAliasRequest,
@@ -155,6 +156,7 @@ async def create_mailbox(
     """Create a new mailbox via SSH bridge."""
     resolved_pw = await _resolve_password(req.password, req.vault_ref)
     result = await run_bridge_command("create_mailbox", [req.email, resolved_pw])
+    send_alert("mailbox_create", "email-agent", f"Mailbox: {req.email}")
     return AdminResponse(**result)
 
 
@@ -166,6 +168,7 @@ async def set_password(
     """Reset mailbox password via SSH bridge."""
     resolved_pw = await _resolve_password(req.password, req.vault_ref)
     result = await run_bridge_command("set_password", [req.email, resolved_pw])
+    send_alert("mailbox_password", "email-agent", f"Mailbox: {req.email}")
     return AdminResponse(**result)
 
 
@@ -176,6 +179,7 @@ async def disable_mailbox(
 ):
     """Disable a mailbox via SSH bridge."""
     result = await run_bridge_command("disable_mailbox", [req.email])
+    send_alert("mailbox_disable", "email-agent", f"Mailbox: {req.email}")
     return AdminResponse(**result)
 
 
@@ -186,6 +190,7 @@ async def add_alias(
 ):
     """Add a mail alias via SSH bridge."""
     result = await run_bridge_command("add_alias", [req.alias, req.destination])
+    send_alert("alias_add", "email-agent", f"Alias: {req.alias} → {req.destination}")
     return AdminResponse(**result)
 
 

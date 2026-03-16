@@ -93,3 +93,19 @@ async def patch_agent(
     )
 
     return AgentOut.model_validate(updated)
+
+
+@router.post("/{name}/heartbeat", status_code=204)
+async def heartbeat(
+    name: str,
+    identity: ServiceIdentity = Depends(get_service_identity),
+    db: AsyncSession = Depends(store.get_db),
+) -> None:
+    """Record a heartbeat for a named agent."""
+    agent = await store.get_agent_by_name(db, name)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{name}' not found.",
+        )
+    await store.record_heartbeat(db, agent)

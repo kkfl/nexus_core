@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-_VALID_PROVIDERS = {"vultr", "proxmox"}
+_VALID_PROVIDERS = {"vultr", "proxmox", "gpu"}
 _VALID_ENVS = {"dev", "stage", "prod"}
 _VALID_POWER_ACTIONS = {"start", "stop", "reboot"}
 _VALID_BACKUP_SCHEDULES = {"daily", "weekly", "monthly"}
@@ -72,6 +72,46 @@ class HostResourcesOut(BaseModel):
     uptime_seconds: int = 0
 
 
+class ServerResourcesOut(BaseModel):
+    """Per-server live resource stats."""
+
+    provider: str
+    status: str = "unknown"
+    cpu_usage_pct: float | None = None
+    cpu_cores: int = 0
+    ram_used_mb: int = 0
+    ram_total_mb: int = 0
+    ram_usage_pct: float | None = None
+    disk_total_gb: float = 0
+    disk_used_gb: float | None = None
+    disk_usage_pct: float | None = None
+    bandwidth_in_gb: float | None = None
+    bandwidth_out_gb: float | None = None
+    uptime_seconds: int = 0
+
+    # GPU
+    gpu_name: str | None = None
+    gpu_usage_pct: float | None = None
+    gpu_vram_used_mb: int | None = None
+    gpu_vram_total_mb: int | None = None
+    gpu_vram_usage_pct: float | None = None
+    gpu_temp_c: float | None = None
+    gpu_power_draw_w: float | None = None
+    gpu_count: int | None = None
+
+    # LLM
+    llm_model_loaded: str | None = None
+    llm_requests_active: int | None = None
+    llm_avg_latency_ms: float | None = None
+    llm_tokens_per_sec: float | None = None
+
+    # Voice
+    voice_concurrent_calls: int | None = None
+    voice_max_concurrent: int | None = None
+    voice_avg_latency_ms: float | None = None
+    voice_total_calls_today: int | None = None
+
+
 # ---------------------------------------------------------------------------
 # Server schemas
 # ---------------------------------------------------------------------------
@@ -123,6 +163,20 @@ class ConsoleOut(BaseModel):
     type: str  # vnc|novnc|webterm
     token: str | None = None
     expires_at: datetime.datetime | None = None
+
+
+class MeshDeviceOut(BaseModel):
+    """MeshCentral device info."""
+
+    name: str
+    node_id: str
+    mesh_id: str
+    group_name: str
+    ip: str | None = None
+    os_desc: str | None = None
+    connected: bool = False
+    powered: bool = False
+    last_boot: int | None = None
 
 
 # ---------------------------------------------------------------------------

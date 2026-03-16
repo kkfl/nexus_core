@@ -14,9 +14,11 @@ from apps.nexus_api.routers import (
     brain_routes,
     carrier,
     docs,
+    email_events,
     entities,
     events,
     internal,
+    ip_allowlist,
     kb,
     monitoring,
     pbx,
@@ -151,7 +153,70 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("agent_registry_unreachable_during_startup")
 
+    # ── Start heartbeat ────────────────────────────────────────────
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("nexus_api")
+
+    # ── Start stale-heartbeat monitor ──────────────────────────────
+    async def _heartbeat_monitor():
+        """Every 3 min, check for agents that missed 3+ heartbeats and send alert."""
+        from datetime import UTC, datetime, timedelta
+
+        import httpx
+
+        from packages.shared.alerts import send_alert
+
+        _alerted: set[str] = set()  # track which agents we already alerted on
+
+        while True:
+            await asyncio.sleep(180)  # check every 3 min
+            try:
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    resp = await hc.get(
+                        f"{client.registry_base_url}/v1/agents",
+                        headers=client.headers,
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    agents_list = resp.json()
+
+                now = datetime.now(UTC)
+                threshold = now - timedelta(minutes=3)
+
+                for a in agents_list:
+                    name = a.get("name", "")
+                    hb = a.get("last_heartbeat")
+
+                    if hb is None:
+                        continue  # never checked in yet, skip
+
+                    from dateutil.parser import isoparse
+                    hb_time = isoparse(hb)
+                    if hb_time.tzinfo is None:
+                        hb_time = hb_time.replace(tzinfo=UTC)
+
+                    if hb_time < threshold:
+                        if name not in _alerted:
+                            _alerted.add(name)
+                            send_alert(
+                                "agent_heartbeat_stale",
+                                "system",
+                                f"Agent '{name}' — last heartbeat: {hb}",
+                                severity="warn",
+                            )
+                            logger.warning("agent_heartbeat_stale", agent=name, last_heartbeat=hb)
+                    else:
+                        _alerted.discard(name)  # recovered, clear alert state
+            except Exception as exc:
+                logger.debug("heartbeat_monitor_error", error=str(exc)[:200])
+
+    _monitor_task = asyncio.create_task(_heartbeat_monitor())
+
     yield
+
+    _monitor_task.cancel()
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
 
 
 app = FastAPI(
@@ -193,17 +258,67 @@ async def request_middleware(request: Request, call_next):
         method=request.method,
     )
 
+    # ── IP Allowlist Enforcement ──────────────────────────────────
+    # Bypass CORS preflight (OPTIONS) and health endpoints
+    bypass_paths = ("/healthz", "/readyz", "/metrics")
+    skip_ip_check = (
+        request.method == "OPTIONS"
+        or request.url.path.startswith(bypass_paths)
+    )
+    if not skip_ip_check:
+        try:
+            import ipaddress as _ipaddress
+
+            from sqlalchemy.future import select as sa_select
+
+            from packages.shared.db import AsyncSessionLocal
+            from packages.shared.models import IpAllowlistEntry
+
+            async with AsyncSessionLocal() as ip_db:
+                ip_res = await ip_db.execute(
+                    sa_select(IpAllowlistEntry).where(IpAllowlistEntry.is_active.is_(True))
+                )
+                allowlist = ip_res.scalars().all()
+
+            # Fail-open: if no entries exist, all IPs are allowed
+            if allowlist:
+                client_ip = request.client.host if request.client else "0.0.0.0"
+                allowed = any(
+                    _ipaddress.ip_address(client_ip) in _ipaddress.ip_network(entry.cidr, strict=False)
+                    for entry in allowlist
+                )
+                if not allowed:
+                    from starlette.responses import JSONResponse
+                    logger.warning("ip_blocked", client_ip=client_ip)
+                    # Must include CORS headers so the browser can read the 403
+                    origin = request.headers.get("origin", "")
+                    resp_headers = {}
+                    if origin and origin in cors_origins:
+                        resp_headers["Access-Control-Allow-Origin"] = origin
+                        resp_headers["Access-Control-Allow-Credentials"] = "true"
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": f"IP address {client_ip} not in allowlist"},
+                        headers=resp_headers,
+                    )
+        except Exception as exc:
+            # Don't block requests if the allowlist check itself fails
+            logger.error("ip_allowlist_check_error", error=str(exc))
+
     response = await call_next(request)
     response.headers["x-correlation-id"] = correlation_id
 
-    # Security Headers
+    # ── Security Headers ──────────────────────────────────────────
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     if ENABLE_DOCS:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:;"
         )
+    else:
+        response.headers["Content-Security-Policy"] = "default-src 'self';"
 
     return response
 
@@ -229,6 +344,8 @@ app.include_router(docs.router, prefix="/docs", tags=["docs"])
 app.include_router(brain_routes.router, prefix="/brain", tags=["brain"])
 app.include_router(events.router, prefix="/events", tags=["events"])
 app.include_router(users.router, prefix="/users", tags=["users"])
+app.include_router(ip_allowlist.router, prefix="/settings/ip-allowlist", tags=["settings"])
+app.include_router(email_events.router, prefix="/notify", tags=["notifications"])
 
 
 @app.get("/healthz", tags=["health"])

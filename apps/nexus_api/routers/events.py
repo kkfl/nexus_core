@@ -16,6 +16,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.nexus_api.dependencies import RequireRole
 from packages.shared.db import get_db
 from packages.shared.events.store import query_events
 from packages.shared.events.transport import EventBus
@@ -38,6 +39,7 @@ def _get_bus() -> EventBus:
 @router.get("")
 async def list_events(
     db: AsyncSession = Depends(get_db),
+    current_user=Depends(RequireRole(["admin"])),
     event_type: str | None = Query(None, description="Filter by event type"),
     correlation_id: str | None = Query(None, description="Filter by correlation ID"),
     tenant_id: str | None = Query(None, description="Filter by tenant"),
@@ -59,7 +61,9 @@ async def list_events(
 
 
 @router.get("/streams")
-async def list_streams() -> dict[str, Any]:
+async def list_streams(
+    current_user=Depends(RequireRole(["admin"])),
+) -> dict[str, Any]:
     """List active Redis event streams with consumer group info."""
     bus = _get_bus()
     streams = await bus.list_streams()
@@ -69,6 +73,7 @@ async def list_streams() -> dict[str, Any]:
 @router.get("/dlq")
 async def list_dlq(
     count: int = Query(50, ge=1, le=500),
+    current_user=Depends(RequireRole(["admin"])),
 ) -> dict[str, Any]:
     """View dead-letter queue entries."""
     bus = _get_bus()

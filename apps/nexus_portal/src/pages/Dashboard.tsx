@@ -1,4 +1,5 @@
 import { Table, Typography, Tag, Space } from 'antd';
+import { TiltCard } from '../components/TiltCard';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
@@ -159,27 +160,17 @@ export default function Dashboard() {
             {/* ═══ Summary Cards ═══ */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
                 {summaryCards.map((card) => (
-                    <div
+                    <TiltCard
                         key={card.label}
+                        className={card.clickable ? 'nx-card-hover' : ''}
                         onClick={card.clickable ? card.onClick : undefined}
                         style={{
                             ...cardStyle(t, card.glow),
                             cursor: card.clickable ? 'pointer' : 'default',
-                            position: 'relative',
-                            overflow: 'hidden',
-                        }}
-                        onMouseEnter={(e) => {
-                            if (card.clickable) {
-                                (e.currentTarget as HTMLElement).style.borderColor = card.glow;
-                                (e.currentTarget as HTMLElement).style.boxShadow = `0 0 30px ${card.glow}25`;
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            if (card.clickable) {
-                                (e.currentTarget as HTMLElement).style.borderColor = t.border;
-                                (e.currentTarget as HTMLElement).style.boxShadow = t.glow(card.glow);
-                            }
-                        }}
+                            '--nx-glow': card.glow,
+                        } as React.CSSProperties}
+                        intensity={10}
+                        scale={1.03}
                     >
                         {/* Glow line at top */}
                         <div style={{
@@ -213,7 +204,7 @@ export default function Dashboard() {
                                 </Text>
                             )}
                         </div>
-                    </div>
+                    </TiltCard>
                 ))}
             </div>
 

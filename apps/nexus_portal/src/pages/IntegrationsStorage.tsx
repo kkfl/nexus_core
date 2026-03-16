@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
+import { TiltCard } from '../components/TiltCard';
 
 const { Title, Text } = Typography;
 
@@ -195,9 +196,9 @@ export default function IntegrationsStorage() {
 
             {/* Stats */}
             <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Storage Targets</Text>} value={totalTargets} prefix={<CloudServerOutlined />} valueStyle={{ color: t.text }} /></div></Col>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Active Targets</Text>} value={activeTargets} valueStyle={{ color: t.green }} prefix={<CheckCircleOutlined />} /></div></Col>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Total Jobs</Text>} value={totalJobs} prefix={<DatabaseOutlined />} valueStyle={{ color: t.text }} /></div></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.accent } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Storage Targets</Text>} value={totalTargets} prefix={<CloudServerOutlined />} valueStyle={{ color: t.text }} /></TiltCard></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.green } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Active Targets</Text>} value={activeTargets} valueStyle={{ color: t.green }} prefix={<CheckCircleOutlined />} /></TiltCard></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.accent } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Total Jobs</Text>} value={totalJobs} prefix={<DatabaseOutlined />} valueStyle={{ color: t.text }} /></TiltCard></Col>
             </Row>
 
             {/* Tabs */}

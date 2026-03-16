@@ -15,6 +15,7 @@ from apps.dns_agent.schemas import (
     RecordOut,
 )
 from apps.dns_agent.store import postgres as store
+from packages.shared.alerts import send_alert
 from packages.shared.events.api import emit_event
 
 logger = structlog.get_logger(__name__)
@@ -109,6 +110,8 @@ async def batch_upsert(
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.record.upserted")
 
+    send_alert("dns_record_upsert", identity.service_id, f"Zone: {payload.zone} — {len(payload.records)} record(s)")
+
     return JobCreateResponse(
         job_id=job.id,
         status="pending",
@@ -168,6 +171,8 @@ async def batch_delete(
         )
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.record.deleted")
+
+    send_alert("dns_record_delete", identity.service_id, f"Zone: {payload.zone} — {len(payload.records)} record(s)")
 
     return JobCreateResponse(
         job_id=job.id,

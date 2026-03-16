@@ -26,10 +26,14 @@ import IntegrationsCarrier from './pages/IntegrationsCarrier';
 import IntegrationsEmail from './pages/IntegrationsEmail';
 import IntegrationsDns from './pages/IntegrationsDns';
 import InfrastructureServers from './pages/InfrastructureServers';
+import MonitoringDashboard from './pages/MonitoringDashboard';
 import MailboxInbox from './pages/MailboxInbox';
 import Secrets from './pages/Secrets';
 import Docs from './pages/Docs';
 import Users from './pages/Users';
+import ApiKeys from './pages/ApiKeys';
+import AuditLog from './pages/AuditLog';
+import IpAllowlist from './pages/IpAllowlist';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -101,6 +105,9 @@ function App() {
             {/* Infrastructure */}
             <Route path="infrastructure/servers" element={<InfrastructureServers />} />
 
+            {/* Monitoring */}
+            <Route path="monitoring/dashboard" element={<MonitoringDashboard />} />
+
             {/* Docs */}
             <Route path="docs" element={<Docs />} />
 
@@ -108,6 +115,21 @@ function App() {
             <Route path="settings/users" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <Users />
+              </ProtectedRoute>
+            } />
+            <Route path="settings/api-keys" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <ApiKeys />
+              </ProtectedRoute>
+            } />
+            <Route path="settings/audit-log" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AuditLog />
+              </ProtectedRoute>
+            } />
+            <Route path="settings/ip-allowlist" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <IpAllowlist />
               </ProtectedRoute>
             } />
           </Route>

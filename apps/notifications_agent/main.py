@@ -30,7 +30,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from apps.notifications_agent.store.postgres import _get_engine
 
     _get_engine()
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("notifications-agent")
     yield
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
     logger.info("notifications_agent_shutdown")
 
 

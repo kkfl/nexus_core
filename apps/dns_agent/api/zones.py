@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.dns_agent.auth.identity import ServiceIdentity, get_service_identity
 from apps.dns_agent.schemas import RecordOut, ZoneCreate, ZoneOut
 from apps.dns_agent.store import postgres as store
+from packages.shared.alerts import send_alert
 from packages.shared.events.api import emit_event
 
 logger = structlog.get_logger(__name__)
@@ -105,6 +106,8 @@ async def unregister_zone(
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.zone.unregistered")
 
+    send_alert("dns_zone_delete", identity.service_id, f"Zone: {zone_name}")
+
     return {
         "status": "removed",
         "zone_name": zone_name,
@@ -180,6 +183,8 @@ async def create_zone(
         )
     except Exception:
         logger.warning("event_emit_failed", event_type="dns.zone.created")
+
+    send_alert("dns_zone_create", identity.service_id, f"Zone: {payload.zone_name} (provider: {payload.provider})")
 
     return ZoneOut.model_validate(zone)
 

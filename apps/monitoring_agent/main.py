@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.monitoring_agent import metrics
 from apps.monitoring_agent.api.checks import router as checks_router
+from apps.monitoring_agent.api.nagios import router as nagios_router
 from apps.monitoring_agent.api.status import router as status_router
 from apps.monitoring_agent.api.targets import router as targets_router
 from apps.monitoring_agent.config import get_settings
@@ -31,8 +32,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     _get_engine()
 
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("monitoring-agent")
+
     yield
 
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
     logger.info("monitoring_agent_shutdown")
 
 
@@ -70,6 +76,7 @@ async def request_middleware(request: Request, call_next):
 app.include_router(targets_router)
 app.include_router(checks_router)
 app.include_router(status_router)
+app.include_router(nagios_router)
 
 
 @app.get("/healthz", tags=["ops"])

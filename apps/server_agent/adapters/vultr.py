@@ -18,6 +18,7 @@ from apps.server_agent.adapters.base import (
     ConsoleAccess,
     CreateInstanceSpec,
     InstanceMeta,
+    InstanceResourceMeta,
     ServerProviderAdapter,
     SnapshotMeta,
 )
@@ -109,10 +110,46 @@ class VultrAdapter(ServerProviderAdapter):
     # -- Console --
 
     async def get_console_url(self, provider_id: str) -> ConsoleAccess:
-        data = await self._request("GET", f"/v2/instances/{provider_id}/vnc")
+        # Vultr cloud instances don't expose a VNC API endpoint.
+        # Redirect to the Vultr customer portal overview page for this
+        # instance where the user can click "View Console".
+        url = f"https://my.vultr.com/subs/?id={provider_id}"
         return ConsoleAccess(
-            url=data.get("vnc", {}).get("url", ""),
-            type="vnc",
+            url=url,
+            type="vultr_portal",
+        )
+
+    # -- Live resource monitoring --
+
+    async def get_instance_resources(self, provider_id: str) -> InstanceResourceMeta:
+        """Fetch instance specs + bandwidth from Vultr (no live CPU/RAM available)."""
+        inst_data = await self._request("GET", f"/v2/instances/{provider_id}")
+        inst = inst_data.get("instance", {})
+
+        # Bandwidth allocation
+        bw_in_gb: float | None = None
+        bw_out_gb: float | None = None
+        try:
+            bw_data = await self._request("GET", f"/v2/instances/{provider_id}/bandwidth")
+            bw = bw_data.get("bandwidth", {})
+            # Sum all monthly entries (bytes -> GB)
+            total_in = sum(day.get("incoming_bytes", 0) for day in bw.values())
+            total_out = sum(day.get("outgoing_bytes", 0) for day in bw.values())
+            bw_in_gb = round(total_in / (1024 ** 3), 2)
+            bw_out_gb = round(total_out / (1024 ** 3), 2)
+        except Exception:
+            logger.debug("vultr_bandwidth_unavailable", provider_id=provider_id)
+
+        return InstanceResourceMeta(
+            provider="vultr",
+            status=inst.get("power_status", "unknown"),
+            cpu_cores=inst.get("vcpu_count", 0),
+            ram_used_mb=inst.get("ram", 0),      # allocated (Vultr doesn't expose live)
+            ram_total_mb=inst.get("ram", 0),
+            disk_total_gb=inst.get("disk", 0),
+            bandwidth_in_gb=bw_in_gb,
+            bandwidth_out_gb=bw_out_gb,
+            uptime_seconds=0,  # Vultr API doesn't provide uptime
         )
 
     # -- Snapshots --

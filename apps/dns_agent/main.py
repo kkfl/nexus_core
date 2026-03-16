@@ -44,7 +44,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await conn.run_sync(DnsBase.metadata.create_all)
     except Exception as exc:
         logger.warning("dns_table_create_skipped", error=str(exc))
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("dns-agent")
     yield
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
     logger.info("dns_agent_shutdown")
 
 

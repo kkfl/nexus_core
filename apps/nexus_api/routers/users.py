@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from apps.nexus_api.dependencies import RequireRole, get_password_hash
+from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
 from packages.shared.models import User
@@ -52,6 +53,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: str | None = None
     is_active: bool | None = None
+    password: str | None = None
 
 
 class PasswordReset(BaseModel):
@@ -97,6 +99,10 @@ async def create_user(
     )
     await db.commit()
     await db.refresh(user)
+    send_security_alert(
+        "user_create", admin.email,
+        f"New user: {body.email} (role: {body.role})",
+    )
     return UserOut.from_user(user)
 
 
@@ -131,10 +137,28 @@ async def update_user(
         changes["is_active"] = body.is_active
         user.is_active = body.is_active
 
+    if body.password is not None:
+        if len(body.password) < 8:
+            raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+        user.password_hash = get_password_hash(body.password)
+        user.refresh_token_hash = None  # Invalidate active sessions
+        changes["password"] = "***changed***"
+
     if changes:
         log_audit_event(db, "user_update", "user", admin, str(user_id), changes)
         await db.commit()
         await db.refresh(user)
+        detail_parts = [f"User: {user.email}"]
+        if "password" in changes:
+            detail_parts.append("Password changed")
+        if "role" in changes:
+            detail_parts.append(f"Role → {changes['role']}")
+        if "is_active" in changes:
+            detail_parts.append(f"Active → {changes['is_active']}")
+        if "email" in changes:
+            detail_parts.append(f"Email → {changes['email']}")
+        sev = "critical" if "password" in changes else "warn"
+        send_security_alert("user_update", admin.email, ", ".join(detail_parts), severity=sev)
 
     return UserOut.from_user(user)
 
@@ -155,4 +179,8 @@ async def reset_password(
     user.refresh_token_hash = None  # Invalidate any active sessions
     log_audit_event(db, "user_password_reset", "user", admin, str(user_id))
     await db.commit()
+    send_security_alert(
+        "user_password_reset", admin.email,
+        f"Password reset for: {user.email}",
+    )
     return {"status": "password_reset", "user_id": user_id}

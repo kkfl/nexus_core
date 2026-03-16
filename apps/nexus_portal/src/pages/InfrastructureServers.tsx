@@ -66,6 +66,30 @@ export default function InfrastructureServers() {
         refetchInterval: 30000,
     });
 
+    // ── Per-server live resources ──
+    const { data: serverResources, isLoading: serverResourcesLoading } = useQuery({
+        queryKey: ['server-resources', selectedServer?.id],
+        queryFn: async () => {
+            const r = await serverClient.get(`/servers/v1/servers/${selectedServer.id}/resources`);
+            return r.data;
+        },
+        enabled: !!selectedServer?.id && selectedServer?.power_status === 'running',
+        refetchInterval: 15000,
+    });
+
+    // ── MeshCentral device enrichment ──
+    const { data: meshDevice } = useQuery({
+        queryKey: ['meshcentral-device', selectedServer?.label, selectedServer?.ip_v4],
+        queryFn: async () => {
+            const params = selectedServer.ip_v4 ? `?ip=${selectedServer.ip_v4}` : '';
+            const r = await serverClient.get(`/servers/v1/meshcentral/devices/${encodeURIComponent(selectedServer.label)}${params}`);
+            return r.data;
+        },
+        enabled: !!selectedServer?.label,
+        retry: false,
+        staleTime: 120000,
+    });
+
     // ── Mutations ──
     const syncMut = useMutation({
         mutationFn: async (hostId?: string) => {
@@ -102,7 +126,9 @@ export default function InfrastructureServers() {
         onSuccess: (data) => {
             if (data.url) {
                 window.open(data.url, '_blank');
-                message.success('Console opened in new tab');
+                const hint = data.type === 'proxmox_ui' ? ' (log into Proxmox if prompted)' :
+                             data.type === 'vultr_portal' ? ' (log into Vultr if prompted)' : '';
+                message.success(`Console opened in new tab${hint}`);
             } else {
                 message.info('No console URL available from provider');
             }
@@ -638,7 +664,7 @@ export default function InfrastructureServers() {
                         {/* Quick info cards */}
                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
                             {[
-                                { label: 'IPv4', value: selectedServer.ip_v4 || '—', mono: true },
+                                { label: 'IPv4', value: selectedServer.ip_v4 || meshDevice?.ip || '—', mono: true },
                                 { label: 'IPv6', value: selectedServer.ip_v6 ? `${selectedServer.ip_v6.substring(0, 20)}…` : '—', mono: true },
                                 { label: 'Region', value: selectedServer.region || '—' },
                                 { label: 'Plan', value: selectedServer.plan || '—' },
@@ -649,6 +675,225 @@ export default function InfrastructureServers() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Live Resources */}
+                        {selectedServer.power_status === 'running' && (
+                            <div style={{ ...cardStyle(), marginBottom: 16 }}>
+                                <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                                    <ThunderboltOutlined style={{ marginRight: 6 }} />
+                                    LIVE RESOURCES
+                                    {serverResourcesLoading && <LoadingOutlined style={{ marginLeft: 8, fontSize: 10 }} spin />}
+                                </Text>
+                                {serverResources ? (
+                                    <div>
+                                        {/* Proxmox: CPU + RAM gauges */}
+                                        {serverResources.provider === 'proxmox' && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                                                {[
+                                                    {
+                                                        label: 'CPU',
+                                                        icon: '⚡',
+                                                        pct: serverResources.cpu_usage_pct,
+                                                        detail: `${serverResources.cpu_cores} cores`,
+                                                        color: (serverResources.cpu_usage_pct ?? 0) > 80 ? MN.red : (serverResources.cpu_usage_pct ?? 0) > 50 ? MN.orange : MN.green,
+                                                    },
+                                                    {
+                                                        label: 'RAM',
+                                                        icon: '💾',
+                                                        pct: serverResources.ram_usage_pct,
+                                                        detail: `${Math.round((serverResources.ram_used_mb || 0) / 1024 * 10) / 10} GB / ${Math.round((serverResources.ram_total_mb || 0) / 1024 * 10) / 10} GB`,
+                                                        color: (serverResources.ram_usage_pct ?? 0) > 85 ? MN.red : (serverResources.ram_usage_pct ?? 0) > 60 ? MN.orange : MN.green,
+                                                    },
+                                                ].map(item => (
+                                                    <div key={item.label}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                            <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
+                                                            <Text style={{ color: '#fff', fontWeight: 600, fontSize: 12 }}>{item.pct != null ? `${item.pct}%` : '—'}</Text>
+                                                        </div>
+                                                        <div style={{ background: 'rgba(30,41,59,0.8)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                                                            <div style={{
+                                                                width: `${Math.min(item.pct ?? 0, 100)}%`,
+                                                                height: '100%',
+                                                                background: `linear-gradient(90deg, ${item.color}, ${item.color}88)`,
+                                                                borderRadius: 4,
+                                                                transition: 'width 0.6s ease',
+                                                                boxShadow: `0 0 8px ${item.color}44`,
+                                                            }} />
+                                                        </div>
+                                                        <Text style={{ color: MN.muted, fontSize: 10, marginTop: 2, display: 'block' }}>{item.detail}</Text>
+                                                    </div>
+                                                ))}
+                                                {serverResources.uptime_seconds > 0 && (
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                                                        <Text style={{ color: MN.muted, fontSize: 11 }}>⏱ Uptime</Text>
+                                                        <Text style={{ color: MN.text, fontSize: 11 }}>
+                                                            {Math.floor(serverResources.uptime_seconds / 86400)}d {Math.floor((serverResources.uptime_seconds % 86400) / 3600)}h
+                                                        </Text>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Vultr: Bandwidth */}
+                                        {serverResources.provider === 'vultr' && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                                {[
+                                                    { label: 'Bandwidth In', value: serverResources.bandwidth_in_gb, icon: '📥', color: MN.cyan },
+                                                    { label: 'Bandwidth Out', value: serverResources.bandwidth_out_gb, icon: '📤', color: MN.purple },
+                                                ].map(item => (
+                                                    <div key={item.label} style={{ textAlign: 'center' }}>
+                                                        <div style={{ fontSize: 11, color: MN.muted }}>{item.icon} {item.label}</div>
+                                                        <div style={{ fontSize: 22, fontWeight: 700, color: item.color, marginTop: 4 }}>
+                                                            {item.value != null ? `${item.value} GB` : '—'}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* GPU: Utilization, VRAM, Temp, Power + LLM + Voice */}
+                                        {serverResources.provider === 'gpu' && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                                                {/* GPU Name + Count header */}
+                                                {serverResources.gpu_name && (
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Text style={{ color: MN.accent, fontSize: 13, fontWeight: 600 }}>
+                                                            🎮 {serverResources.gpu_name}
+                                                        </Text>
+                                                        {serverResources.gpu_count != null && serverResources.gpu_count > 1 && (
+                                                            <Tag color="purple" style={{ fontSize: 10 }}>×{serverResources.gpu_count}</Tag>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* GPU Utilization + VRAM bars */}
+                                                {[
+                                                    {
+                                                        label: 'GPU',
+                                                        icon: '⚡',
+                                                        pct: serverResources.gpu_usage_pct,
+                                                        detail: serverResources.gpu_temp_c != null ? `${serverResources.gpu_temp_c}°C` : '',
+                                                        color: (serverResources.gpu_usage_pct ?? 0) > 90 ? MN.red : (serverResources.gpu_usage_pct ?? 0) > 60 ? MN.orange : MN.green,
+                                                    },
+                                                    {
+                                                        label: 'VRAM',
+                                                        icon: '💾',
+                                                        pct: serverResources.gpu_vram_usage_pct,
+                                                        detail: serverResources.gpu_vram_used_mb != null && serverResources.gpu_vram_total_mb
+                                                            ? `${Math.round(serverResources.gpu_vram_used_mb / 1024 * 10) / 10} / ${Math.round(serverResources.gpu_vram_total_mb / 1024 * 10) / 10} GB`
+                                                            : '',
+                                                        color: (serverResources.gpu_vram_usage_pct ?? 0) > 90 ? MN.red : (serverResources.gpu_vram_usage_pct ?? 0) > 70 ? MN.orange : MN.green,
+                                                    },
+                                                ].filter(item => item.pct != null).map(item => (
+                                                    <div key={item.label}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                            <Text style={{ color: MN.muted, fontSize: 12 }}>{item.icon} {item.label}</Text>
+                                                            <Text style={{ color: '#fff', fontWeight: 600, fontSize: 12 }}>{item.pct != null ? `${item.pct}%` : '—'}</Text>
+                                                        </div>
+                                                        <div style={{ background: 'rgba(30,41,59,0.8)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                                                            <div style={{
+                                                                width: `${Math.min(item.pct ?? 0, 100)}%`,
+                                                                height: '100%',
+                                                                background: `linear-gradient(90deg, ${item.color}, ${item.color}88)`,
+                                                                borderRadius: 4,
+                                                                transition: 'width 0.6s ease',
+                                                                boxShadow: `0 0 8px ${item.color}44`,
+                                                            }} />
+                                                        </div>
+                                                        {item.detail && <Text style={{ color: MN.muted, fontSize: 10, marginTop: 2, display: 'block' }}>{item.detail}</Text>}
+                                                    </div>
+                                                ))}
+
+                                                {/* Power draw */}
+                                                {serverResources.gpu_power_draw_w != null && (
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                        <Text style={{ color: MN.muted, fontSize: 11 }}>🔌 Power Draw</Text>
+                                                        <Text style={{ color: MN.text, fontSize: 11, fontWeight: 600 }}>{serverResources.gpu_power_draw_w} W</Text>
+                                                    </div>
+                                                )}
+
+                                                {/* LLM Inference section */}
+                                                {serverResources.llm_model_loaded && (
+                                                    <>
+                                                        <div style={{ borderTop: `1px solid ${MN.border}`, paddingTop: 8, marginTop: 4 }}>
+                                                            <Text style={{ color: MN.muted, fontSize: 10, letterSpacing: 0.8, display: 'block', marginBottom: 8 }}>
+                                                                🧠 LLM INFERENCE
+                                                            </Text>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                                            <div><Text style={{ color: MN.muted, fontSize: 10 }}>Model</Text><br /><Text style={{ color: MN.accent, fontSize: 12, fontWeight: 600 }}>{serverResources.llm_model_loaded}</Text></div>
+                                                            <div><Text style={{ color: MN.muted, fontSize: 10 }}>Active Requests</Text><br /><Text style={{ color: MN.text, fontSize: 18, fontWeight: 700 }}>{serverResources.llm_requests_active ?? '—'}</Text></div>
+                                                            <div><Text style={{ color: MN.muted, fontSize: 10 }}>Avg Latency</Text><br /><Text style={{ color: MN.text, fontSize: 14, fontWeight: 600 }}>{serverResources.llm_avg_latency_ms != null ? `${serverResources.llm_avg_latency_ms} ms` : '—'}</Text></div>
+                                                            <div><Text style={{ color: MN.muted, fontSize: 10 }}>Throughput</Text><br /><Text style={{ color: MN.green, fontSize: 14, fontWeight: 600 }}>{serverResources.llm_tokens_per_sec != null ? `${serverResources.llm_tokens_per_sec} tok/s` : '—'}</Text></div>
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                {/* Voice Agent section */}
+                                                {serverResources.voice_concurrent_calls != null && (
+                                                    <>
+                                                        <div style={{ borderTop: `1px solid ${MN.border}`, paddingTop: 8, marginTop: 4 }}>
+                                                            <Text style={{ color: MN.muted, fontSize: 10, letterSpacing: 0.8, display: 'block', marginBottom: 8 }}>
+                                                                🎙 VOICE AGENT
+                                                            </Text>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                                            <div style={{ textAlign: 'center' }}>
+                                                                <Text style={{ color: MN.muted, fontSize: 10 }}>Calls</Text>
+                                                                <div style={{ fontSize: 22, fontWeight: 700, color: MN.cyan }}>
+                                                                    {serverResources.voice_concurrent_calls}
+                                                                    {serverResources.voice_max_concurrent != null && <span style={{ fontSize: 11, color: MN.muted, fontWeight: 400 }}> / {serverResources.voice_max_concurrent}</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ textAlign: 'center' }}>
+                                                                <Text style={{ color: MN.muted, fontSize: 10 }}>Latency</Text>
+                                                                <div style={{ fontSize: 18, fontWeight: 700, color: (serverResources.voice_avg_latency_ms ?? 0) > 500 ? MN.red : (serverResources.voice_avg_latency_ms ?? 0) > 200 ? MN.orange : MN.green }}>
+                                                                    {serverResources.voice_avg_latency_ms != null ? `${serverResources.voice_avg_latency_ms}ms` : '—'}
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ textAlign: 'center' }}>
+                                                                <Text style={{ color: MN.muted, fontSize: 10 }}>Today</Text>
+                                                                <div style={{ fontSize: 18, fontWeight: 700, color: MN.text }}>
+                                                                    {serverResources.voice_total_calls_today ?? '—'}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <Text style={{ color: MN.muted, fontStyle: 'italic', fontSize: 12 }}>Loading resources…</Text>
+                                )}
+                            </div>
+                        )}
+
+                        {/* MeshCentral Agent Info */}
+                        {meshDevice && (
+                            <div style={{ ...cardStyle(), marginBottom: 16 }}>
+                                <Text style={{ color: MN.muted, fontSize: 11, letterSpacing: 1, display: 'block', marginBottom: 12 }}>
+                                    🌐 MESHCENTRAL AGENT
+                                </Text>
+                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                                    {[
+                                        { label: 'Public IP', value: meshDevice.ip || '—', mono: true },
+                                        { label: 'Status', value: meshDevice.connected ? '🟢 Connected' : '🔴 Offline' },
+                                        { label: 'OS', value: meshDevice.os_desc || '—' },
+                                        { label: 'Group', value: meshDevice.group_name || '—' },
+                                        ...(meshDevice.last_boot ? [{
+                                            label: 'Last Boot',
+                                            value: new Date(meshDevice.last_boot).toLocaleDateString() + ' ' + new Date(meshDevice.last_boot).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                        }] : []),
+                                    ].map(item => (
+                                        <div key={item.label} style={{ background: 'rgba(17,24,39,0.5)', border: `1px solid ${MN.border}`, borderRadius: 6, padding: '6px 12px', minWidth: 110 }}>
+                                            <Text style={{ color: MN.muted, fontSize: 9, letterSpacing: 0.5, display: 'block' }}>{item.label}</Text>
+                                            <Text style={{ color: MN.text, fontWeight: 600, fontFamily: (item as any).mono ? 'monospace' : 'inherit', fontSize: 12 }}>{item.value}</Text>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Specs */}
                         <div style={{ ...cardStyle(), marginBottom: 16 }}>

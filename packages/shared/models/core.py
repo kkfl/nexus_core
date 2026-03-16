@@ -35,8 +35,10 @@ class ApiKey(Base):
     owner_id: Mapped[int]
     key_hash: Mapped[str]
     name: Mapped[str]
+    is_active: Mapped[bool] = mapped_column(default=True)
     last_used_at: Mapped[datetime.datetime | None]
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
+
 
 
 class Agent(Base):
@@ -491,3 +493,16 @@ class AskFeedback(Base):
     rating: Mapped[str]  # "good" | "bad"
     note: Mapped[str | None]
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
+
+
+class IpAllowlistEntry(Base):
+    """IP allowlist entry. When entries exist, only matching IPs can access the API."""
+
+    __tablename__ = "ip_allowlist"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    cidr: Mapped[str]  # e.g. '10.0.0.0/8' or '1.2.3.4/32'
+    label: Mapped[str]  # human-readable label, e.g. 'Office VPN'
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
+

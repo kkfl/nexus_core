@@ -201,18 +201,11 @@ async def dashboard_summary(
                     if status == "active":
                         active_agents += 1
 
-                    # Find latest event produced by this agent
-                    stmt = select(func.max(BusEvent.occurred_at)).where(
-                        BusEvent.produced_by == name
-                    )
-                    result = await db.execute(stmt)
-                    latest_timestamp = result.scalar()
-
                     recent_activity.append(
                         {
                             "name": name,
                             "status": status,
-                            "last_seen_at": latest_timestamp if latest_timestamp else None,
+                            "last_seen_at": a.get("last_heartbeat"),
                         }
                     )
         # Sort activity by most recently seen

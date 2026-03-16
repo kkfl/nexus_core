@@ -8,7 +8,7 @@ export const emailClient = axios.create({
     headers: {
         'Content-Type': 'application/json',
         'X-Service-ID': 'nexus',
-        'X-Agent-Key': 'nexus-email-key-change-me',
+        'X-Agent-Key': import.meta.env.VITE_EMAIL_AGENT_KEY || '',
     },
     timeout: 15000,
 });

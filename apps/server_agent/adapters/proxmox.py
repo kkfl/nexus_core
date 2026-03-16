@@ -16,6 +16,7 @@ from apps.server_agent.adapters.base import (
     ConsoleAccess,
     CreateInstanceSpec,
     InstanceMeta,
+    InstanceResourceMeta,
     ServerProviderAdapter,
     SnapshotMeta,
 )
@@ -236,14 +237,52 @@ class ProxmoxAdapter(ServerProviderAdapter):
     # -- Console --
 
     async def get_console_url(self, provider_id: str) -> ConsoleAccess:
-        data = await self._request(
-            "POST", f"/api2/json/nodes/{self._node}/qemu/{provider_id}/vncproxy"
-        )
-        port = data.get("port", "")
-        ticket = data.get("ticket", "")
+        # Proxmox noVNC page requires a PVEAuthCookie set on the Proxmox
+        # domain, which we can't provide cross-origin.  Instead, deep-link
+        # to the Proxmox web GUI console tab for this VM.  The user needs
+        # to be logged into the Proxmox web UI in their browser.
+        import urllib.parse
+
         base = str(self._client.base_url).rstrip("/")
-        url = f"{base}/?console=kvm&novnc=1&vmid={provider_id}&node={self._node}&port={port}"
-        return ConsoleAccess(url=url, type="novnc", token=ticket)
+        # Proxmox deep-link hash: #v1:0:=qemu/<vmid>:4::::::: opens the
+        # Console tab for the QEMU VM directly.
+        fragment = urllib.parse.quote(f"v1:0:=qemu/{provider_id}:4:::::::", safe="")
+        url = f"{base}/#{fragment}"
+        return ConsoleAccess(url=url, type="proxmox_ui")
+
+    # -- Live resource monitoring --
+
+    async def get_instance_resources(self, provider_id: str) -> InstanceResourceMeta:
+        """Fetch live CPU/RAM/disk usage for a single QEMU VM."""
+        data = await self._request(
+            "GET", f"/api2/json/nodes/{self._node}/qemu/{provider_id}/status/current"
+        )
+        if not isinstance(data, dict):
+            return InstanceResourceMeta(provider="proxmox")
+
+        cpu_pct = round(data.get("cpu", 0) * 100, 1)
+        cpus = data.get("cpus", data.get("cores", 0))
+
+        mem_used = data.get("mem", 0)
+        mem_total = data.get("maxmem", 0)
+        mem_used_mb = mem_used // (1024 ** 2) if mem_used else 0
+        mem_total_mb = mem_total // (1024 ** 2) if mem_total else 0
+        mem_pct = round((mem_used / mem_total * 100) if mem_total else 0, 1)
+
+        disk_total = data.get("maxdisk", 0)
+        disk_total_gb = round(disk_total / (1024 ** 3), 1) if disk_total else 0
+
+        return InstanceResourceMeta(
+            provider="proxmox",
+            status=data.get("status", "unknown"),
+            cpu_usage_pct=cpu_pct,
+            cpu_cores=cpus,
+            ram_used_mb=mem_used_mb,
+            ram_total_mb=mem_total_mb,
+            ram_usage_pct=mem_pct,
+            disk_total_gb=disk_total_gb,
+            uptime_seconds=data.get("uptime", 0),
+        )
 
     # -- Snapshots (stubs -- gated by PROXMOX_ENABLE_SNAPSHOTS) --
 

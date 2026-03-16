@@ -67,6 +67,8 @@ services:
       - NEXUS_MASTER_KEY=${NEXUS_MASTER_KEY}
       - REGISTRY_BASE_URL=http://agent-registry:8012
       - NEXUS_REGISTRY_AGENT_KEY=nexus-registry-key
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+      - NEXUS_NOTIF_AGENT_KEY=${NEXUS_NOTIF_AGENT_KEY:-nexus-notif-key-change-me}
     ports:
       - "8000:8000"
     depends_on:
@@ -155,6 +157,8 @@ services:
       - VAULT_BASE_URL=http://secrets-agent:8007
       - VAULT_SERVICE_ID=dns-agent
       - VAULT_AGENT_KEY=${DNS_VAULT_AGENT_KEY:-dns-vault-key-change-me}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+      - NEXUS_NOTIF_AGENT_KEY=${NEXUS_NOTIF_AGENT_KEY:-nexus-notif-key-change-me}
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
       - REDIS_URL=redis://redis:6379/0
     ports:
@@ -184,6 +188,8 @@ services:
       - VAULT_BASE_URL=http://secrets-agent:8007
       - VAULT_SERVICE_ID=server-agent
       - VAULT_AGENT_KEY=${SERVER_VAULT_AGENT_KEY:-server-vault-key-change-me}
+      - NOTIFICATIONS_BASE_URL=http://notifications-agent:8008
+      - NEXUS_NOTIF_AGENT_KEY=${NEXUS_NOTIF_AGENT_KEY:-nexus-notif-key-change-me}
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
       - PROXMOX_ENABLE_SNAPSHOTS=${PROXMOX_ENABLE_SNAPSHOTS:-false}
       - PROXMOX_VERIFY_SSL=${PROXMOX_VERIFY_SSL:-false}

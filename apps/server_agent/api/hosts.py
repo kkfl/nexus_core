@@ -15,6 +15,7 @@ from apps.server_agent.config import get_settings
 from apps.server_agent.models import ServerHost
 from apps.server_agent.schemas import HostCreate, HostOut, HostResourcesOut
 from apps.server_agent.store.postgres import get_db
+from packages.shared.alerts import send_alert
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/v1/hosts", tags=["hosts"])
@@ -41,6 +42,7 @@ async def create_host(body: HostCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(host)
     logger.info("host_created", host_id=host.id, provider=body.provider, label=body.label)
+    send_alert("host_create", "server-agent", f"Host: {body.label} (provider: {body.provider})")
     return host
 
 
@@ -92,4 +94,5 @@ async def delete_host(host_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Host not found")
     await db.delete(host)
     await db.commit()
+    send_alert("host_delete", "server-agent", f"Host: {host.label} (provider: {host.provider})")
     logger.info("host_deleted", host_id=host_id)

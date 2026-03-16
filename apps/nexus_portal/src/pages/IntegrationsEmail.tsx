@@ -230,6 +230,7 @@ export default function IntegrationsEmail() {
                 queryClient.invalidateQueries({ queryKey: ['email_mailboxes'] });
                 setCreateOpen(false);
                 createForm.resetFields();
+                apiClient.post('/notify/email-events', { action: 'mailbox_create', details: `Mailbox: ${data.email}` }).catch(() => {});
             } else {
                 message.error(data.error || 'Creation failed', 8);
             }
@@ -245,6 +246,7 @@ export default function IntegrationsEmail() {
                 message.success(`Password updated for ${data.email}`);
                 setPasswordOpen(false);
                 passwordForm.resetFields();
+                apiClient.post('/notify/email-events', { action: 'mailbox_password', details: `Mailbox: ${data.email}` }).catch(() => {});
             } else {
                 message.error(data.error || 'Password update failed', 8);
             }
@@ -259,6 +261,7 @@ export default function IntegrationsEmail() {
             if (data.ok) {
                 message.success(`Mailbox ${data.email} ${data.action}`);
                 queryClient.invalidateQueries({ queryKey: ['email_mailboxes'] });
+                apiClient.post('/notify/email-events', { action: 'mailbox_disable', details: `Mailbox: ${data.email}` }).catch(() => {});
             } else {
                 message.error(data.error || 'Disable failed', 8);
             }
@@ -274,6 +277,7 @@ export default function IntegrationsEmail() {
                 message.success(`Alias ${data.alias} → ${data.destination} ${data.action}`);
                 setAliasOpen(false);
                 aliasForm.resetFields();
+                apiClient.post('/notify/email-events', { action: 'alias_add', details: `Alias: ${data.alias} → ${data.destination}` }).catch(() => {});
             } else {
                 message.error(data.error || 'Alias creation failed', 8);
             }
@@ -467,7 +471,7 @@ export default function IntegrationsEmail() {
         transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.3s',
         height: '100%',
     };
-    const panelCardHover = 'panel-card-hover';
+    const panelCardHover = 'nx-card-hover';
 
     // Outbound totals
     const sentTotal = sentStats?.totals?.sent ?? 0;
@@ -488,11 +492,6 @@ export default function IntegrationsEmail() {
     return (
         <div style={pageContainer(t)}>
             <style>{`
-                .${panelCardHover}:hover {
-                    transform: translateY(-3px);
-                    box-shadow: 0 8px 28px rgba(0,0,0,0.4) !important;
-                    border-color: #334155 !important;
-                }
                 .panel-clickable { cursor: pointer; }
                 .panel-clickable:hover { transform: translateY(-4px); box-shadow: 0 10px 32px rgba(0,0,0,0.5) !important; border-color: #52c41a44 !important; }
                 .health-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }

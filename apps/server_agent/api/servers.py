@@ -5,9 +5,10 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from packages.shared.alerts import send_alert
 
 from apps.server_agent.adapters.factory import get_adapter
 from apps.server_agent.client.vault_client import ServerVaultClient
@@ -17,6 +18,7 @@ from apps.server_agent.schemas import (
     CreateServerRequest,
     JobCreateResponse,
     ServerOut,
+    ServerResourcesOut,
 )
 from apps.server_agent.store.postgres import get_db
 
@@ -98,6 +100,69 @@ async def get_server(server_id: str, db: AsyncSession = Depends(get_db)):
     return server
 
 
+@router.get("/{server_id}/resources", response_model=ServerResourcesOut)
+async def get_server_resources(server_id: str, db: AsyncSession = Depends(get_db)):
+    """Fetch live resource usage for an individual server."""
+    server = await db.get(ServerInstance, server_id)
+    if not server:
+        raise HTTPException(404, "Server not found")
+
+    host = await db.get(ServerHost, server.host_id)
+    if not host:
+        raise HTTPException(500, "Host configuration not found")
+
+    try:
+        vault = ServerVaultClient()
+        secret = await vault.get_secret(
+            alias=host.secret_alias,
+            tenant_id=host.tenant_id,
+            env=host.env,
+            reason="server_resources_check",
+        )
+        adapter = await get_adapter(host.provider, host.config, secret)
+        resources = await adapter.get_instance_resources(server.provider_instance_id)
+
+        return ServerResourcesOut(
+            provider=resources.provider,
+            status=resources.status,
+            cpu_usage_pct=resources.cpu_usage_pct,
+            cpu_cores=resources.cpu_cores,
+            ram_used_mb=resources.ram_used_mb,
+            ram_total_mb=resources.ram_total_mb,
+            ram_usage_pct=resources.ram_usage_pct,
+            disk_total_gb=resources.disk_total_gb,
+            disk_used_gb=resources.disk_used_gb,
+            disk_usage_pct=resources.disk_usage_pct,
+            bandwidth_in_gb=resources.bandwidth_in_gb,
+            bandwidth_out_gb=resources.bandwidth_out_gb,
+            uptime_seconds=resources.uptime_seconds,
+            # GPU
+            gpu_name=resources.gpu_name,
+            gpu_usage_pct=resources.gpu_usage_pct,
+            gpu_vram_used_mb=resources.gpu_vram_used_mb,
+            gpu_vram_total_mb=resources.gpu_vram_total_mb,
+            gpu_vram_usage_pct=resources.gpu_vram_usage_pct,
+            gpu_temp_c=resources.gpu_temp_c,
+            gpu_power_draw_w=resources.gpu_power_draw_w,
+            gpu_count=resources.gpu_count,
+            # LLM
+            llm_model_loaded=resources.llm_model_loaded,
+            llm_requests_active=resources.llm_requests_active,
+            llm_avg_latency_ms=resources.llm_avg_latency_ms,
+            llm_tokens_per_sec=resources.llm_tokens_per_sec,
+            # Voice
+            voice_concurrent_calls=resources.voice_concurrent_calls,
+            voice_max_concurrent=resources.voice_max_concurrent,
+            voice_avg_latency_ms=resources.voice_avg_latency_ms,
+            voice_total_calls_today=resources.voice_total_calls_today,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("server_resources_failed", server_id=server_id, error=str(e))
+        raise HTTPException(502, f"Failed to fetch server resources: {e}")
+
+
 @router.post("", response_model=JobCreateResponse, status_code=202)
 async def create_server(body: CreateServerRequest, db: AsyncSession = Depends(get_db)):
     host = await db.get(ServerHost, body.host_id)
@@ -112,6 +177,7 @@ async def create_server(body: CreateServerRequest, db: AsyncSession = Depends(ge
         payload=body.model_dump(),
     )
     logger.info("server_create_queued", job_id=job.id, host_id=body.host_id, label=body.label)
+    send_alert("server_create", "server-agent", f"Label: {body.label} (host: {host.label})")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -130,6 +196,7 @@ async def delete_server(server_id: str, db: AsyncSession = Depends(get_db)):
         instance_id=server_id,
     )
     logger.info("server_delete_queued", job_id=job.id, server_id=server_id)
+    send_alert("server_delete", "server-agent", f"Server: {server.label or server_id}")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -151,6 +218,7 @@ async def start_server(server_id: str, db: AsyncSession = Depends(get_db)):
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
+    send_alert("server_start", "server-agent", f"Server: {server.label or server_id}")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -167,6 +235,7 @@ async def stop_server(server_id: str, db: AsyncSession = Depends(get_db)):
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
+    send_alert("server_stop", "server-agent", f"Server: {server.label or server_id}")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -183,6 +252,7 @@ async def reboot_server(server_id: str, db: AsyncSession = Depends(get_db)):
         {"server_id": server_id, "provider_instance_id": server.provider_instance_id},
         instance_id=server_id,
     )
+    send_alert("server_reboot", "server-agent", f"Server: {server.label or server_id}")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -203,6 +273,7 @@ async def rebuild_server(server_id: str, os_id: str, db: AsyncSession = Depends(
         },
         instance_id=server_id,
     )
+    send_alert("server_rebuild", "server-agent", f"Server: {server.label or server_id} (OS: {os_id})")
     return JobCreateResponse(job_id=job.id)
 
 
@@ -243,16 +314,16 @@ async def get_console(server_id: str, db: AsyncSession = Depends(get_db)):
             instance_label=server.label,
             provider=server.provider,
         )
-
-        return ConsoleOut(
-            url=console.url,
-            type=console.type,
-            token=console.token,
-            expires_at=console.expires_at,
-        )
     except Exception as e:
         logger.error("console_access_failed", server_id=server_id, error=str(e))
         raise HTTPException(502, f"Console access failed: {e}")
+
+    return ConsoleOut(
+        url=console.url,
+        type=console.type,
+        token=console.token,
+        expires_at=console.expires_at,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -49,7 +49,7 @@ api_key_header = APIKeyHeader(name="X-Nexus-Internal", auto_error=True)
 async def _get_internal_agent(
     api_key: str = Security(api_key_header), db: AsyncSession = Depends(get_db)
 ):
-    res = await db.execute(select(ApiKey).where(ApiKey.key == api_key, ApiKey.is_active is True))
+    res = await db.execute(select(ApiKey).where(ApiKey.key == api_key, ApiKey.is_active.is_(True)))
     key_record = res.scalars().first()
     if not key_record or key_record.owner_type != "agent":
         raise HTTPException(status_code=401, detail="Invalid or unauthorized internal key")
@@ -83,11 +83,10 @@ async def decrypt_internal_secret(
     # Option 1: secret belongs to this specific agent
     authorized = False
     if (
-        secret.owner_type == "agent"
-        and secret.owner_id == current_agent.id
-        or secret.owner_type == "pbx_target"
-        or secret.purpose == "storage_target_auth"
-        or secret.purpose == "carrier_target_auth"
+        (secret.owner_type == "agent" and secret.owner_id == current_agent.id)
+        or (secret.owner_type == "pbx_target")
+        or (secret.purpose == "storage_target_auth")
+        or (secret.purpose == "carrier_target_auth")
     ):
         authorized = True
 

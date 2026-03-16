@@ -42,7 +42,7 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.server_agent.api import backups, catalog, hosts, jobs, servers, snapshots
+from apps.server_agent.api import backups, catalog, hosts, jobs, meshcentral, servers, snapshots
 from apps.server_agent.config import get_settings
 from apps.server_agent.jobs.worker import run_worker_loop
 from apps.server_agent.models import ServerBase
@@ -55,6 +55,8 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("server_agent_startup", version="1.0.0")
+    from packages.shared.heartbeat import start_heartbeat
+    start_heartbeat("server-agent")
     engine = _get_engine()
     try:
         async with engine.begin() as conn:
@@ -82,6 +84,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     worker_task.cancel()
     with suppress(asyncio.CancelledError):
         await worker_task
+    from packages.shared.heartbeat import stop_heartbeat
+    await stop_heartbeat()
     logger.info("server_agent_shutdown")
 
 
@@ -179,3 +183,4 @@ app.include_router(snapshots.router)
 app.include_router(backups.router)
 app.include_router(jobs.router)
 app.include_router(catalog.router)
+app.include_router(meshcentral.router)

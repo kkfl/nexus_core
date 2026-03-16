@@ -18,6 +18,7 @@ from apps.nexus_api.dependencies import (
 )
 from packages.shared import metrics as metrics_emitter
 from packages.shared.audit import log_audit_event
+from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.config import settings
 from packages.shared.db import get_db
 from packages.shared.models import ApiKey, User
@@ -155,8 +156,26 @@ async def create_api_key(
     await db.commit()
     await db.refresh(db_api_key)
 
+    send_security_alert(
+        "api_key_create", current_user.email,
+        f"Key: {key_in.name} (owner: {key_in.owner_type}/{key_in.owner_id})",
+    )
+
     # Return the raw key just once
     return ApiKeyOut.model_validate(db_api_key, update={"key": raw_key})
+
+
+@router.get("/api-keys", response_model=list[ApiKeyOut])
+async def list_api_keys(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """List all API keys (admin/operator only). Raw keys are never returned."""
+    if current_user.role not in ["admin", "operator"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    res = await db.execute(select(ApiKey).order_by(ApiKey.created_at.desc()))
+    return res.scalars().all()
 
 
 @router.post("/api-keys/{id}/rotate", response_model=dict)
@@ -175,7 +194,35 @@ async def rotate_api_key(
     db_key.key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     log_audit_event(db, "api_key_rotate", "api_key", current_user, str(db_key.id))
     await db.commit()
+    send_security_alert(
+        "api_key_rotate", current_user.email,
+        f"Key rotated: {db_key.name} (id: {db_key.id})",
+    )
     return {"id": db_key.id, "raw_key": raw_key, "status": "rotated"}
+
+
+@router.patch("/api-keys/{id}")
+async def toggle_api_key(
+    id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> Any:
+    """Toggle an API key's active status."""
+    if current_user.role not in ["admin", "operator"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    res = await db.execute(select(ApiKey).where(ApiKey.id == id))
+    db_key = res.scalars().first()
+    if not db_key:
+        raise HTTPException(status_code=404, detail="API Key not found")
+
+    db_key.is_active = not db_key.is_active
+    action = "api_key_enable" if db_key.is_active else "api_key_disable"
+    log_audit_event(db, action, "api_key", current_user, str(db_key.id))
+    await db.commit()
+    send_security_alert(
+        "api_key_toggle", current_user.email,
+        f"Key {'enabled' if db_key.is_active else 'disabled'}: {db_key.name} (id: {db_key.id})",
+    )
+    return {"id": db_key.id, "is_active": db_key.is_active}
 
 
 @router.delete("/api-keys/{id}")
@@ -190,8 +237,13 @@ async def revoke_api_key(
     if not db_key:
         raise HTTPException(status_code=404, detail="API Key not found")
 
-    # We do a hard delete or archive, let's delete
+    key_name = db_key.name
     await db.delete(db_key)
     log_audit_event(db, "api_key_revoke", "api_key", current_user, str(id))
     await db.commit()
+    send_security_alert(
+        "api_key_delete", current_user.email,
+        f"Key deleted: {key_name} (id: {id})",
+    )
     return {"status": "revoked"}
+

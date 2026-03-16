@@ -20,6 +20,7 @@ import {
     SafetyOutlined,
     CameraOutlined,
     LineChartOutlined,
+    AlertOutlined,
     HddOutlined,
     PhoneOutlined,
     MailOutlined,
@@ -124,6 +125,14 @@ export default function AdminLayout() {
             ],
         },
         {
+            key: 'monitoring',
+            icon: <AlertOutlined />,
+            label: 'Monitoring',
+            children: [
+                { key: '/monitoring/dashboard', label: 'Dashboard', icon: <LineChartOutlined /> },
+            ],
+        },
+        {
             key: '/docs',
             icon: <ReadOutlined />,
             label: 'Pilot Docs',
@@ -135,6 +144,9 @@ export default function AdminLayout() {
             label: 'Settings',
             children: [
                 { key: '/settings/users', label: 'User Management', icon: <TeamOutlined /> },
+                { key: '/settings/api-keys', label: 'API Keys', icon: <KeyOutlined /> },
+                { key: '/settings/ip-allowlist', label: 'IP Allowlist', icon: <GlobalOutlined /> },
+                { key: '/settings/audit-log', label: 'Audit Log', icon: <SafetyOutlined /> },
             ],
         }] : []),
     ];

@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
+import { TiltCard } from '../components/TiltCard';
 
 const { Title, Text } = Typography;
 
@@ -182,9 +183,9 @@ export default function Users() {
 
             {/* Stats */}
             <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Total Users</Text>} value={totalUsers} prefix={<TeamOutlined />} valueStyle={{ color: t.text }} /></div></Col>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Active Users</Text>} value={activeUsers} valueStyle={{ color: t.green }} /></div></Col>
-                <Col span={8}><div style={{ ...cardStyle(t), padding: 16 }}><Statistic title={<Text style={{ color: t.muted }}>Administrators</Text>} value={adminCount} prefix={<CrownOutlined />} valueStyle={{ color: t.red }} /></div></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.accent } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Total Users</Text>} value={totalUsers} prefix={<TeamOutlined />} valueStyle={{ color: t.text }} /></TiltCard></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.green } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Active Users</Text>} value={activeUsers} valueStyle={{ color: t.green }} /></TiltCard></Col>
+                <Col span={8}><TiltCard className="nx-card-hover" style={{ ...cardStyle(t), padding: 16, '--nx-glow': t.red } as React.CSSProperties}><Statistic title={<Text style={{ color: t.muted }}>Administrators</Text>} value={adminCount} prefix={<CrownOutlined />} valueStyle={{ color: t.red }} /></TiltCard></Col>
             </Row>
 
             {/* Table */}
@@ -241,7 +242,10 @@ export default function Users() {
                 <Form
                     form={editForm}
                     layout="vertical"
-                    onFinish={(v) => editUser && updateMutation.mutate({ id: editUser.id, ...v })}
+                    onFinish={(v) => {
+                        if (!v.password) delete v.password; // Don't send blank passwords
+                        editUser && updateMutation.mutate({ id: editUser.id, ...v });
+                    }}
                 >
                     <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
                         <Input />
@@ -255,6 +259,14 @@ export default function Users() {
                     </Form.Item>
                     <Form.Item name="is_active" label="Active" valuePropName="checked">
                         <Switch />
+                    </Form.Item>
+                    <Form.Item
+                        name="password"
+                        label="New Password"
+                        rules={[{ min: 8, message: 'Minimum 8 characters' }]}
+                        help="Leave blank to keep current password"
+                    >
+                        <Input.Password placeholder="Enter new password (optional)" />
                     </Form.Item>
                 </Form>
             </Modal>

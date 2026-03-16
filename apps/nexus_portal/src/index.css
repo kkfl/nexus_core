@@ -97,3 +97,248 @@ h1, h2, h3, .ant-typography {
 .ant-btn-primary:hover {
     box-shadow: 0 0 16px rgba(59,130,246,0.3);
 }
+
+/* ═══════════════════════════════════════════════════
+   Nexus Design System — Premium 3D Hover Effects
+   Uses useTilt3D hook for mouse-tracked perspective
+   ═══════════════════════════════════════════════════ */
+
+/* ── Tier 1: Interactive Card with 3D Tilt ──
+   Works with useTilt3D hook for mouse-tracked perspective.
+   Falls back to CSS-only hover when hook is not applied.
+   Set --nx-glow via inline style for the glow color.
+*/
+.nx-card-hover {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transform-style: preserve-3d;
+    transform: perspective(800px) rotateX(0deg) rotateY(0deg) scale3d(1,1,1);
+    transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1) !important;
+    will-change: transform, box-shadow;
+}
+
+/* Specular highlight — follows mouse via CSS vars set by useTilt3D */
+.nx-card-hover::after {
+    content: '';
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(
+        circle,
+        rgba(255,255,255,0.15) 0%,
+        rgba(255,255,255,0.05) 40%,
+        transparent 70%
+    );
+    top: calc(var(--shine-y, -200px) - 100px);
+    left: calc(var(--shine-x, -200px) - 100px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 2;
+}
+.nx-card-hover:hover::after {
+    opacity: 1;
+}
+
+/* Edge light sweep on hover */
+.nx-card-hover::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255,255,255,0.03),
+        rgba(255,255,255,0.06),
+        rgba(255,255,255,0.03),
+        transparent
+    );
+    transition: left 0.6s ease;
+    pointer-events: none;
+    z-index: 1;
+}
+.nx-card-hover:hover::before {
+    left: 120%;
+}
+
+/* CSS-only fallback hover (when useTilt3D is not applied) */
+.nx-card-hover:hover {
+    border-color: var(--nx-glow, #3b82f6) !important;
+    box-shadow:
+        0 2px 4px rgba(0,0,0,0.1),
+        0 8px 16px rgba(0,0,0,0.15),
+        0 16px 32px rgba(0,0,0,0.1),
+        0 0 24px color-mix(in srgb, var(--nx-glow, #3b82f6) 15%, transparent),
+        inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+.nx-card-hover:active {
+    transition-duration: 0.1s !important;
+}
+
+
+/* ─────────────────────────────────────────────────
+   Tier 2: Stat/Metric Card — Full 3D Treatment
+   Works with useTilt3D for mouse-tracked tilt.
+   Set --card-color, --card-bg, --card-border.
+   ───────────────────────────────────────────────── */
+.nx-stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 20px 24px;
+    flex: 1;
+    min-width: 140px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transform-style: preserve-3d;
+    transform: perspective(800px) rotateX(0deg) rotateY(0deg) scale3d(1,1,1);
+    transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    user-select: none;
+    will-change: transform, box-shadow;
+    /* Glass morphism base */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+/* Radial gradient overlay — color tint */
+.nx-stat-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    opacity: 0;
+    background: radial-gradient(
+        ellipse at 50% -20%,
+        var(--card-color),
+        transparent 70%
+    );
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Specular highlight — follows cursor */
+.nx-stat-card::after {
+    content: '';
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(
+        circle,
+        rgba(255,255,255,0.2) 0%,
+        rgba(255,255,255,0.08) 30%,
+        transparent 65%
+    );
+    top: calc(var(--shine-y, -200px) - 90px);
+    left: calc(var(--shine-x, -200px) - 90px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 3;
+}
+.nx-stat-card:hover::after {
+    opacity: 1;
+}
+
+/* Hover state — 3D depth */
+.nx-stat-card:hover {
+    border-color: var(--card-color);
+    box-shadow:
+        0 2px 4px rgba(0,0,0,0.08),
+        0 4px 8px rgba(0,0,0,0.12),
+        0 8px 16px rgba(0,0,0,0.10),
+        0 16px 40px rgba(0,0,0,0.15),
+        0 0 30px color-mix(in srgb, var(--card-color) 20%, transparent),
+        inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.nx-stat-card:hover::before {
+    opacity: 0.1;
+}
+.nx-stat-card:active {
+    transition-duration: 0.1s;
+}
+
+/* Active/Filtered state — persistent glow + ring */
+.nx-stat-card-active {
+    border-color: var(--card-color) !important;
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--card-color) 40%, transparent),
+        0 4px 20px rgba(0,0,0,0.15),
+        0 0 30px color-mix(in srgb, var(--card-color) 15%, transparent);
+}
+.nx-stat-card-active::before {
+    opacity: 0.14 !important;
+}
+
+/* Stat card inner elements */
+.nx-stat-card-label {
+    font-size: 13px;
+    color: rgba(148,163,184,0.9);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    position: relative;
+    z-index: 1;
+}
+.nx-stat-card-value {
+    font-size: 34px;
+    font-weight: 800;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+    transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    position: relative;
+    z-index: 1;
+    /* Text depth effect */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+.nx-stat-card:hover .nx-stat-card-value {
+    transform: scale(1.08) translateZ(20px);
+}
+.nx-stat-card-indicator {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--card-color);
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+    z-index: 1;
+}
+
+
+/* ── Tier 3: Panel/Section Hover ──
+   Subtle 3D lift for section panels.
+*/
+.nx-panel-hover {
+    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1) !important;
+    position: relative;
+}
+.nx-panel-hover:hover {
+    border-color: rgba(59,130,246,0.3) !important;
+    box-shadow:
+        0 4px 8px rgba(0,0,0,0.06),
+        0 8px 24px rgba(0,0,0,0.1),
+        inset 0 1px 0 rgba(255,255,255,0.04) !important;
+    transform: translateY(-1px);
+}
+
+/* ── Table row highlights (shared) ── */
+.nx-row-critical td { background: rgba(248,113,113,0.05) !important; }
+.nx-row-warning td { background: rgba(251,191,36,0.05) !important; }
