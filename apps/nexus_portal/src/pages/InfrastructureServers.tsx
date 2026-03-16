@@ -1022,6 +1022,7 @@ export default function InfrastructureServers() {
                     <div style={{
                         marginTop: 12, padding: '10px 14px', borderRadius: 8,
                         background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                        wordBreak: 'break-word', overflow: 'hidden',
                     }}>
                         <Text style={{ color: MN.red, fontSize: 12 }}>
                             ⚠ This action cannot be undone. The server will be destroyed at the provider level.
