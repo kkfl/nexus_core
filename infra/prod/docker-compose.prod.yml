@@ -52,7 +52,7 @@ services:
     logging: *default-logging
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z-cpuv1
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: nexus-minio
     restart: always
     environment:
