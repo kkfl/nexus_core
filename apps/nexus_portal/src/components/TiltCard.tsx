@@ -30,10 +30,12 @@ export function TiltCard({
 
     return (
         <div
+            // eslint-disable-next-line react-hooks/refs
             ref={tilt.ref}
             className={className}
             style={style}
             onClick={onClick}
+            // eslint-disable-next-line react-hooks/refs
             {...tilt.handlers}
         >
             {children}

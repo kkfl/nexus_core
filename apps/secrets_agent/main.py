@@ -53,9 +53,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.warning("vault_table_create_skipped", error=str(exc))
     from packages.shared.heartbeat import start_heartbeat
+
     start_heartbeat("secrets-agent")
     yield
     from packages.shared.heartbeat import stop_heartbeat
+
     await stop_heartbeat()
     logger.info("secrets_agent_shutdown")
 

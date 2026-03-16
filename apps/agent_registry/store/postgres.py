@@ -79,6 +79,7 @@ async def update_agent(
 async def record_heartbeat(db: AsyncSession, agent: RegistryAgent) -> None:
     """Touch the last_heartbeat timestamp."""
     from datetime import UTC, datetime
+
     agent.last_heartbeat = datetime.now(UTC)
     await db.commit()
 

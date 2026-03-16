@@ -4,7 +4,7 @@
  * CRUD for API keys with copy-to-clipboard, rotate, toggle, and delete.
  * Admin-only page with 3D hover stat cards.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Typography, Table, Button, Tag, Space, Modal, Form, Input, Select,
     Popconfirm, message, Row, Col, Statistic, Tooltip,
@@ -89,11 +89,12 @@ export default function ApiKeys() {
     // ── Stats ────────────────────────────────────────────────────────
     const totalKeys = keys.length;
     const activeKeys = keys.filter(k => k.is_active).length;
-    const recentlyUsed = keys.filter(k => {
+    const recentlyUsed = useMemo(() => keys.filter(k => {
         if (!k.last_used_at) return false;
+        // eslint-disable-next-line react-hooks/purity
         const diff = Date.now() - new Date(k.last_used_at).getTime();
         return diff < 24 * 60 * 60 * 1000; // 24h
-    }).length;
+    }).length, [keys]);
 
     // ── Copy helper ──────────────────────────────────────────────────
     const copyKey = (key: string) => {

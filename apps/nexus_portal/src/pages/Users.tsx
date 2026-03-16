@@ -244,7 +244,7 @@ export default function Users() {
                     layout="vertical"
                     onFinish={(v) => {
                         if (!v.password) delete v.password; // Don't send blank passwords
-                        editUser && updateMutation.mutate({ id: editUser.id, ...v });
+                        if (editUser) updateMutation.mutate({ id: editUser.id, ...v });
                     }}
                 >
                     <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>

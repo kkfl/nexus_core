@@ -31,11 +31,13 @@ async def lifespan(app: FastAPI):
         logger.warning("registry_table_create_skipped", error=str(exc))
 
     from packages.shared.heartbeat import start_heartbeat
+
     start_heartbeat("agent_registry")
 
     yield
 
     from packages.shared.heartbeat import stop_heartbeat
+
     await stop_heartbeat()
     logger.info("agent_registry_shutdown")
 

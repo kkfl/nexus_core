@@ -56,6 +56,7 @@ logger = structlog.get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("server_agent_startup", version="1.0.0")
     from packages.shared.heartbeat import start_heartbeat
+
     start_heartbeat("server-agent")
     engine = _get_engine()
     try:
@@ -85,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     with suppress(asyncio.CancelledError):
         await worker_task
     from packages.shared.heartbeat import stop_heartbeat
+
     await stop_heartbeat()
     logger.info("server_agent_shutdown")
 

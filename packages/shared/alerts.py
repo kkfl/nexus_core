@@ -34,12 +34,17 @@ def _get_client():
     base_url = os.environ.get("NOTIFICATIONS_BASE_URL", "")
     agent_key = os.environ.get("NEXUS_NOTIF_AGENT_KEY", "")
     if not base_url or not agent_key:
-        logger.warning("nexus_alerts_disabled", reason="NOTIFICATIONS_BASE_URL or NEXUS_NOTIF_AGENT_KEY not set")
+        logger.warning(
+            "nexus_alerts_disabled",
+            reason="NOTIFICATIONS_BASE_URL or NEXUS_NOTIF_AGENT_KEY not set",
+        )
         return None
     try:
         from apps.notifications_agent.client.notifications_client import NotificationsClient
     except ImportError:
-        logger.warning("nexus_alerts_disabled", reason="notifications_agent not available in this container")
+        logger.warning(
+            "nexus_alerts_disabled", reason="notifications_agent not available in this container"
+        )
         return None
     _client = NotificationsClient(
         base_url=base_url,
@@ -54,42 +59,42 @@ def _get_client():
 
 _ACTION_META: dict[str, dict] = {
     # ── Security (nexus-api) ──────────────────────────────────────────────
-    "user_create":          {"emoji": "🆕", "label": "User Created",            "severity": "warn"},
-    "user_update":          {"emoji": "✏️",  "label": "User Updated",            "severity": "warn"},
-    "user_password_reset":  {"emoji": "🔑", "label": "Password Reset",          "severity": "critical"},
-    "api_key_create":       {"emoji": "🔐", "label": "API Key Created",         "severity": "warn"},
-    "api_key_rotate":       {"emoji": "🔄", "label": "API Key Rotated",         "severity": "warn"},
-    "api_key_toggle":       {"emoji": "⏸️",  "label": "API Key Toggled",         "severity": "info"},
-    "api_key_delete":       {"emoji": "🗑️",  "label": "API Key Deleted",         "severity": "warn"},
-    "ip_allowlist_add":     {"emoji": "🛡️",  "label": "IP Allowlist Added",      "severity": "critical"},
-    "ip_allowlist_toggle":  {"emoji": "⏸️",  "label": "IP Allowlist Toggled",     "severity": "warn"},
-    "ip_allowlist_remove":  {"emoji": "❌", "label": "IP Allowlist Removed",     "severity": "critical"},
-
+    "user_create": {"emoji": "🆕", "label": "User Created", "severity": "warn"},
+    "user_update": {"emoji": "✏️", "label": "User Updated", "severity": "warn"},
+    "user_password_reset": {"emoji": "🔑", "label": "Password Reset", "severity": "critical"},
+    "api_key_create": {"emoji": "🔐", "label": "API Key Created", "severity": "warn"},
+    "api_key_rotate": {"emoji": "🔄", "label": "API Key Rotated", "severity": "warn"},
+    "api_key_toggle": {"emoji": "⏸️", "label": "API Key Toggled", "severity": "info"},
+    "api_key_delete": {"emoji": "🗑️", "label": "API Key Deleted", "severity": "warn"},
+    "ip_allowlist_add": {"emoji": "🛡️", "label": "IP Allowlist Added", "severity": "critical"},
+    "ip_allowlist_toggle": {"emoji": "⏸️", "label": "IP Allowlist Toggled", "severity": "warn"},
+    "ip_allowlist_remove": {"emoji": "❌", "label": "IP Allowlist Removed", "severity": "critical"},
     # ── Infrastructure (server-agent) ─────────────────────────────────────
-    "server_create":        {"emoji": "🖥️",  "label": "Server Created",          "severity": "warn"},
-    "server_delete":        {"emoji": "💀", "label": "Server Deleted",          "severity": "critical"},
-    "server_start":         {"emoji": "▶️",  "label": "Server Started",          "severity": "info"},
-    "server_stop":          {"emoji": "⏹️",  "label": "Server Stopped",          "severity": "warn"},
-    "server_reboot":        {"emoji": "🔁", "label": "Server Rebooted",         "severity": "info"},
-    "server_rebuild":       {"emoji": "🔨", "label": "Server Rebuilt",          "severity": "critical"},
-    "host_create":          {"emoji": "🏗️",  "label": "Host Registered",         "severity": "warn"},
-    "host_delete":          {"emoji": "🏚️",  "label": "Host Removed",            "severity": "critical"},
-
+    "server_create": {"emoji": "🖥️", "label": "Server Created", "severity": "warn"},
+    "server_delete": {"emoji": "💀", "label": "Server Deleted", "severity": "critical"},
+    "server_start": {"emoji": "▶️", "label": "Server Started", "severity": "info"},
+    "server_stop": {"emoji": "⏹️", "label": "Server Stopped", "severity": "warn"},
+    "server_reboot": {"emoji": "🔁", "label": "Server Rebooted", "severity": "info"},
+    "server_rebuild": {"emoji": "🔨", "label": "Server Rebuilt", "severity": "critical"},
+    "host_create": {"emoji": "🏗️", "label": "Host Registered", "severity": "warn"},
+    "host_delete": {"emoji": "🏚️", "label": "Host Removed", "severity": "critical"},
     # ── Email (email-agent) ───────────────────────────────────────────────
-    "mailbox_create":       {"emoji": "📬", "label": "Mailbox Created",         "severity": "warn"},
-    "mailbox_disable":      {"emoji": "🚫", "label": "Mailbox Disabled",        "severity": "warn"},
-    "mailbox_password":     {"emoji": "🔑", "label": "Mailbox Password Reset",  "severity": "critical"},
-    "alias_add":            {"emoji": "📎", "label": "Email Alias Added",       "severity": "info"},
-
+    "mailbox_create": {"emoji": "📬", "label": "Mailbox Created", "severity": "warn"},
+    "mailbox_disable": {"emoji": "🚫", "label": "Mailbox Disabled", "severity": "warn"},
+    "mailbox_password": {"emoji": "🔑", "label": "Mailbox Password Reset", "severity": "critical"},
+    "alias_add": {"emoji": "📎", "label": "Email Alias Added", "severity": "info"},
     # ── DNS (dns-agent) ───────────────────────────────────────────────────
-    "dns_zone_create":      {"emoji": "🌐", "label": "DNS Zone Created",        "severity": "warn"},
-    "dns_zone_delete":      {"emoji": "🗑️",  "label": "DNS Zone Removed",        "severity": "critical"},
-    "dns_zone_import":      {"emoji": "📥", "label": "DNS Zones Imported",      "severity": "info"},
-    "dns_record_upsert":    {"emoji": "📝", "label": "DNS Records Updated",     "severity": "info"},
-    "dns_record_delete":    {"emoji": "❌", "label": "DNS Records Deleted",     "severity": "warn"},
-
+    "dns_zone_create": {"emoji": "🌐", "label": "DNS Zone Created", "severity": "warn"},
+    "dns_zone_delete": {"emoji": "🗑️", "label": "DNS Zone Removed", "severity": "critical"},
+    "dns_zone_import": {"emoji": "📥", "label": "DNS Zones Imported", "severity": "info"},
+    "dns_record_upsert": {"emoji": "📝", "label": "DNS Records Updated", "severity": "info"},
+    "dns_record_delete": {"emoji": "❌", "label": "DNS Records Deleted", "severity": "warn"},
     # ── Heartbeat Monitor ─────────────────────────────────────────────────
-    "agent_heartbeat_stale": {"emoji": "💔", "label": "Agent Heartbeat Lost",    "severity": "critical"},
+    "agent_heartbeat_stale": {
+        "emoji": "💔",
+        "label": "Agent Heartbeat Lost",
+        "severity": "critical",
+    },
 }
 
 
@@ -122,11 +127,7 @@ def send_alert(
 
     subject = f"{meta['emoji']} {meta['label']}"
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    body = (
-        f"{details}\n"
-        f"Actor: {actor}\n"
-        f"Time: {timestamp}"
-    )
+    body = f"{details}\nActor: {actor}\nTime: {timestamp}"
 
     try:
         loop = asyncio.get_running_loop()

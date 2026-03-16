@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI):
 
     # ── Start heartbeat ────────────────────────────────────────────
     from packages.shared.heartbeat import start_heartbeat
+
     start_heartbeat("nexus_api")
 
     # ── Start stale-heartbeat monitor ──────────────────────────────
@@ -191,6 +192,7 @@ async def lifespan(app: FastAPI):
                         continue  # never checked in yet, skip
 
                     from dateutil.parser import isoparse
+
                     hb_time = isoparse(hb)
                     if hb_time.tzinfo is None:
                         hb_time = hb_time.replace(tzinfo=UTC)
@@ -216,6 +218,7 @@ async def lifespan(app: FastAPI):
 
     _monitor_task.cancel()
     from packages.shared.heartbeat import stop_heartbeat
+
     await stop_heartbeat()
 
 
@@ -261,10 +264,7 @@ async def request_middleware(request: Request, call_next):
     # ── IP Allowlist Enforcement ──────────────────────────────────
     # Bypass CORS preflight (OPTIONS) and health endpoints
     bypass_paths = ("/healthz", "/readyz", "/metrics")
-    skip_ip_check = (
-        request.method == "OPTIONS"
-        or request.url.path.startswith(bypass_paths)
-    )
+    skip_ip_check = request.method == "OPTIONS" or request.url.path.startswith(bypass_paths)
     if not skip_ip_check:
         try:
             import ipaddress as _ipaddress
@@ -284,11 +284,13 @@ async def request_middleware(request: Request, call_next):
             if allowlist:
                 client_ip = request.client.host if request.client else "0.0.0.0"
                 allowed = any(
-                    _ipaddress.ip_address(client_ip) in _ipaddress.ip_network(entry.cidr, strict=False)
+                    _ipaddress.ip_address(client_ip)
+                    in _ipaddress.ip_network(entry.cidr, strict=False)
                     for entry in allowlist
                 )
                 if not allowed:
                     from starlette.responses import JSONResponse
+
                     logger.warning("ip_blocked", client_ip=client_ip)
                     # Must include CORS headers so the browser can read the 403
                     origin = request.headers.get("origin", "")

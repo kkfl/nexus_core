@@ -4,7 +4,7 @@
  * Real-time security event viewer with filtering.
  * Uses the existing GET /audit/ API.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Typography, Table, Tag, Space, DatePicker, Select, Button, Row, Col, Statistic,
 } from 'antd';
@@ -77,10 +77,11 @@ export default function AuditLog() {
     const securityEvents = events.filter(e =>
         ['login_failed', 'api_key_revoke', 'secret_decrypt_denied', 'api_key_disable'].includes(e.action)
     ).length;
-    const last24h = events.filter(e => {
+    const last24h = useMemo(() => events.filter(e => {
+        // eslint-disable-next-line react-hooks/purity
         const diff = Date.now() - new Date(e.created_at).getTime();
         return diff < 24 * 60 * 60 * 1000;
-    }).length;
+    }).length, [events]);
 
     // Unique actions for the filter dropdown
     const uniqueActions = [...new Set(events.map(e => e.action))].sort();

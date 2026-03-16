@@ -257,12 +257,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _worker_task
     logger.info("carrier_agent_startup", version="2.0.0")
     from packages.shared.heartbeat import start_heartbeat
+
     start_heartbeat("carrier-agent")
     _worker_task = asyncio.create_task(run_worker_loop(tick_interval=5))
     yield
     if _worker_task:
         _worker_task.cancel()
     from packages.shared.heartbeat import stop_heartbeat
+
     await stop_heartbeat()
     logger.info("carrier_agent_shutdown")
 
