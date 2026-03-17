@@ -230,9 +230,9 @@ export default function Login() {
                             <Title level={4} style={{ color: t.text, margin: '0 0 8px' }}>
                                 Check your email
                             </Title>
-                            <Text style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24 }}>
+                            <span style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24, lineHeight: '20px' }}>
                                 If an account exists with that email, you'll receive a password reset link shortly.
-                            </Text>
+                            </span>
                             <Button
                                 type="link"
                                 icon={<ArrowLeftOutlined />}
