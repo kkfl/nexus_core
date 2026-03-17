@@ -8,7 +8,7 @@ import { useThemeStore } from '../stores/themeStore';
 import { getAntTheme, getTokens } from '../theme';
 import NexusBrain from '../components/NexusBrain';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -73,7 +73,8 @@ export default function Login() {
                 background: t.bg,
             }}>
                 <div style={{
-                    width: 400,
+                    width: '100%',
+                    maxWidth: 400,
                     padding: 40,
                     borderRadius: 16,
                     background: t.cardBg,
@@ -97,9 +98,9 @@ export default function Login() {
                         }}>
                             Nexus Portal
                         </Title>
-                        <Text style={{ color: t.muted, fontSize: 13 }}>
+                        <span style={{ color: t.muted, fontSize: 13, display: 'block' }}>
                             {forgotMode ? 'Password Recovery' : 'System Administration Console'}
-                        </Text>
+                        </span>
                     </div>
 
                     {/* ── Login Form ──────────────────────── */}
@@ -230,7 +231,7 @@ export default function Login() {
                             <Title level={4} style={{ color: t.text, margin: '0 0 8px' }}>
                                 Check your email
                             </Title>
-                            <span style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24, lineHeight: '20px' }}>
+                            <span style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24, lineHeight: '20px', wordBreak: 'break-word' }}>
                                 If an account exists with that email, you'll receive a password reset link shortly.
                             </span>
                             <Button

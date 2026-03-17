@@ -40,7 +40,7 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
         username = await vault.get_secret("ssh.iredmail.username")
         pem = await vault.get_secret("ssh.iredmail.private_key_pem")
 
-        # Extract the email local part for doveadm -u
+        # Extract the email address for doveadm -u
         sender = from_address.strip()
         if "<" in sender:
             sender = sender.split("<")[1].rstrip(">")
@@ -48,13 +48,28 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
         def _do_save():
             ssh = _build_ssh_client(host, port, username, pem)
             try:
-                stdin, stdout, stderr = ssh.exec_command(
-                    f"sudo doveadm save -u '{sender}' -m Sent '\\Seen' 2>/dev/null",
-                    timeout=15,
+                # Write message to temp file first (stdin piping through sudo doesn't work)
+                tmp_path = f"/tmp/nexus_sent_{uuid.uuid4().hex[:8]}.eml"
+                sftp = ssh.open_sftp()
+                with sftp.open(tmp_path, "w") as f:
+                    f.write(raw_message)
+                sftp.close()
+
+                # Pipe temp file into doveadm save
+                cmd = (
+                    f"cat '{tmp_path}' | sudo doveadm save "
+                    f"-u '{sender}' -m Sent '\\Seen' 2>&1; "
+                    f"rm -f '{tmp_path}'"
                 )
-                stdin.write(raw_message)
-                stdin.channel.shutdown_write()
-                stdout.channel.recv_exit_status()
+                _stdin, stdout, _stderr = ssh.exec_command(cmd, timeout=15)
+                exit_code = stdout.channel.recv_exit_status()
+                out = stdout.read().decode().strip()
+                if exit_code != 0 or out:
+                    logger.warning(
+                        "doveadm_save_output",
+                        exit=exit_code,
+                        out=out[:200],
+                    )
             finally:
                 ssh.close()
 
