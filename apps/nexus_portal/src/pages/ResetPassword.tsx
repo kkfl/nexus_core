@@ -7,7 +7,7 @@ import { useThemeStore } from '../stores/themeStore';
 import { getAntTheme, getTokens } from '../theme';
 import NexusBrain from '../components/NexusBrain';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -72,9 +72,9 @@ export default function ResetPassword() {
                         }}>
                             Nexus Portal
                         </Title>
-                        <Text style={{ color: t.muted, fontSize: 13 }}>
+                        <span style={{ color: t.muted, fontSize: 13 }}>
                             {done ? 'Password Updated' : 'Set New Password'}
-                        </Text>
+                        </span>
                     </div>
 
                     {/* ── Reset Form ──────────────── */}
@@ -144,9 +144,9 @@ export default function ResetPassword() {
                             <Title level={4} style={{ color: t.text, margin: '0 0 8px' }}>
                                 Password updated!
                             </Title>
-                            <Text style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24 }}>
+                            <span style={{ color: t.muted, fontSize: 13, display: 'block', marginBottom: 24, lineHeight: '20px' }}>
                                 Your password has been changed. You can now log in with your new credentials.
-                            </Text>
+                            </span>
                             <Button
                                 type="primary"
                                 onClick={() => navigate('/login')}
