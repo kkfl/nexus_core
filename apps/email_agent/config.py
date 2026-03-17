@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     mailbox_read_allowlist: str = (
         ""  # comma-separated: "nexus-inbox@gsmcall.com,support@gsmcall.com"
     )
-    allow_read_all_mailboxes: bool = False
+    allow_read_all_mailboxes: bool = True
 
     # Stats cache
     stats_cache_ttl_seconds: int = 60
