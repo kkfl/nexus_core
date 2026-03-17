@@ -31,7 +31,11 @@ async def _get_smtp_config() -> dict:
 
 
 async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
-    """Save a copy of the sent email to the sender's IMAP Sent folder via doveadm."""
+    """Save a copy of the sent email to the sender's IMAP Sent folder.
+
+    Uses Dovecot LDA (deliver) via SSH to place the message in the Sent folder.
+    This is a best-effort operation; failures are logged but do not affect sending.
+    """
     try:
         from apps.email_agent.client.ssh_bridge import _build_ssh_client
 
@@ -40,7 +44,7 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
         username = await vault.get_secret("ssh.iredmail.username")
         pem = await vault.get_secret("ssh.iredmail.private_key_pem")
 
-        # Extract the email address for doveadm -u
+        # Extract the email address for deliver -d
         sender = from_address.strip()
         if "<" in sender:
             sender = sender.split("<")[1].rstrip(">")
@@ -48,33 +52,37 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
         def _do_save():
             ssh = _build_ssh_client(host, port, username, pem)
             try:
-                # Write message to temp file first (stdin piping through sudo doesn't work)
+                # Write message to temp file (stdin piping through sudo is unreliable)
                 tmp_path = f"/tmp/nexus_sent_{uuid.uuid4().hex[:8]}.eml"
                 sftp = ssh.open_sftp()
                 with sftp.open(tmp_path, "w") as f:
                     f.write(raw_message)
                 sftp.close()
 
-                # Pipe temp file into doveadm save
+                # Use Dovecot LDA to deliver to Sent folder with Seen flag
                 cmd = (
-                    f"cat '{tmp_path}' | sudo doveadm save "
-                    f"-u '{sender}' -m Sent '\\Seen' 2>&1; "
+                    f"cat '{tmp_path}' | "
+                    f"sudo /usr/lib/dovecot/deliver -d '{sender}' -m Sent "
+                    f"-f '{sender}' 2>&1; "
                     f"rm -f '{tmp_path}'"
                 )
                 _stdin, stdout, _stderr = ssh.exec_command(cmd, timeout=15)
                 exit_code = stdout.channel.recv_exit_status()
                 out = stdout.read().decode().strip()
-                if exit_code != 0 or out:
+                if exit_code != 0:
                     logger.warning(
-                        "doveadm_save_output",
+                        "deliver_save_failed",
                         exit=exit_code,
                         out=out[:200],
                     )
+                    return False
+                return True
             finally:
                 ssh.close()
 
-        await asyncio.to_thread(_do_save)
-        logger.info("sent_folder_saved", sender=sender[:30])
+        saved = await asyncio.to_thread(_do_save)
+        if saved:
+            logger.info("sent_folder_saved", sender=sender[:30])
     except Exception as exc:
         logger.warning("sent_folder_save_failed", error=str(exc)[:200])
 
