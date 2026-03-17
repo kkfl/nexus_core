@@ -101,11 +101,21 @@ export default function MailboxInbox() {
         },
     });
 
-    // Sent messages
-    const { data: sentData, isLoading: sentLoading, refetch: refetchSent } = useQuery<{ ok: boolean; messages: SentMessage[]; count: number }>({
-        queryKey: ['mailbox_sent', decodedEmail],
-        queryFn: async () => (await emailClient.get(`/email/admin/mailbox/${encodeURIComponent(decodedEmail)}/sent?limit=100`)).data,
+    // Sent messages from IMAP Sent folder
+    const { data: sentMessages, isLoading: sentLoading, refetch: refetchSent } = useQuery<MessageItem[]>({
+        queryKey: ['mailbox_sent_imap', decodedEmail],
+        queryFn: async () => {
+            const params = new URLSearchParams({ folder: 'Sent', limit: '100' });
+            return (await emailClient.get(`/email/mailbox/${encodeURIComponent(decodedEmail)}/messages?${params}`)).data;
+        },
         enabled: !!decodedEmail && activeTab === 'sent',
+    });
+
+    // Delivery logs from Postfix (the original "sent" tab)
+    const { data: deliveryData, isLoading: deliveryLoading, refetch: refetchDelivery } = useQuery<{ ok: boolean; messages: SentMessage[]; count: number }>({
+        queryKey: ['mailbox_delivery_logs', decodedEmail],
+        queryFn: async () => (await emailClient.get(`/email/admin/mailbox/${encodeURIComponent(decodedEmail)}/sent?limit=100`)).data,
+        enabled: !!decodedEmail && activeTab === 'logs',
     });
 
     const formatSize = (bytes: number) => {
@@ -338,14 +348,14 @@ export default function MailboxInbox() {
                     },
                     {
                         key: 'sent',
-                        label: <Space><SendOutlined />Sent</Space>,
+                        label: <Space><SendOutlined />Sent ({sentMessages?.length ?? 0})</Space>,
                         children: (
                             <>
                                 <Card size="small" style={{ marginBottom: 16 }}>
                                     <Space size="large">
                                         <Text type="secondary">
                                             <SendOutlined style={{ marginRight: 4 }} />
-                                            {sentData?.count ?? 0} sent messages
+                                            {sentMessages?.length ?? 0} sent messages
                                         </Text>
                                         <Button
                                             size="small"
@@ -358,13 +368,50 @@ export default function MailboxInbox() {
                                 </Card>
 
                                 <Table
-                                    dataSource={sentData?.messages}
-                                    columns={sentColumns}
-                                    rowKey="queue_id"
+                                    dataSource={sentMessages}
+                                    columns={columns}
+                                    rowKey="uid"
                                     loading={sentLoading}
                                     size="small"
                                     pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} sent messages` }}
-                                    locale={{ emptyText: <Empty description="No sent messages found in recent logs" /> }}
+                                    onRow={(record) => ({
+                                        onClick: () => openMessage(record.uid),
+                                        style: { cursor: 'pointer' },
+                                    })}
+                                    locale={{ emptyText: <Empty description="No sent messages in Sent folder" /> }}
+                                />
+                            </>
+                        ),
+                    },
+                    {
+                        key: 'logs',
+                        label: <Space><FileTextOutlined />Delivery Logs</Space>,
+                        children: (
+                            <>
+                                <Card size="small" style={{ marginBottom: 16 }}>
+                                    <Space size="large">
+                                        <Text type="secondary">
+                                            <FileTextOutlined style={{ marginRight: 4 }} />
+                                            {deliveryData?.count ?? 0} log entries
+                                        </Text>
+                                        <Button
+                                            size="small"
+                                            icon={<ReloadOutlined />}
+                                            onClick={() => refetchDelivery()}
+                                        >
+                                            Refresh
+                                        </Button>
+                                    </Space>
+                                </Card>
+
+                                <Table
+                                    dataSource={deliveryData?.messages}
+                                    columns={sentColumns}
+                                    rowKey="queue_id"
+                                    loading={deliveryLoading}
+                                    size="small"
+                                    pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} log entries` }}
+                                    locale={{ emptyText: <Empty description="No delivery logs found" /> }}
                                 />
                             </>
                         ),
