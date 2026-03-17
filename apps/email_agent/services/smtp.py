@@ -30,6 +30,39 @@ async def _get_smtp_config() -> dict:
     }
 
 
+async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
+    """Save a copy of the sent email to the sender's IMAP Sent folder via doveadm."""
+    try:
+        from apps.email_agent.client.ssh_bridge import _build_ssh_client
+
+        host = await vault.get_secret("ssh.iredmail.host")
+        port = int(await vault.get_secret("ssh.iredmail.port"))
+        username = await vault.get_secret("ssh.iredmail.username")
+        pem = await vault.get_secret("ssh.iredmail.private_key_pem")
+
+        # Extract the email local part for doveadm -u
+        sender = from_address.strip()
+        if "<" in sender:
+            sender = sender.split("<")[1].rstrip(">")
+
+        def _do_save():
+            ssh = _build_ssh_client(host, port, username, pem)
+            try:
+                stdin, stdout, stderr = ssh.exec_command(
+                    f"sudo doveadm save -u '{sender}' -m Sent '\\Seen' 2>/dev/null",
+                    timeout=15,
+                )
+                stdin.write(raw_message)
+                stdin.channel.shutdown_write()
+                stdout.channel.recv_exit_status()
+            finally:
+                ssh.close()
+
+        await asyncio.to_thread(_do_save)
+        logger.info("sent_folder_saved", sender=sender[:30])
+    except Exception as exc:
+        logger.warning("sent_folder_save_failed", error=str(exc)[:200])
+
 async def send_email(
     *,
     to: list[str],
@@ -84,6 +117,7 @@ async def send_email(
         )
         dest_hash = hashlib.sha256(",".join(to).encode()).hexdigest()[:12]
         logger.info("smtp_sent", to_hash=dest_hash, msg_id=msg_id)
+        await _save_to_sent_folder(cfg["from_address"], msg.as_string())
         return {"ok": True, "message_id": msg_id}
     except Exception as exc:
         safe = str(exc)
@@ -124,6 +158,7 @@ async def send_email(
         if result["ok"]:
             dest_hash = hashlib.sha256(",".join(to).encode()).hexdigest()[:12]
             logger.info("smtp_sent_via_bridge", to_hash=dest_hash, msg_id=msg_id)
+            await _save_to_sent_folder(cfg["from_address"], msg.as_string())
         else:
             logger.error("smtp_bridge_send_failed", error=result.get("error", "")[:200])
         return result
