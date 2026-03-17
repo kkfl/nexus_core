@@ -89,8 +89,47 @@ async def send_email(
         safe = str(exc)
         if cfg["password"]:
             safe = safe.replace(cfg["password"], "[REDACTED]")
-        logger.error("smtp_send_failed", error=safe[:200])
-        return {"ok": False, "message_id": None, "error": safe[:500]}
+        logger.warning("smtp_direct_failed_trying_bridge", error=safe[:200])
+
+    # ── Fallback: send via SSH bridge's sendmail ──────────────────────
+    try:
+        from apps.email_agent.client import vault as _vault
+        from apps.email_agent.client.ssh_bridge import _build_ssh_client
+
+        host = await _vault.get_secret("ssh.iredmail.host")
+        port = int(await _vault.get_secret("ssh.iredmail.port"))
+        username = await _vault.get_secret("ssh.iredmail.username")
+        pem = await _vault.get_secret("ssh.iredmail.private_key_pem")
+
+        raw_msg = msg.as_string()
+        recip_str = " ".join(all_recipients)
+
+        def _send_via_bridge():
+            ssh = _build_ssh_client(host, port, username, pem)
+            try:
+                stdin, stdout, stderr = ssh.exec_command(
+                    f"sendmail -t {recip_str}", timeout=30,
+                )
+                stdin.write(raw_msg)
+                stdin.channel.shutdown_write()
+                exit_code = stdout.channel.recv_exit_status()
+                err = stderr.read().decode().strip()
+                if exit_code != 0:
+                    return {"ok": False, "message_id": None, "error": f"sendmail exit {exit_code}: {err[:200]}"}
+                return {"ok": True, "message_id": msg_id}
+            finally:
+                ssh.close()
+
+        result = await asyncio.to_thread(_send_via_bridge)
+        if result["ok"]:
+            dest_hash = hashlib.sha256(",".join(to).encode()).hexdigest()[:12]
+            logger.info("smtp_sent_via_bridge", to_hash=dest_hash, msg_id=msg_id)
+        else:
+            logger.error("smtp_bridge_send_failed", error=result.get("error", "")[:200])
+        return result
+    except Exception as bridge_exc:
+        logger.error("smtp_bridge_fallback_failed", error=str(bridge_exc)[:200])
+        return {"ok": False, "message_id": None, "error": str(bridge_exc)[:500]}
 
 
 async def _do_smtp_check(cfg):
