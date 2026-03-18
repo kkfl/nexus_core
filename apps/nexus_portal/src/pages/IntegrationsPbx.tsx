@@ -1,10 +1,10 @@
 import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Progress, Drawer, Empty } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pbxClient } from '../api/pbxClient';
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
     PhoneOutlined, PlusOutlined, ReloadOutlined, CheckCircleOutlined,
-    CloseCircleOutlined, DashboardOutlined, CloudServerOutlined,
+    CloseCircleOutlined, DashboardOutlined,
     SyncOutlined, WarningOutlined, ClockCircleOutlined,
     ApiOutlined, HddOutlined, KeyOutlined,
 } from '@ant-design/icons';
