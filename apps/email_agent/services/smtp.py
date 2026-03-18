@@ -33,11 +33,15 @@ async def _get_smtp_config() -> dict:
 async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
     """Save a copy of the sent email to the sender's IMAP Sent folder.
 
-    Uses IMAP APPEND via an SSH-tunneled connection to the mail server.
+    Uses IMAP4_SSL through an SSH-tunneled connection to port 993.
     This is a best-effort operation; failures are logged but do not affect sending.
     """
     try:
+        import imaplib
         import io
+        import select
+        import socket
+        import threading
 
         import paramiko
 
@@ -56,86 +60,85 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
             pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(ssh_pem))
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ssh_host, port=ssh_port, username=ssh_user, pkey=pkey, timeout=10)
+            ssh.connect(
+                ssh_host, port=ssh_port, username=ssh_user, pkey=pkey, timeout=10
+            )
 
             try:
-                # Open direct-tcpip channel to IMAP port 143 (plaintext on localhost)
-                transport = ssh.get_transport()
-                chan = transport.open_channel(
-                    "direct-tcpip",
-                    ("127.0.0.1", 143),
-                    ("127.0.0.1", 0),
-                )
-                chan.settimeout(15)
+                # Create a local TCP listener that forwards to IMAP 993
+                srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                srv.bind(("127.0.0.1", 0))
+                local_port = srv.getsockname()[1]
+                srv.listen(1)
+                srv.settimeout(10)
 
-                def recv_line():
-                    buf = b""
-                    while not buf.endswith(b"\r\n"):
-                        b = chan.recv(1)
-                        if not b:
-                            break
-                        buf += b
-                    return buf.decode()
+                def _tunnel():
+                    try:
+                        cli, _ = srv.accept()
+                        chan = ssh.get_transport().open_channel(
+                            "direct-tcpip",
+                            ("127.0.0.1", 993),
+                            ("127.0.0.1", local_port),
+                        )
+                        while True:
+                            r, _, _ = select.select([cli, chan], [], [], 5.0)
+                            if cli in r:
+                                d = cli.recv(4096)
+                                if not d:
+                                    break
+                                chan.sendall(d)
+                            if chan in r:
+                                d = chan.recv(4096)
+                                if not d:
+                                    break
+                                cli.sendall(d)
+                    except Exception:
+                        pass
+                    finally:
+                        try:
+                            cli.close()
+                        except Exception:
+                            pass
+                        try:
+                            chan.close()
+                        except Exception:
+                            pass
 
-                def send_cmd(tag, cmd):
-                    chan.sendall(f"{tag} {cmd}\r\n".encode())
-                    lines = []
-                    while True:
-                        line = recv_line()
-                        lines.append(line)
-                        if line.startswith(f"{tag} "):
-                            break
-                    return lines
+                thr = threading.Thread(target=_tunnel, daemon=True)
+                thr.start()
 
-                # Read server greeting
-                greeting = recv_line()
-                logger.debug("imap_greeting", greeting=greeting.strip()[:80])
+                import time
 
-                # LOGIN
-                login_resp = send_cmd("A1", f'LOGIN "{imap_user}" "{imap_pass}"')
-                login_ok = any("A1 OK" in l for l in login_resp)
-                if not login_ok:
-                    logger.warning("imap_login_failed", resp=str(login_resp)[:200])
+                time.sleep(0.3)
+
+                # Connect via IMAP4_SSL to the local forwarded port
+                imap = imaplib.IMAP4_SSL("127.0.0.1", local_port)
+
+                typ, _ = imap.login(imap_user, imap_pass)
+                if typ != "OK":
+                    logger.warning("imap_login_failed")
+                    imap.logout()
+                    srv.close()
                     return False
 
-                # APPEND to Sent folder with \Seen flag
                 msg_bytes = raw_message.encode("utf-8")
-                msg_len = len(msg_bytes)
-                append_cmd = f'APPEND "Sent" (\\Seen) {{{msg_len}}}'
-                chan.sendall(f"A2 {append_cmd}\r\n".encode())
+                typ, data = imap.append("Sent", "\\Seen", None, msg_bytes)
+                imap.logout()
+                srv.close()
 
-                # Wait for continuation response (+)
-                cont = recv_line()
-                if not cont.startswith("+"):
-                    logger.warning("imap_append_no_continuation", resp=cont.strip())
-                    return False
-
-                # Send message data followed by CRLF
-                chan.sendall(msg_bytes + b"\r\n")
-
-                # Read APPEND response
-                resp_lines = []
-                while True:
-                    line = recv_line()
-                    resp_lines.append(line)
-                    if line.startswith("A2 "):
-                        break
-
-                append_ok = any("A2 OK" in l for l in resp_lines)
-
-                # LOGOUT
-                send_cmd("A3", "LOGOUT")
-                chan.close()
-
-                return append_ok
+                if typ == "OK":
+                    return True
+                logger.warning("imap_append_failed", resp=str(data)[:200])
+                return False
             finally:
                 ssh.close()
 
         saved = await asyncio.to_thread(_do_append)
         if saved:
-            logger.info("sent_folder_saved", method="imap_append")
+            logger.info("sent_folder_saved", method="imap_ssl_append")
         else:
-            logger.warning("sent_folder_save_failed", method="imap_append")
+            logger.warning("sent_folder_save_failed", method="imap_ssl_append")
     except Exception as exc:
         logger.warning("sent_folder_save_failed", error=str(exc)[:200])
 
