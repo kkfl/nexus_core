@@ -33,6 +33,13 @@ class PbxTarget(Base):
     ami_port = Column(Integer, nullable=False, default=5038)
     ami_username = Column(String(128), nullable=False)  # plaintext username, not secret
     ami_secret_alias = Column(String(255), nullable=False)  # e.g. pbx.target1.ami.secret
+
+    # SSH access for system-level metrics (CPU/RAM/Disk, asterisk CLI)
+    ssh_port = Column(Integer, nullable=False, default=22)
+    ssh_username = Column(String(128), nullable=False, default="root")
+    ssh_key_alias = Column(String(255), nullable=True)  # vault alias for SSH private key PEM
+    ssh_password_alias = Column(String(255), nullable=True)  # vault alias for SSH password (fallback)
+
     status = Column(String(32), nullable=False, default="active")
     metadata_ = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)

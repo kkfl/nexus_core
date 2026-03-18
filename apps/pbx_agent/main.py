@@ -16,6 +16,8 @@ from fastapi import FastAPI, Request, Response
 
 from apps.pbx_agent.api.audit import router as audit_router
 from apps.pbx_agent.api.diagnostics import router as diagnostics_router
+from apps.pbx_agent.api.fleet import router as fleet_router
+from apps.pbx_agent.api.fleet import fleet_background_poller
 from apps.pbx_agent.api.jobs import router as jobs_router
 from apps.pbx_agent.api.status import router as status_router
 from apps.pbx_agent.api.targets import router as targets_router
@@ -26,6 +28,7 @@ logger = structlog.get_logger(__name__)
 
 _request_count = 0
 _worker_task = None
+_fleet_poller_task = None
 
 
 @asynccontextmanager
@@ -38,9 +41,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _worker_task = asyncio.create_task(
         run_worker_loop(tick_interval=config.job_worker_tick_seconds)
     )
+    _fleet_poller_task = asyncio.create_task(fleet_background_poller(interval=60))
     yield
     if _worker_task:
         _worker_task.cancel()
+    if _fleet_poller_task:
+        _fleet_poller_task.cancel()
     from packages.shared.heartbeat import stop_heartbeat
 
     await stop_heartbeat()
@@ -60,6 +66,7 @@ app = FastAPI(
 app.include_router(targets_router)
 app.include_router(diagnostics_router)
 app.include_router(status_router)
+app.include_router(fleet_router)
 app.include_router(jobs_router)
 app.include_router(audit_router)
 
@@ -120,6 +127,9 @@ async def capabilities():
             "status.registrations",
             "status.channels",
             "status.uptime",
+            "fleet.status",
+            "fleet.summary",
+            "fleet.refresh",
             "jobs.reload",
         ],
         "mutating_actions": ["reload"],
