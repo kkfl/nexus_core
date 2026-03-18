@@ -33,56 +33,109 @@ async def _get_smtp_config() -> dict:
 async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
     """Save a copy of the sent email to the sender's IMAP Sent folder.
 
-    Uses Dovecot LDA (deliver) via SSH to place the message in the Sent folder.
+    Uses IMAP APPEND via an SSH-tunneled connection to the mail server.
     This is a best-effort operation; failures are logged but do not affect sending.
     """
     try:
-        from apps.email_agent.client.ssh_bridge import _build_ssh_client
+        import io
 
-        host = await vault.get_secret("ssh.iredmail.host")
-        port = int(await vault.get_secret("ssh.iredmail.port"))
-        username = await vault.get_secret("ssh.iredmail.username")
-        pem = await vault.get_secret("ssh.iredmail.private_key_pem")
+        import paramiko
 
-        # Extract the email address for deliver -d
-        sender = from_address.strip()
-        if "<" in sender:
-            sender = sender.split("<")[1].rstrip(">")
+        # Get SSH tunnel credentials
+        ssh_host = await vault.get_secret("ssh.iredmail.host")
+        ssh_port = int(await vault.get_secret("ssh.iredmail.port"))
+        ssh_user = await vault.get_secret("ssh.iredmail.username")
+        ssh_pem = await vault.get_secret("ssh.iredmail.private_key_pem")
 
-        def _do_save():
-            ssh = _build_ssh_client(host, port, username, pem)
+        # Get IMAP credentials (same as SMTP account)
+        imap_user = await vault.get_secret("smtp.username")
+        imap_pass = await vault.get_secret("smtp.password")
+
+        def _do_append():
+            # SSH to mail server
+            pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(ssh_pem))
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(ssh_host, port=ssh_port, username=ssh_user, pkey=pkey, timeout=10)
+
             try:
-                # Write message to temp file (stdin piping through sudo is unreliable)
-                tmp_path = f"/tmp/nexus_sent_{uuid.uuid4().hex[:8]}.eml"
-                sftp = ssh.open_sftp()
-                with sftp.open(tmp_path, "w") as f:
-                    f.write(raw_message)
-                sftp.close()
-
-                # Use Dovecot LDA to deliver to Sent folder with Seen flag
-                cmd = (
-                    f"cat '{tmp_path}' | "
-                    f"sudo /usr/lib/dovecot/deliver -d '{sender}' -m Sent "
-                    f"-f '{sender}' 2>&1; "
-                    f"rm -f '{tmp_path}'"
+                # Open direct-tcpip channel to IMAP port 143 (plaintext on localhost)
+                transport = ssh.get_transport()
+                chan = transport.open_channel(
+                    "direct-tcpip",
+                    ("127.0.0.1", 143),
+                    ("127.0.0.1", 0),
                 )
-                _stdin, stdout, _stderr = ssh.exec_command(cmd, timeout=15)
-                exit_code = stdout.channel.recv_exit_status()
-                out = stdout.read().decode().strip()
-                if exit_code != 0:
-                    logger.warning(
-                        "deliver_save_failed",
-                        exit=exit_code,
-                        out=out[:200],
-                    )
+                chan.settimeout(15)
+
+                def recv_line():
+                    buf = b""
+                    while not buf.endswith(b"\r\n"):
+                        b = chan.recv(1)
+                        if not b:
+                            break
+                        buf += b
+                    return buf.decode()
+
+                def send_cmd(tag, cmd):
+                    chan.sendall(f"{tag} {cmd}\r\n".encode())
+                    lines = []
+                    while True:
+                        line = recv_line()
+                        lines.append(line)
+                        if line.startswith(f"{tag} "):
+                            break
+                    return lines
+
+                # Read server greeting
+                greeting = recv_line()
+                logger.debug("imap_greeting", greeting=greeting.strip()[:80])
+
+                # LOGIN
+                login_resp = send_cmd("A1", f'LOGIN "{imap_user}" "{imap_pass}"')
+                login_ok = any("A1 OK" in l for l in login_resp)
+                if not login_ok:
+                    logger.warning("imap_login_failed", resp=str(login_resp)[:200])
                     return False
-                return True
+
+                # APPEND to Sent folder with \Seen flag
+                msg_bytes = raw_message.encode("utf-8")
+                msg_len = len(msg_bytes)
+                append_cmd = f'APPEND "Sent" (\\Seen) {{{msg_len}}}'
+                chan.sendall(f"A2 {append_cmd}\r\n".encode())
+
+                # Wait for continuation response (+)
+                cont = recv_line()
+                if not cont.startswith("+"):
+                    logger.warning("imap_append_no_continuation", resp=cont.strip())
+                    return False
+
+                # Send message data followed by CRLF
+                chan.sendall(msg_bytes + b"\r\n")
+
+                # Read APPEND response
+                resp_lines = []
+                while True:
+                    line = recv_line()
+                    resp_lines.append(line)
+                    if line.startswith("A2 "):
+                        break
+
+                append_ok = any("A2 OK" in l for l in resp_lines)
+
+                # LOGOUT
+                send_cmd("A3", "LOGOUT")
+                chan.close()
+
+                return append_ok
             finally:
                 ssh.close()
 
-        saved = await asyncio.to_thread(_do_save)
+        saved = await asyncio.to_thread(_do_append)
         if saved:
-            logger.info("sent_folder_saved", sender=sender[:30])
+            logger.info("sent_folder_saved", method="imap_append")
+        else:
+            logger.warning("sent_folder_save_failed", method="imap_append")
     except Exception as exc:
         logger.warning("sent_folder_save_failed", error=str(exc)[:200])
 
