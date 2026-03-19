@@ -449,6 +449,7 @@ services:
       dockerfile: apps/nexus_portal/Dockerfile
       args:
         VITE_API_BASE_URL: /api
+        VITE_EMAIL_AGENT_KEY: nexus-email-key-change-me
     container_name: nexus-portal
     ports:
       - "3000:80"
