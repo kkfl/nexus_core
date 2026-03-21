@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir \
 
 # Copy application code
 COPY ./apps/secrets_agent /app/apps/secrets_agent
+COPY ./apps/notifications_agent /app/apps/notifications_agent
 COPY ./packages /app/packages
 
 EXPOSE 8007

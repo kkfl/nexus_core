@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY packages/shared /app/packages/shared
 COPY apps/pbx_agent /app/apps/pbx_agent
+COPY apps/notifications_agent /app/apps/notifications_agent
 
 RUN pip install --no-cache-dir \
     fastapi \
@@ -12,7 +13,8 @@ RUN pip install --no-cache-dir \
     sqlalchemy \
     asyncpg \
     httpx \
-    structlog
+    structlog \
+    paramiko
 
 ENV PYTHONPATH=/app
 ENV PORT=8011

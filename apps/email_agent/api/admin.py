@@ -157,6 +157,25 @@ async def create_mailbox(
     resolved_pw = await _resolve_password(req.password, req.vault_ref)
     result = await run_bridge_command("create_mailbox", [req.email, resolved_pw])
     send_alert("mailbox_create", "email-agent", f"Mailbox: {req.email}")
+
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="email-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id="nexus", env="prod", severity="info",
+            channels=["telegram"],
+            subject="\U0001f4e7 Email Account Created",
+            body=req.email,
+            idempotency_key=f"mailbox-create:{req.email}",
+        )
+    except Exception:
+        _log.warning("telegram_notify_failed", action="mailbox_create")
+
     return AdminResponse(**result)
 
 
@@ -180,6 +199,25 @@ async def disable_mailbox(
     """Disable a mailbox via SSH bridge."""
     result = await run_bridge_command("disable_mailbox", [req.email])
     send_alert("mailbox_disable", "email-agent", f"Mailbox: {req.email}")
+
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="email-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id="nexus", env="prod", severity="warn",
+            channels=["telegram"],
+            subject="\U0001f6ab Email Account Disabled",
+            body=req.email,
+            idempotency_key=f"mailbox-disable:{req.email}",
+        )
+    except Exception:
+        _log.warning("telegram_notify_failed", action="mailbox_disable")
+
     return AdminResponse(**result)
 
 

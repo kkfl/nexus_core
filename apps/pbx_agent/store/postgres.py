@@ -29,6 +29,10 @@ async def create_target(db: AsyncSession, payload: PbxTargetCreate) -> PbxTarget
         ami_port=payload.ami_port,
         ami_username=payload.ami_username,
         ami_secret_alias=payload.ami_secret_alias,
+        ssh_port=payload.ssh_port,
+        ssh_username=payload.ssh_username,
+        ssh_key_alias=payload.ssh_key_alias,
+        ssh_password_alias=payload.ssh_password_alias,
         status=payload.status,
         metadata_=payload.metadata,
         created_at=_now(),
@@ -47,6 +51,13 @@ async def get_target(
         PbxTarget.tenant_id == tenant_id,
         PbxTarget.env == env,
     )
+    r = await db.execute(stmt)
+    return r.scalar_one_or_none()
+
+
+async def get_target_by_id(db: AsyncSession, target_id: str) -> PbxTarget | None:
+    """Look up a target by UUID only (tenant/env not required)."""
+    stmt = select(PbxTarget).where(PbxTarget.id == target_id)
     r = await db.execute(stmt)
     return r.scalar_one_or_none()
 
@@ -82,6 +93,18 @@ async def update_target(
     target.updated_at = _now()
     await db.flush()
     return target
+
+
+async def delete_target(
+    db: AsyncSession, target_id: str, tenant_id: str, env: str
+) -> bool:
+    """Delete a PBX target. Returns True if deleted, False if not found."""
+    target = await get_target(db, target_id, tenant_id, env)
+    if not target:
+        return False
+    await db.delete(target)
+    await db.flush()
+    return True
 
 
 # ─── Jobs ───────────────────────────────────────────────────────────────────

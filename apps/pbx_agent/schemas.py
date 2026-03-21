@@ -5,7 +5,7 @@ Pydantic v2 schemas for pbx_agent request/response validation.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ─── PBX Target ──────────────────────────────────────────────────────────────
 
@@ -195,3 +195,75 @@ class PbxAuditOut(BaseModel):
     result: str
     detail: str | None = None
     created_at: datetime
+
+
+# ─── Register + Verify ────────────────────────────────────────────────────────
+
+
+def _sanitize_pem_key(v: str | None) -> str | None:
+    """Clean up a pasted PEM key: strip \\r, trailing spaces, and normalise line endings."""
+    if not v:
+        return v
+    # Strip carriage returns (Windows line endings)
+    v = v.replace('\r\n', '\n').replace('\r', '\n')
+    # Strip trailing whitespace from each line
+    lines = [line.rstrip() for line in v.split('\n')]
+    # Remove any blank lines in the middle of the key (but keep header/footer)
+    cleaned = []
+    for line in lines:
+        if line:  # skip blank lines
+            cleaned.append(line)
+    return '\n'.join(cleaned) + '\n'
+
+
+
+class PbxTargetRegister(BaseModel):
+    """Registration request that accepts raw credentials (not vault aliases)."""
+    name: str = Field(..., max_length=255)
+    tenant_id: str = "acme"
+    env: str = "prod"
+    host: str = Field(..., max_length=256)
+    ami_port: int = 5038
+    ami_username: str = Field(..., max_length=128)
+    ami_secret: str = Field(..., description="Raw AMI secret/password")
+    ssh_port: int = 22
+    ssh_username: str = "root"
+    ssh_key_pem: str | None = Field(None, description="Raw SSH private key PEM")
+    ssh_password: str | None = Field(None, description="Raw SSH password (fallback)")
+
+    @field_validator('ssh_key_pem', mode='before')
+    @classmethod
+    def clean_ssh_key(cls, v: str | None) -> str | None:
+        return _sanitize_pem_key(v)
+
+
+class PbxTargetEdit(BaseModel):
+    """Edit request — all fields optional. Credential fields (if provided) are re-stored in vault."""
+    name: str | None = None
+    host: str | None = None
+    ami_port: int | None = None
+    ami_username: str | None = None
+    ami_secret: str | None = Field(None, description="New AMI secret — leave blank to keep existing")
+    ssh_port: int | None = None
+    ssh_username: str | None = None
+    ssh_key_pem: str | None = Field(None, description="New SSH key PEM — leave blank to keep existing")
+    ssh_password: str | None = Field(None, description="New SSH password — leave blank to keep existing")
+
+    @field_validator('ssh_key_pem', mode='before')
+    @classmethod
+    def clean_ssh_key(cls, v: str | None) -> str | None:
+        return _sanitize_pem_key(v)
+
+
+class VerifyCheckResult(BaseModel):
+    check: str
+    passed: bool
+    detail: str | None = None
+
+
+class PbxRegistrationResult(BaseModel):
+    target_id: str | None = None
+    target_name: str
+    registered: bool
+    checks: list[VerifyCheckResult]
+    error: str | None = None

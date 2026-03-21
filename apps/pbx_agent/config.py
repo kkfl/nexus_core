@@ -4,6 +4,7 @@ All sensitive values (AMI secrets, SSH keys) are fetched at runtime from secrets
 Only non-sensitive config + alias names live here.
 """
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -28,7 +29,10 @@ class Config(BaseSettings):
     # Secrets Agent (pbx-agent calls secrets to retrieve AMI creds at runtime)
     vault_base_url: str = "http://secrets-agent:8007"
     vault_service_id: str = "pbx-agent"
-    pbx_vault_agent_key: str = ""  # key pbx-agent uses to call secrets-agent
+    pbx_vault_agent_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("pbx_vault_agent_key", "vault_agent_key"),
+    )
 
     # Notifications Agent
     notifications_base_url: str = "http://notifications-agent:8008"

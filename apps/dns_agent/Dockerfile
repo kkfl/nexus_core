@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir \
     alembic==1.13.3 \
     redis>=5.0.0
 
-COPY ./apps/dns_agent /app/apps/dns_agent
+COPY apps/dns_agent /app/apps/dns_agent
+COPY apps/notifications_agent /app/apps/notifications_agent
 COPY ./apps/secrets_agent /app/apps/secrets_agent
 COPY ./packages /app/packages
 

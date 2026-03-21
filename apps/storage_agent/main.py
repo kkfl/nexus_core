@@ -32,7 +32,81 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     start_heartbeat("storage-agent")
 
+    # ── Storage Connectivity Watchdog ─────────────────────────────
+    import asyncio
+    import os
+
+    _unreachable: set[str] = set()
+
+    async def _connectivity_watchdog():
+        """Every 5 min, ping each enabled storage target and alert on status changes."""
+        from apps.storage_agent.engine.s3 import _get_s3_client
+        from apps.storage_agent.store.postgres import get_db, list_targets
+
+        while True:
+            await asyncio.sleep(300)  # 5 minutes
+            try:
+                async for db in get_db():
+                    targets = await list_targets(db, tenant_id="nexus", env="prod")
+                    for target in targets:
+                        if not target.enabled:
+                            continue
+                        tid = target.storage_target_id
+                        try:
+                            async with _get_s3_client(target, "connectivity-check") as s3:
+                                await s3.list_buckets()
+                            # Reachable
+                            if tid in _unreachable:
+                                _unreachable.discard(tid)
+                                logger.info("storage_target_recovered", target=tid)
+                                try:
+                                    from apps.notifications_agent.client.notifications_client import NotificationsClient
+                                    nc = NotificationsClient(
+                                        base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                        service_id="storage-agent",
+                                        api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                    )
+                                    await nc.notify(
+                                        tenant_id=target.tenant_id or "nexus",
+                                        env=target.env or "prod",
+                                        severity="info",
+                                        channels=["telegram"],
+                                        subject="\u2705 Storage Target Recovered",
+                                        body=f"{tid} ({target.endpoint_url}) is back online",
+                                        idempotency_key=f"storage-recovered:{tid}:{int(asyncio.get_event_loop().time())}",
+                                    )
+                                except Exception:
+                                    pass
+                        except Exception as exc:
+                            if tid not in _unreachable:
+                                _unreachable.add(tid)
+                                logger.warning("storage_target_unreachable", target=tid, error=str(exc)[:200])
+                                try:
+                                    from apps.notifications_agent.client.notifications_client import NotificationsClient
+                                    nc = NotificationsClient(
+                                        base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                        service_id="storage-agent",
+                                        api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                    )
+                                    await nc.notify(
+                                        tenant_id=target.tenant_id or "nexus",
+                                        env=target.env or "prod",
+                                        severity="critical",
+                                        channels=["telegram"],
+                                        subject="\U0001f534 Storage Target Unreachable",
+                                        body=f"{tid} ({target.endpoint_url})\nError: {str(exc)[:100]}",
+                                        idempotency_key=f"storage-down:{tid}:{int(asyncio.get_event_loop().time())}",
+                                    )
+                                except Exception:
+                                    pass
+            except Exception as exc:
+                logger.debug("connectivity_watchdog_error", error=str(exc)[:200])
+
+    _watchdog_task = asyncio.create_task(_connectivity_watchdog())
+
     yield
+
+    _watchdog_task.cancel()
 
     from packages.shared.heartbeat import stop_heartbeat
 

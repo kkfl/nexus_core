@@ -62,6 +62,17 @@ app = FastAPI(
     openapi_url="/openapi.json" if config.enable_docs else None,
 )
 
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+from starlette.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ─── Routers ─────────────────────────────────────────────────────────────────
 app.include_router(targets_router)
 app.include_router(diagnostics_router)

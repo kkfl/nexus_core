@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir \
 # For a monorepo docker context, we assume docker build is run from nexus_core/
 COPY packages/ ./packages/
 COPY apps/automation_agent/ ./apps/automation_agent/
+COPY apps/notifications_agent/ ./apps/notifications_agent/
 
 # Install the shared package explicitly if needed, or rely on PYTHONPATH
 ENV PYTHONPATH=/app

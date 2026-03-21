@@ -63,6 +63,25 @@ async def upsert_target(req: TargetUpsertRequest, db=Depends(postgres.get_db)):
     )
     await db.commit()
 
+    # Telegram notification
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="storage-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id=req.tenant_id, env=req.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f4e6 Storage Target Configured",
+            body=f"{req.storage_target_id} ({req.endpoint_url})",
+            idempotency_key=f"storage-target:{req.storage_target_id}:{req.tenant_id}",
+        )
+    except Exception:
+        logger.warning("telegram_notify_failed", action="storage_target_upsert")
+
     return {
         "id": t.id,
         "storage_target_id": t.storage_target_id,

@@ -116,6 +116,26 @@ async def batch_upsert(
         f"Zone: {payload.zone} — {len(payload.records)} record(s)",
     )
 
+    # Telegram notification
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="dns-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        rec_lines = ", ".join(f"{r.record_type} {r.name}" for r in payload.records[:5])
+        await nc.notify(
+            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f310 DNS Records Added",
+            body=f"Zone: {payload.zone}\n{rec_lines}",
+            idempotency_key=f"dns-upsert:{job.id}",
+        )
+    except Exception:
+        logger.warning("telegram_notify_failed", action="dns_upsert")
+
     return JobCreateResponse(
         job_id=job.id,
         status="pending",
@@ -181,6 +201,26 @@ async def batch_delete(
         identity.service_id,
         f"Zone: {payload.zone} — {len(payload.records)} record(s)",
     )
+
+    # Telegram notification
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="dns-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        rec_lines = ", ".join(f"{r.record_type} {r.name}" for r in payload.records[:5])
+        await nc.notify(
+            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f5d1\ufe0f DNS Records Deleted",
+            body=f"Zone: {payload.zone}\n{rec_lines}",
+            idempotency_key=f"dns-delete:{job.id}",
+        )
+    except Exception:
+        logger.warning("telegram_notify_failed", action="dns_delete")
 
     return JobCreateResponse(
         job_id=job.id,

@@ -68,6 +68,34 @@ async def check_cron_schedules(db: AsyncSession):
                         # Note: we flush to db within the loop so the DB unique constraint prevents duplicate creation
                         await db.commit()
 
+                        # Telegram notification — only for automations running hourly
+                        # or less frequently (skip sub-hourly like PBX screen refresh)
+                        try:
+                            cron_parts = auto.schedule_cron.split()
+                            minute_field = cron_parts[0] if cron_parts else "*"
+                            # If minute field is * or */N where N < 60, it's sub-hourly
+                            is_sub_hourly = (
+                                minute_field == "*"
+                                or (minute_field.startswith("*/") and int(minute_field[2:]) < 60)
+                            )
+                            if not is_sub_hourly:
+                                from apps.notifications_agent.client.notifications_client import NotificationsClient
+                                import os
+                                nc = NotificationsClient(
+                                    base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                    service_id="automation-agent",
+                                    api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                )
+                                await nc.notify(
+                                    tenant_id=auto.tenant_id, env=auto.env, severity="info",
+                                    channels=["telegram"],
+                                    subject="\u23f0 Scheduled Automation",
+                                    body=f"{auto.name} (cron: {auto.schedule_cron})",
+                                    idempotency_key=f"auto-cron:{idempotency_key}",
+                                )
+                        except Exception:
+                            pass  # fire-and-forget
+
                     except Exception as ex:
                         if (
                             "unique constraint" in str(ex).lower()

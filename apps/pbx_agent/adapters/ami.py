@@ -26,7 +26,7 @@ logger = structlog.get_logger(__name__)
 # Timeouts
 CONNECT_TIMEOUT = 5.0
 AUTH_TIMEOUT = 5.0
-CMD_TIMEOUT = 15.0
+CMD_TIMEOUT = 10.0
 READ_CHUNK = 4096
 
 
@@ -60,14 +60,27 @@ async def _read_response(reader: asyncio.StreamReader, timeout: float = CMD_TIME
 
 
 async def _read_command_output(reader: asyncio.StreamReader, timeout: float = CMD_TIMEOUT) -> str:
-    """Read AMI Action: Command response until --END COMMAND-- marker."""
+    """Read AMI Action: Command response.
+
+    AMI v9+ (Asterisk 20.x) terminates command responses with \\r\\n\\r\\n
+    instead of the legacy --END COMMAND-- marker. We accept both.
+    """
     buf = b""
     try:
-        while b"--END COMMAND--" not in buf and b"Response: Error" not in buf:
+        while True:
             chunk = await asyncio.wait_for(reader.read(READ_CHUNK), timeout=timeout)
             if not chunk:
                 break
             buf += chunk
+            # Legacy terminator (Asterisk < 20)
+            if b"--END COMMAND--" in buf:
+                break
+            # AMI v9+ terminator: standard double-CRLF after Response block
+            if b"\r\n\r\n" in buf and (b"Response:" in buf):
+                break
+            # Error response
+            if b"Response: Error" in buf:
+                break
     except TimeoutError:
         raise AmiTimeoutError("Timed out reading AMI command output")
     return buf.decode("utf-8", errors="replace")
@@ -104,6 +117,16 @@ async def _ami_connect(
         writer.close()
         # Do not include the response in error (could contain hints)
         raise AmiAuthError(f"AMI authentication failed for user '{username}' on {host}:{port}")
+
+    # Suppress event flooding — without this, Asterisk sends all subscribed
+    # events which can drown out command responses and cause timeouts.
+    writer.write(b"Action: Events\r\nEventMask: off\r\n\r\n")
+    await writer.drain()
+    # Read (and discard) the Events response
+    try:
+        await _read_response(reader, timeout=3.0)
+    except AmiTimeoutError:
+        pass  # Non-fatal if this times out
 
     return reader, writer
 
@@ -168,6 +191,18 @@ async def run_ami_action(
         return redact(raw)
     finally:
         await _ami_logoff(writer)
+
+
+async def check_ami_login(host: str, port: int, username: str, secret: str) -> bool:
+    """Test AMI authentication only (no command). Returns True if login succeeds."""
+    try:
+        reader, writer = await _ami_connect(host, port, username, secret)
+        await _ami_logoff(writer)
+        return True
+    except AmiAuthError:
+        return False
+    except Exception:
+        return False
 
 
 async def check_connectivity(host: str, port: int, timeout: float = 5.0) -> bool:

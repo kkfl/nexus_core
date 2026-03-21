@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.pbx_agent.adapters.ssh_system import collect_node_snapshot
+from apps.pbx_agent.adapters import ami
+from apps.pbx_agent.adapters.ssh_system import check_ssh_connectivity, collect_node_snapshot
 from apps.pbx_agent.auth.identity import ServiceIdentity, get_service_identity
 from apps.pbx_agent.client.secrets import SecretsError, fetch_secret
 from apps.pbx_agent.models import PbxTarget
@@ -78,14 +79,22 @@ async def _poll_single_target(target: PbxTarget) -> PbxFleetNodeOut:
     if target.status != "active":
         return node
 
-    # Fetch SSH credentials
+    # Step 1: Check network reachability (SSH port open?)
+    # This determines online/offline — separate from SSH auth
+    node.online = await check_ssh_connectivity(target.host, target.ssh_port)
+
+    if not node.online:
+        node.poll_error = f"SSH port {target.ssh_port} unreachable on {target.host}"
+        return node
+
+    # Step 2: Fetch SSH credentials
     key_pem, password = await _fetch_ssh_creds(target)
 
     if not key_pem and not password:
         node.poll_error = "No SSH credentials configured"
         return node
 
-    # Collect snapshot via SSH
+    # Step 3: Collect snapshot via SSH (auth + commands)
     snap = await collect_node_snapshot(
         host=target.host,
         port=target.ssh_port,
@@ -94,9 +103,10 @@ async def _poll_single_target(target: PbxTarget) -> PbxFleetNodeOut:
         password=password,
     )
 
-    node.online = snap.online
+    # Keep online status from network check — SSH auth failure ≠ offline
     node.ssh_ok = snap.ssh_ok
-    node.poll_error = snap.error
+    if not snap.ssh_ok:
+        node.poll_error = snap.error
 
     if snap.ssh_ok:
         # System metrics
@@ -117,17 +127,21 @@ async def _poll_single_target(target: PbxTarget) -> PbxFleetNodeOut:
         node.uptime_seconds = snap.asterisk.uptime_seconds
         node.uptime_human = snap.asterisk.uptime_human
 
-        # Also try AMI for more accurate channel/registration data
-        try:
-            ami_secret = await fetch_secret(
-                alias=target.ami_secret_alias,
-                tenant_id=target.tenant_id,
-                env=target.env,
-                reason="fleet_status_ami",
-            )
-            node.ami_ok = True
-        except SecretsError:
-            pass  # AMI status already collected via SSH CLI fallback
+        # AMI status: test actual AMI login with credentials
+        if snap.asterisk.asterisk_up:
+            try:
+                ami_secret = await fetch_secret(
+                    alias=target.ami_secret_alias,
+                    tenant_id=target.tenant_id,
+                    env=target.env,
+                    reason="fleet_status_ami",
+                )
+                node.ami_ok = await ami.check_ami_login(
+                    host=target.host, port=target.ami_port,
+                    username=target.ami_username, secret=ami_secret,
+                )
+            except Exception:
+                node.ami_ok = False
 
     node.last_polled_at = datetime.now(UTC)
     return node

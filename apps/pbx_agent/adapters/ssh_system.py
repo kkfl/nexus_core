@@ -55,6 +55,160 @@ class PbxNodeSnapshot:
     error: str | None = None
 
 
+def sanitize_ssh_key(pem: str) -> str:
+    """
+    Sanitize an SSH private key value:
+    - Strips carriage returns and trailing whitespace
+    - Detects PuTTY PPK format and converts to OpenSSH PEM
+    - If raw base64 (no PEM headers), auto-wraps with OPENSSH PRIVATE KEY headers
+    """
+    import base64
+    import textwrap as tw
+
+    # Clean up whitespace
+    pem = pem.strip().replace('\r\n', '\n').replace('\r', '')
+
+    # ── PPK format detection ──────────────────────────────────────────
+    if pem.startswith('PuTTY-User-Key-File-'):
+        return _convert_ppk_to_openssh(pem)
+
+    # ── Already has PEM headers ───────────────────────────────────────
+    if '-----BEGIN' in pem:
+        return pem
+
+    # ── Raw base64 detection ──────────────────────────────────────────
+    clean = pem.replace('\n', '').replace(' ', '')
+    try:
+        decoded = base64.b64decode(clean)
+        if decoded[:14] == b'openssh-key-v1':
+            lines = tw.wrap(clean, 70)
+            return '-----BEGIN OPENSSH PRIVATE KEY-----\n' + '\n'.join(lines) + '\n-----END OPENSSH PRIVATE KEY-----\n'
+        if decoded[0:1] == b'\x30':
+            lines = tw.wrap(clean, 64)
+            return '-----BEGIN RSA PRIVATE KEY-----\n' + '\n'.join(lines) + '\n-----END RSA PRIVATE KEY-----\n'
+    except Exception:
+        pass
+
+    return pem
+
+
+def _convert_ppk_to_openssh(ppk_content: str) -> str:
+    """Convert PuTTY PPK v2/v3 format to OpenSSH PEM."""
+    import base64
+    from cryptography.hazmat.primitives.asymmetric import rsa, ed25519, ec
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PrivateFormat, NoEncryption,
+    )
+
+    logger.info("ppk_conversion_start", length=len(ppk_content))
+
+    lines = ppk_content.strip().splitlines()
+    headers: dict[str, str] = {}
+    section = None
+    section_lines: dict[str, list[str]] = {}
+
+    for line in lines:
+        if line.startswith('PuTTY-User-Key-File-'):
+            headers['version'] = line.split(':')[0].split('-')[-1]
+            headers['key_type'] = line.split(':',1)[1].strip()
+        elif line.startswith('Encryption:'):
+            headers['encryption'] = line.split(':',1)[1].strip()
+        elif line.startswith('Comment:'):
+            headers['comment'] = line.split(':',1)[1].strip()
+        elif line.startswith('Public-Lines:'):
+            section = 'public'
+            section_lines['public'] = []
+        elif line.startswith('Private-Lines:'):
+            section = 'private'
+            section_lines['private'] = []
+        elif line.startswith('Private-MAC:') or line.startswith('Private-Hash:'):
+            section = None
+        elif section:
+            section_lines[section].append(line.strip())
+
+    if headers.get('encryption', 'none') != 'none':
+        raise ValueError("Encrypted PPK files are not supported — export without passphrase from PuTTYgen")
+
+    if 'private' not in section_lines:
+        raise ValueError("Could not find private key data in PPK file")
+
+    pub_blob = base64.b64decode(''.join(section_lines.get('public', [])))
+    priv_blob = base64.b64decode(''.join(section_lines['private']))
+    key_type = headers.get('key_type', '')
+
+    if key_type == 'ssh-rsa':
+        pem = _ppk_rsa_to_pem(pub_blob, priv_blob)
+    elif key_type == 'ssh-ed25519':
+        pem = _ppk_ed25519_to_pem(priv_blob)
+    else:
+        raise ValueError(f"Unsupported PPK key type: {key_type}")
+
+    logger.info("ppk_conversion_success", key_type=key_type)
+    return pem
+
+
+def _read_ssh_string(data: bytes, offset: int) -> tuple[bytes, int]:
+    """Read a length-prefixed SSH string from a byte buffer."""
+    import struct
+    length = struct.unpack('>I', data[offset:offset+4])[0]
+    value = data[offset+4:offset+4+length]
+    return value, offset + 4 + length
+
+
+def _ppk_rsa_to_pem(pub_blob: bytes, priv_blob: bytes) -> str:
+    """Reconstruct RSA key from PPK public+private blobs."""
+    from cryptography.hazmat.primitives.asymmetric.rsa import rsa_crt_dmp1, rsa_crt_dmq1, rsa_crt_iqmp, RSAPrivateNumbers, RSAPublicNumbers
+    from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+
+    # Public blob: key_type(string) + e(mpint) + n(mpint)
+    off = 0
+    _, off = _read_ssh_string(pub_blob, off)  # skip key type
+    e_bytes, off = _read_ssh_string(pub_blob, off)
+    n_bytes, off = _read_ssh_string(pub_blob, off)
+    e = int.from_bytes(e_bytes, 'big')
+    n = int.from_bytes(n_bytes, 'big')
+
+    # Private blob: d(mpint) + p(mpint) + q(mpint) + iqmp(mpint)
+    off = 0
+    d_bytes, off = _read_ssh_string(priv_blob, off)
+    p_bytes, off = _read_ssh_string(priv_blob, off)
+    q_bytes, off = _read_ssh_string(priv_blob, off)
+    iqmp_bytes, off = _read_ssh_string(priv_blob, off)
+    d = int.from_bytes(d_bytes, 'big')
+    p = int.from_bytes(p_bytes, 'big')
+    q = int.from_bytes(q_bytes, 'big')
+    iqmp = int.from_bytes(iqmp_bytes, 'big')
+
+    dmp1 = rsa_crt_dmp1(d, p)
+    dmq1 = rsa_crt_dmq1(d, q)
+
+    pub_numbers = RSAPublicNumbers(e, n)
+    priv_numbers = RSAPrivateNumbers(p, q, d, dmp1, dmq1, iqmp, pub_numbers)
+    key = priv_numbers.private_key()
+
+    return key.private_bytes(Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption()).decode()
+
+
+def _ppk_ed25519_to_pem(priv_blob: bytes) -> str:
+    """Reconstruct Ed25519 key from PPK private blob."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+
+    # Ed25519 private blob is just the 64-byte seed+public concatenation
+    # or sometimes just 32-byte seed
+    off = 0
+    priv_bytes, _ = _read_ssh_string(priv_blob, off)
+    if len(priv_bytes) == 64:
+        seed = priv_bytes[:32]
+    elif len(priv_bytes) == 32:
+        seed = priv_bytes
+    else:
+        raise ValueError(f"Unexpected Ed25519 private key length: {len(priv_bytes)}")
+
+    key = Ed25519PrivateKey.from_private_bytes(seed)
+    return key.private_bytes(Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption()).decode()
+
+
 def _get_ssh_client(host: str, port: int, username: str,
                     private_key_pem: str | None = None,
                     password: str | None = None):
@@ -72,6 +226,8 @@ def _get_ssh_client(host: str, port: int, username: str,
     }
 
     if private_key_pem:
+        # Sanitize: auto-add PEM headers if missing, strip bad whitespace
+        private_key_pem = sanitize_ssh_key(private_key_pem)
         # Try Ed25519 first, then RSA
         key_obj = None
         for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
@@ -188,20 +344,76 @@ def _parse_asterisk_status(ssh) -> AsteriskCliStatus:
     except Exception:
         pass
 
-    # SIP registrations (try pjsip first, fall back to sip)
+    # SIP + PJSIP registrations (only 3-4 digit extensions)
+    pjsip_count = 0
+    sip_count = 0
+
+    # PJSIP: count registered contacts for 3-4 digit endpoints
+    # Output format:
+    #   Contact:  <Aor/ContactUri     >  Hash    Status    RTT(ms)
+    #  ====...
+    #   201/sip:201@10.0.0.5:5060       abc123   Avail     12.345
     try:
         raw = _run_cmd(ssh,
-            "asterisk -rx 'pjsip show registrations' 2>/dev/null || "
-            "asterisk -rx 'sip show registry' 2>/dev/null",
+            "asterisk -rx 'pjsip show contacts' 2>/dev/null",
             timeout=5)
         if raw:
-            # Count non-header, non-empty lines with "Registered" or valid entries
-            lines = [l for l in raw.split("\n")
-                     if l.strip() and not l.startswith("=") and not l.startswith("-")
-                     and "Object" not in l and "Name/username" not in l]
-            a.sip_registrations = max(0, len(lines) - 1)  # subtract header
+            for line in raw.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Skip separator lines
+                if stripped.startswith("=") or stripped.startswith("-"):
+                    continue
+                if "Objects found" in stripped:
+                    continue
+                # Skip the header line (contains <Aor/ or "Hash")
+                if '<Aor' in stripped or 'Hash' in stripped:
+                    continue
+                # Data lines look like: "Contact:  201/sip:201@10.0.0.5  abc  Avail  12.3"
+                # or just: "201/sip:201@10.0.0.5  abc  Avail  12.3"
+                if 'Avail' not in line and 'NonQual' not in line:
+                    continue
+                # Strip "Contact:" prefix if present
+                data = stripped
+                if data.startswith("Contact:"):
+                    data = data[len("Contact:"):].strip()
+                # Now data looks like "201/sip:201@..."
+                parts = data.split("/", 1)
+                if parts:
+                    aor = parts[0].strip()
+                    if re.match(r'^\d{3,4}$', aor):
+                        pjsip_count += 1
     except Exception:
         pass
+
+    # SIP (chan_sip): count registered peers for 3-4 digit extensions
+    # Output format:
+    #  Name/username    Host         Dyn Forcerport Comedia  ACL Port  Status
+    #  201/201          10.0.0.5      D  Auto (No)  No           5060 OK (12 ms)
+    try:
+        raw = _run_cmd(ssh,
+            "asterisk -rx 'sip show peers' 2>/dev/null",
+            timeout=5)
+        if raw:
+            for line in raw.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("Name") or stripped.startswith("-") or "peers" in stripped.lower():
+                    continue
+                # Must have OK status
+                if 'OK' not in line:
+                    continue
+                parts = stripped.split("/", 1)
+                if parts:
+                    peer = parts[0].strip()
+                    if re.match(r'^\d{3,4}$', peer):
+                        sip_count += 1
+    except Exception:
+        pass
+
+    a.sip_registrations = pjsip_count + sip_count
 
     # Uptime
     try:

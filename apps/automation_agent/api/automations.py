@@ -139,6 +139,26 @@ async def trigger_run(
         )
         await db.commit()
         await db.refresh(run)
+
+        # Telegram notification for manual triggers
+        try:
+            from apps.notifications_agent.client.notifications_client import NotificationsClient
+            import os
+            nc = NotificationsClient(
+                base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                service_id="automation-agent",
+                api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+            )
+            await nc.notify(
+                tenant_id=tenant_id, env=env, severity="info",
+                channels=["telegram"],
+                subject="\u2699\ufe0f Automation Triggered",
+                body=f"{automation.name} (manual run)",
+                idempotency_key=f"auto-trigger:{run.id}",
+            )
+        except Exception:
+            pass  # fire-and-forget
+
         return AutomationRunOut.model_validate(run)
     except Exception as e:
         await db.rollback()

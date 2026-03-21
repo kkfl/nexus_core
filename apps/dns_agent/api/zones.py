@@ -343,6 +343,27 @@ async def import_provider_zones(
 
         imported.append(zone)
 
+    # Telegram notification for all imported zones
+    if imported:
+        try:
+            from apps.notifications_agent.client.notifications_client import NotificationsClient
+            import os
+            nc = NotificationsClient(
+                base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                service_id="dns-agent",
+                api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+            )
+            zone_list = ", ".join(z.zone_name for z in imported[:5])
+            await nc.notify(
+                tenant_id=payload.tenant_id, env=payload.env, severity="info",
+                channels=["telegram"],
+                subject="\U0001f310 DNS Zones Imported",
+                body=f"{len(imported)} zone(s) from {payload.provider}: {zone_list}",
+                idempotency_key=f"dns-import:{payload.tenant_id}:{','.join(payload.zone_names[:3])}",
+            )
+        except Exception:
+            logger.warning("telegram_notify_failed", action="dns_zone_import")
+
     # Refresh each zone to eagerly load all scalar attrs (created_at,
     # updated_at are server_default) so Pydantic doesn't trigger a lazy
     # relationship load (records) in the sync validation context.

@@ -178,6 +178,25 @@ async def create_server(body: CreateServerRequest, db: AsyncSession = Depends(ge
     )
     logger.info("server_create_queued", job_id=job.id, host_id=body.host_id, label=body.label)
     send_alert("server_create", "server-agent", f"Label: {body.label} (host: {host.label})")
+
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="server-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id=host.tenant_id, env=host.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f5a5\ufe0f Server Provisioning",
+            body=f"{body.label} on {host.label} ({host.provider})",
+            idempotency_key=f"server-create:{job.id}",
+        )
+    except Exception:
+        logger.warning("telegram_notify_failed", action="server_create")
+
     return JobCreateResponse(job_id=job.id)
 
 
@@ -197,6 +216,25 @@ async def delete_server(server_id: str, db: AsyncSession = Depends(get_db)):
     )
     logger.info("server_delete_queued", job_id=job.id, server_id=server_id)
     send_alert("server_delete", "server-agent", f"Server: {server.label or server_id}")
+
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="server-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id=server.tenant_id, env=server.env, severity="warn",
+            channels=["telegram"],
+            subject="\U0001f5d1\ufe0f Server Destroyed",
+            body=f"{server.label or server_id}",
+            idempotency_key=f"server-delete:{job.id}",
+        )
+    except Exception:
+        logger.warning("telegram_notify_failed", action="server_delete")
+
     return JobCreateResponse(job_id=job.id)
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel as _PydanticBaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,6 +86,26 @@ async def create_secret(
         )
 
     secret = await _store.create(db, payload, service_id=identity.service_id)
+
+    # Telegram notification (skip internal/automated secrets)
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="secrets-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f512 Secret Created",
+            body=f"{payload.alias} (by {identity.service_id})",
+            idempotency_key=f"secret-create:{secret.id}",
+        )
+    except Exception:
+        pass
+
     return _to_meta(secret)
 
 
@@ -170,6 +191,63 @@ async def read_secret_value(
     secret.last_used_at = datetime.datetime.utcnow()
     await db.flush()
     # NOTE: plaintext is returned but NOT logged anywhere in this function.
+    return SecretReadResponse(
+        id=secret.id,
+        alias=secret.alias,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+        value=plaintext,
+    )
+
+
+class _ReadByAliasRequest(_PydanticBaseModel):
+    alias: str
+    tenant_id: str
+    env: str
+    reason: str = ""
+
+
+@router.post("/read-by-alias", response_model=SecretReadResponse)
+async def read_secret_by_alias(
+    body: _ReadByAliasRequest,
+    identity: ServiceIdentity = Depends(get_service_identity),
+    policy: PolicyEngine = Depends(get_policy_engine),
+    db: AsyncSession = Depends(get_vault_db),
+) -> SecretReadResponse:
+    """
+    Look up a secret by alias+tenant+env, then decrypt and return the value.
+    Equivalent to GET-by-alias + POST /read in a single call.
+    Policy is checked against the actual secret alias, not a wildcard.
+    """
+    secret = await _store.get_by_alias(db, body.alias, body.tenant_id, body.env)
+    if not secret or not secret.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Secret alias '{body.alias}' not found.")
+
+    decision = policy.check(
+        service_id=identity.service_id,
+        action="read",
+        secret_alias=secret.alias,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+    )
+    await audit_sink.log_event(
+        db,
+        request_id=identity.request_id,
+        service_id=identity.service_id,
+        tenant_id=secret.tenant_id,
+        env=secret.env,
+        secret_alias=secret.alias,
+        action="read",
+        result="allowed" if decision.allowed else "denied",
+        reason=body.reason or decision.reason,
+        ip_address=identity.ip_address,
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
+
+    plaintext = await _store.get_plaintext(db, secret)
+    secret.last_used_at = datetime.datetime.utcnow()
+    await db.flush()
     return SecretReadResponse(
         id=secret.id,
         alias=secret.alias,
@@ -308,4 +386,24 @@ async def delete_secret(
         ip_address=identity.ip_address,
     )
     await _store.deactivate(db, secret)
+
+    # Telegram notification
+    try:
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+        import os
+        nc = NotificationsClient(
+            base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+            service_id="secrets-agent",
+            api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+        )
+        await nc.notify(
+            tenant_id=secret.tenant_id, env=secret.env, severity="info",
+            channels=["telegram"],
+            subject="\U0001f5d1\ufe0f Secret Deleted",
+            body=f"{secret.alias} (by {identity.service_id})",
+            idempotency_key=f"secret-delete:{secret_id}",
+        )
+    except Exception:
+        pass
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
