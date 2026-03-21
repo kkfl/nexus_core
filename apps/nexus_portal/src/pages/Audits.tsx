@@ -15,14 +15,14 @@ export default function Audits() {
 
     const { data: audits, isLoading } = useQuery({
         queryKey: ['audits'],
-        queryFn: async () => (await apiClient.get('/audits?limit=100')).data
+        queryFn: async () => (await apiClient.get('/audit/?limit=100')).data
     });
 
     const columns = [
         { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
         { title: 'Actor', key: 'actor', render: (_: any, r: any) => <Space><Text style={{ color: t.cyan, fontWeight: 600 }}>{r.actor_type}</Text><Text style={{ color: t.muted }}>{r.actor_id}</Text></Space> },
         { title: 'Action', dataIndex: 'action', key: 'action', render: (a: string) => <Tag style={{ background: `${t.purple}18`, color: t.purple, border: `1px solid ${t.purple}40` }}>{a}</Tag> },
-        { title: 'Target', key: 'target', render: (_: any, r: any) => <Space><Text style={{ color: t.text, fontWeight: 600 }}>{r.target_type}</Text><Text style={{ color: t.muted }}>{r.target_id}</Text></Space> },
+        { title: 'Target', key: 'target', render: (_: any, r: any) => <Space><Text style={{ color: t.text, fontWeight: 600 }}>{r.target_type}</Text><Text style={{ color: t.muted }}>{r.target_id || ''}</Text></Space> },
         { title: 'Timestamp', dataIndex: 'created_at', key: 'created_at', render: (date: string) => <Text style={{ color: t.muted, fontSize: 12 }}><ClockCircleOutlined style={{ marginRight: 4 }} />{new Date(date).toLocaleString()}</Text> },
         {
             title: 'Details', key: 'details', render: (_: any, record: any) => (

@@ -18,8 +18,8 @@ class AuditEventOut(BaseModel):
     actor_id: int | None
     actor_type: str | None
     action: str
-    resource_type: str
-    resource_id: str | None
+    target_type: str | None = None
+    target_id: int | None = None
     meta_data: dict | None
     created_at: datetime.datetime
 

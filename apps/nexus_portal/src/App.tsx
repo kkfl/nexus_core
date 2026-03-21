@@ -35,6 +35,7 @@ import Users from './pages/Users';
 import ApiKeys from './pages/ApiKeys';
 import AuditLog from './pages/AuditLog';
 import IpAllowlist from './pages/IpAllowlist';
+import BackupRestore from './pages/BackupRestore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -132,6 +133,11 @@ function App() {
             <Route path="settings/ip-allowlist" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <IpAllowlist />
+              </ProtectedRoute>
+            } />
+            <Route path="settings/backup" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <BackupRestore />
               </ProtectedRoute>
             } />
           </Route>

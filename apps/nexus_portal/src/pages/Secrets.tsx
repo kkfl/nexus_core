@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Table, Button, Space, Tag, Input, Typography, Tabs } from 'antd';
-import { KeyOutlined, PlusOutlined, SearchOutlined, HistoryOutlined, SafetyOutlined, EditOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Table, Button, Space, Tag, Input, Typography, Tabs, message } from 'antd';
+import { KeyOutlined, PlusOutlined, SearchOutlined, HistoryOutlined, SafetyOutlined, EditOutlined, SyncOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
@@ -32,6 +32,21 @@ export default function Secrets() {
         queryFn: async () => {
             const resp = await apiClient.get('/portal/secrets');
             return resp.data;
+        },
+    });
+
+    // Verify a secret is readable from the vault
+    const verifyMutation = useMutation({
+        mutationFn: async (record: any) => {
+            const resp = await apiClient.get(`/portal/secrets/${record.alias}?tenant_id=${record.tenant_id}&env=${record.env}&reason=verify`);
+            return { alias: record.alias, data: resp.data };
+        },
+        onSuccess: (result: any) => {
+            message.success(`✅ Secret "${result.alias}" is readable and valid`);
+        },
+        onError: (e: any, record: any) => {
+            const detail = e?.response?.data?.detail || e?.message || 'Unknown error';
+            message.error(`❌ Secret "${record.alias}" verification failed: ${detail}`, 6);
         },
     });
     const columns = [
@@ -88,6 +103,13 @@ export default function Secrets() {
             key: 'actions',
             render: (_: any, record: any) => (
                 <Space size="middle">
+                    <Button
+                        icon={<SafetyCertificateOutlined />}
+                        onClick={() => verifyMutation.mutate(record)}
+                        loading={verifyMutation.isPending}
+                        style={{ color: '#4ade80', borderColor: 'rgba(34,197,94,0.3)' }}
+                        title="Verify Secret"
+                    />
                     <Button
                         type="primary"
                         icon={<SafetyOutlined />}

@@ -7,6 +7,7 @@ import {
     DatabaseOutlined, MailOutlined, ApiOutlined, ClockCircleOutlined,
     WarningOutlined, RightOutlined, DashboardOutlined,
     CheckCircleOutlined, CloseCircleOutlined,
+    PhoneOutlined, CloudServerOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, cardStyle, tableStyleOverrides, pageContainer } from '../theme';
@@ -17,6 +18,8 @@ interface DashboardSummary {
     metrics: {
         agents: { total: number; active: number };
         servers: { total: number; active: number };
+        pbx: { total: number; active: number };
+        storage: { total: number; active: number };
         mail: { total_mailboxes: number; inbound_unread: number };
     };
     recent_activity: Array<{ name: string; status: string; last_seen_at: string | null }>;
@@ -103,6 +106,8 @@ export default function Dashboard() {
     const metrics = data?.metrics || {
         agents: { total: 0, active: 0 },
         servers: { total: 0, active: 0 },
+        pbx: { total: 0, active: 0 },
+        storage: { total: 0, active: 0 },
         mail: { total_mailboxes: 0, inbound_unread: 0 }
     };
 
@@ -115,11 +120,25 @@ export default function Dashboard() {
             clickable: true, onClick: () => navigate('/agents'),
         },
         {
-            label: 'MANAGED SERVERS', icon: <DatabaseOutlined />, glow: t.cyan,
+            label: 'MANAGED SERVERS', icon: <DatabaseOutlined />, glow: '#f59e0b',
             value: metrics.servers.total, sub: `${metrics.servers.active} Running`,
             subColor: metrics.servers.active > 0 ? t.green : t.muted,
             subIcon: metrics.servers.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/infrastructure/servers'),
+        },
+        {
+            label: 'PBX FLEET', icon: <PhoneOutlined />, glow: t.cyan,
+            value: metrics.pbx.total, sub: `${metrics.pbx.active} Active`,
+            subColor: metrics.pbx.active > 0 ? t.green : t.muted,
+            subIcon: metrics.pbx.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
+            clickable: true, onClick: () => navigate('/integrations/pbx'),
+        },
+        {
+            label: 'STORAGE TARGETS', icon: <CloudServerOutlined />, glow: t.green,
+            value: metrics.storage.total, sub: `${metrics.storage.active} Active`,
+            subColor: metrics.storage.active > 0 ? t.green : t.muted,
+            subIcon: metrics.storage.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
+            clickable: true, onClick: () => navigate('/integrations/storage'),
         },
         {
             label: 'MAILBOXES', icon: <MailOutlined />, glow: t.purple,
@@ -158,7 +177,7 @@ export default function Dashboard() {
             )}
 
             {/* ═══ Summary Cards ═══ */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 28 }}>
                 {summaryCards.map((card) => (
                     <TiltCard
                         key={card.label}

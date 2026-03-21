@@ -18,7 +18,6 @@ import {
     SearchOutlined,
     AppstoreOutlined,
     SafetyOutlined,
-    CameraOutlined,
     LineChartOutlined,
     AlertOutlined,
     HddOutlined,
@@ -29,6 +28,7 @@ import {
     TeamOutlined,
     SunOutlined,
     MoonOutlined,
+    CloudDownloadOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -108,7 +108,7 @@ export default function AdminLayout() {
             icon: <SettingOutlined />,
             label: 'Integrations',
             children: [
-                { key: '/integrations/pbx', label: 'PBX Snapshots', icon: <CameraOutlined /> },
+                { key: '/integrations/pbx', label: 'PBX Fleet Management', icon: <PhoneOutlined /> },
                 { key: '/integrations/monitoring', label: 'Monitoring Ingests', icon: <LineChartOutlined /> },
                 { key: '/integrations/storage', label: 'Storage Jobs', icon: <HddOutlined /> },
                 { key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> },
@@ -147,6 +147,7 @@ export default function AdminLayout() {
                 { key: '/settings/api-keys', label: 'API Keys', icon: <KeyOutlined /> },
                 { key: '/settings/ip-allowlist', label: 'IP Allowlist', icon: <GlobalOutlined /> },
                 { key: '/settings/audit-log', label: 'Audit Log', icon: <SafetyOutlined /> },
+                { key: '/settings/backup', label: 'Backup & Restore', icon: <CloudDownloadOutlined /> },
             ],
         }] : []),
     ];

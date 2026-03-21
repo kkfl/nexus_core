@@ -223,9 +223,8 @@ async def dashboard_summary(
         server_base = (
             server_agent.base_url
             if server_agent
-            else os.environ.get("SERVER_AGENT_URL", "http://server-agent:8002")
+            else os.environ.get("SERVER_AGENT_URL", "http://server-agent:8010")
         )
-        # server_agent gets the current identity if proxying via bearer token, but for internal reads we can just GET
         async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(f"{server_base}/v1/servers")
             if resp.status_code == 200:
@@ -235,7 +234,40 @@ async def dashboard_summary(
     except Exception as e:
         logger.warning("dashboard_fetch_servers_failed", error=str(e))
 
-    # 3. Fetch mailboxes
+    # 3. Fetch PBX targets (raw SQL — ORM model diverges from actual schema)
+    total_pbx = 0
+    active_pbx = 0
+    try:
+        from sqlalchemy import text
+        pbx_row = (await db.execute(text(
+            "SELECT count(*) AS total, "
+            "count(*) FILTER (WHERE status = 'active') AS active "
+            "FROM pbx_targets"
+        ))).first()
+        if pbx_row:
+            total_pbx = pbx_row.total
+            active_pbx = pbx_row.active
+    except Exception as e:
+        logger.warning("dashboard_fetch_pbx_failed", error=str(e))
+
+    # 4. Fetch storage targets (raw SQL — ORM model diverges from actual schema)
+    total_storage = 0
+    active_storage = 0
+    try:
+        from sqlalchemy import text as sa_text
+        storage_row = (await db.execute(sa_text(
+            "SELECT count(*) AS total, "
+            "count(*) FILTER (WHERE is_active = true) AS active "
+            "FROM storage_targets"
+        ))).first()
+        if storage_row:
+            total_storage = storage_row.total
+            active_storage = storage_row.active
+    except Exception as e:
+        await db.rollback()
+        logger.warning("dashboard_fetch_storage_failed", error=str(e))
+
+    # 5. Fetch mailboxes
     total_mailboxes = 0
     inbound_unread = 0
     try:
@@ -253,7 +285,7 @@ async def dashboard_summary(
     except Exception as e:
         logger.warning("dashboard_fetch_email_failed", error=str(e))
 
-    # 4. Fetch recent transactions (system-wide event bus)
+    # 6. Fetch recent transactions (system-wide event bus)
     recent_transactions = []
     try:
         stmt = select(BusEvent).order_by(BusEvent.occurred_at.desc()).limit(15)
@@ -275,8 +307,11 @@ async def dashboard_summary(
         "metrics": {
             "agents": {"total": total_agents, "active": active_agents},
             "servers": {"total": total_servers, "active": active_servers},
+            "pbx": {"total": total_pbx, "active": active_pbx},
+            "storage": {"total": total_storage, "active": active_storage},
             "mail": {"total_mailboxes": total_mailboxes, "inbound_unread": inbound_unread},
         },
         "recent_activity": recent_activity,
         "recent_transactions": recent_transactions,
     }
+

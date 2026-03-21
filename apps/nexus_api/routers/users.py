@@ -104,6 +104,16 @@ async def create_user(
         admin.email,
         f"New user: {body.email} (role: {body.role})",
     )
+
+    from apps.nexus_api.notify import notify_action
+    await notify_action(
+        action="user.created",
+        subject="\U0001f465 User Created",
+        body=f"{body.email} (role: {body.role}) by {admin.email}",
+        event_type="nexus.user.created",
+        payload={"email": body.email, "role": body.role},
+    )
+
     return UserOut.from_user(user)
 
 
@@ -161,6 +171,16 @@ async def update_user(
         sev = "critical" if "password" in changes else "warn"
         send_security_alert("user_update", admin.email, ", ".join(detail_parts), severity=sev)
 
+        from apps.nexus_api.notify import notify_action
+        await notify_action(
+            action="user.updated",
+            subject="\U0001f465 User Updated",
+            body=", ".join(detail_parts),
+            event_type="nexus.user.updated",
+            severity="warn" if "password" in changes else "info",
+            payload={"user_id": user_id, "changes": list(changes.keys())},
+        )
+
     return UserOut.from_user(user)
 
 
@@ -185,4 +205,15 @@ async def reset_password(
         admin.email,
         f"Password reset for: {user.email}",
     )
+
+    from apps.nexus_api.notify import notify_action
+    await notify_action(
+        action="user.password_reset",
+        subject="\U0001f510 Password Reset",
+        body=f"{user.email} (by admin: {admin.email})",
+        event_type="nexus.user.password_reset",
+        severity="warn",
+        payload={"user_email": user.email},
+    )
+
     return {"status": "password_reset", "user_id": user_id}

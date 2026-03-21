@@ -11,6 +11,7 @@ from apps.nexus_api.routers import (
     artifacts,
     audit,
     auth,
+    backup,
     brain_routes,
     carrier,
     docs,
@@ -160,7 +161,7 @@ async def lifespan(app: FastAPI):
 
     # ── Start stale-heartbeat monitor ──────────────────────────────
     async def _heartbeat_monitor():
-        """Every 3 min, check for agents that missed 3+ heartbeats and send alert."""
+        """Every 2 min, check for agents that missed heartbeats and send Telegram alert."""
         from datetime import UTC, datetime, timedelta
 
         import httpx
@@ -168,9 +169,11 @@ async def lifespan(app: FastAPI):
         from packages.shared.alerts import send_alert
 
         _alerted: set[str] = set()  # track which agents we already alerted on
+        _tick_count = 0  # track cycles for periodic OK log
 
         while True:
-            await asyncio.sleep(180)  # check every 3 min
+            await asyncio.sleep(120)  # check every 2 min
+            _tick_count += 1
             try:
                 async with httpx.AsyncClient(timeout=5) as hc:
                     resp = await hc.get(
@@ -183,6 +186,7 @@ async def lifespan(app: FastAPI):
 
                 now = datetime.now(UTC)
                 threshold = now - timedelta(minutes=3)
+                healthy_count = 0
 
                 for a in agents_list:
                     name = a.get("name", "")
@@ -207,8 +211,61 @@ async def lifespan(app: FastAPI):
                                 severity="warn",
                             )
                             logger.warning("agent_heartbeat_stale", agent=name, last_heartbeat=hb)
+
+                            # Telegram alert
+                            from apps.nexus_api.notify import notify_action
+                            await notify_action(
+                                action="agent.down",
+                                subject="\U0001f6a8 Agent DOWN",
+                                body=f"{name} — last seen: {hb}",
+                                event_type="nexus.agent.down",
+                                severity="critical",
+                                actor_type="system",
+                                actor_id="heartbeat-monitor",
+                                payload={"agent": name, "last_heartbeat": hb},
+                            )
                     else:
-                        _alerted.discard(name)  # recovered, clear alert state
+                        healthy_count += 1
+                        if name in _alerted:
+                            _alerted.discard(name)
+                            # Recovery notification
+                            from apps.nexus_api.notify import notify_action
+                            await notify_action(
+                                action="agent.recovered",
+                                subject="\u2705 Agent Recovered",
+                                body=f"{name} is back online",
+                                event_type="nexus.agent.recovered",
+                                severity="info",
+                                actor_type="system",
+                                actor_id="heartbeat-monitor",
+                                payload={"agent": name},
+                            )
+
+                # Every 15 cycles (~30 min), log a heartbeat-OK to the activity log
+                if _tick_count % 15 == 0:
+                    try:
+                        from packages.shared.db import AsyncSessionLocal
+                        from packages.shared.events.schema import EventActor, NexusEvent
+                        from packages.shared.events.store import persist_event
+
+                        event = NexusEvent(
+                            event_type="nexus.heartbeat.ok",
+                            produced_by="nexus-api",
+                            correlation_id="",
+                            actor=EventActor(type="system", id="heartbeat-monitor"),
+                            tenant_id="nexus",
+                            severity="info",
+                            payload={
+                                "summary": f"\U0001f49a Heartbeat OK — {healthy_count}/{len(agents_list)} agents healthy",
+                                "detail": f"All monitored agents responding normally",
+                            },
+                        )
+                        async with AsyncSessionLocal() as db:
+                            await persist_event(db, event)
+                            await db.commit()
+                    except Exception:
+                        pass  # non-critical
+
             except Exception as exc:
                 logger.debug("heartbeat_monitor_error", error=str(exc)[:200])
 
@@ -348,6 +405,7 @@ app.include_router(events.router, prefix="/events", tags=["events"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(ip_allowlist.router, prefix="/settings/ip-allowlist", tags=["settings"])
 app.include_router(email_events.router, prefix="/notify", tags=["notifications"])
+app.include_router(backup.router, prefix="/settings/backup", tags=["settings"])
 
 
 @app.get("/healthz", tags=["health"])

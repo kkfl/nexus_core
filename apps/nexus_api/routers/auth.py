@@ -57,6 +57,19 @@ async def login_for_access_token(
     user = result.scalars().first()
 
     if not user or not verify_password(form_data.password, user.password_hash):
+        # Audit failed login attempt
+        from packages.shared.models import AuditEvent as AuditEventModel
+        failed_event = AuditEventModel(
+            actor_type="user",
+            actor_id=0,
+            action="login_failed",
+            target_type="auth",
+            target_id=0,
+            meta_data={"attempted_email": form_data.username, "ip": request.client.host},
+        )
+        db.add(failed_event)
+        await db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -70,9 +83,22 @@ async def login_for_access_token(
     refresh_token = create_refresh_token(data={"sub": user.email})
 
     user.refresh_token_hash = get_password_hash(refresh_token)
-    log_audit_event(db, "login_success", "user", user, str(user.id))
+    log_audit_event(
+        db, "login_success", "user", user, str(user.id),
+        {"email": user.email, "role": user.role, "ip": request.client.host},
+    )
     await metrics_emitter.emit(db, "login", meta={"user_id": user.id, "role": user.role})
     await db.commit()
+
+    # Telegram notification
+    from apps.nexus_api.notify import notify_action
+    await notify_action(
+        action="user.login",
+        subject="\U0001f464 User Login",
+        body=f"{user.email} ({user.role})",
+        event_type="nexus.user.login",
+        payload={"email": user.email, "role": user.role},
+    )
 
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 

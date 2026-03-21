@@ -1,12 +1,12 @@
-import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Progress, Drawer, Empty } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Progress, Drawer, Empty, Alert, Popconfirm, Upload } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pbxClient } from '../api/pbxClient';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
     PhoneOutlined, PlusOutlined, ReloadOutlined, CheckCircleOutlined,
-    CloseCircleOutlined, DashboardOutlined,
+    CloseCircleOutlined, DashboardOutlined, LoadingOutlined, DeleteOutlined,
     SyncOutlined, WarningOutlined, ClockCircleOutlined,
-    ApiOutlined, HddOutlined, KeyOutlined,
+    ApiOutlined, HddOutlined, KeyOutlined, SafetyCertificateOutlined, EditOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer } from '../theme';
@@ -90,6 +90,12 @@ export default function IntegrationsPbx() {
     const [detailNode, setDetailNode] = useState<FleetNode | null>(null);
     const [addOpen, setAddOpen] = useState(false);
     const [addForm] = Form.useForm();
+    const [regResult, setRegResult] = useState<any>(null);
+    const [verifyResult, setVerifyResult] = useState<any>(null);
+    const [verifyingNodeId, setVerifyingNodeId] = useState<string | null>(null);
+    const [verifyStreaming, setVerifyStreaming] = useState(false);
+    const [editTarget, setEditTarget] = useState<any>(null);
+    const [editForm] = Form.useForm();
 
     // Fleet status query
     const { data: fleet, isLoading, refetch } = useQuery<FleetStatus>({
@@ -110,16 +116,130 @@ export default function IntegrationsPbx() {
         onError: () => message.error('Fleet refresh failed'),
     });
 
-    // Add PBX target
+    // Register + Verify PBX target
     const addMutation = useMutation({
-        mutationFn: async (values: any) => (await pbxClient.post('/v1/targets', values)).data,
-        onSuccess: () => {
-            message.success('PBX target registered');
-            queryClient.invalidateQueries({ queryKey: ['pbx_fleet_status'] });
-            setAddOpen(false);
-            addForm.resetFields();
+        mutationFn: async (values: any) => (await pbxClient.post('/v1/targets/register', values)).data,
+        onSuccess: (data: any) => {
+            setRegResult(data);
+            if (data.registered) {
+                queryClient.invalidateQueries({ queryKey: ['pbx_fleet_status'] });
+            }
         },
-        onError: (e: any) => message.error(e?.response?.data?.detail || 'Registration failed'),
+        onError: (e: any) => {
+            const detail = e?.response?.data?.detail;
+            const status = e?.response?.status;
+            let msg = 'Registration failed';
+            if (typeof detail === 'string') {
+                msg = detail;
+            } else if (Array.isArray(detail)) {
+                msg = detail.map((d: any) => `${d.loc?.join('.')}: ${d.msg}`).join('; ');
+            } else if (status) {
+                msg = `Server returned ${status}${e?.response?.statusText ? ` (${e.response.statusText})` : ''}`;
+            } else if (e?.code === 'ERR_NETWORK' || e?.message?.includes('Network')) {
+                msg = 'Cannot reach PBX agent — check if the service is running';
+            } else if (e?.message) {
+                msg = e.message;
+            }
+            message.error(msg, 6);
+        },
+    });
+
+    // Verify existing PBX target via SSE stream
+    const startVerifyStream = async (targetId: string, targetName: string) => {
+        setVerifyingNodeId(targetId);
+        setVerifyResult({ target_name: targetName, target_id: targetId, checks: [] });
+        setVerifyStreaming(true);
+        try {
+            const resp = await fetch(`/pbx/v1/targets/${targetId}/verify-stream?tenant_id=acme&env=prod`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Service-ID': 'nexus',
+                    'X-Agent-Key': import.meta.env.VITE_PBX_AGENT_KEY || 'nexus-pbx-key-change-me',
+                },
+            });
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            const reader = resp.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                // Process complete SSE events from buffer
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+                    const lines = part.split('\n');
+                    let eventType = '';
+                    let data = '';
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) eventType = line.slice(7);
+                        if (line.startsWith('data: ')) data = line.slice(6);
+                    }
+                    if (eventType === 'check' && data) {
+                        const check = JSON.parse(data);
+                        setVerifyResult((prev: any) => ({
+                            ...prev,
+                            checks: [...(prev?.checks || []), check],
+                        }));
+                    }
+                    if (eventType === 'done') {
+                        setVerifyStreaming(false);
+                    }
+                }
+            }
+        } catch (e: any) {
+            message.error(e?.message || 'Verify stream failed');
+        } finally {
+            setVerifyingNodeId(null);
+            setVerifyStreaming(false);
+        }
+    };
+
+    // Edit existing PBX target
+    const openEditModal = async (node: FleetNode) => {
+        try {
+            const resp = await pbxClient.get(`/v1/targets/${node.target_id}?tenant_id=acme&env=prod`);
+            const t = resp.data;
+            setEditTarget(t);
+            editForm.setFieldsValue({
+                name: t.name, host: t.host, ssh_port: t.ssh_port,
+                ssh_username: t.ssh_username, ami_port: t.ami_port,
+                ami_username: t.ami_username,
+            });
+        } catch {
+            message.error('Failed to load target details');
+        }
+    };
+
+    const editMutation = useMutation({
+        mutationFn: async (values: any) => {
+            // Strip empty credential fields so we don't overwrite existing secrets
+            const cleaned = { ...values };
+            for (const key of ['ami_secret', 'ssh_key_pem', 'ssh_password']) {
+                if (!cleaned[key] || !cleaned[key].trim()) {
+                    delete cleaned[key];
+                }
+            }
+            return (await pbxClient.put(
+                `/v1/targets/${editTarget.id}/edit?tenant_id=${editTarget.tenant_id}&env=${editTarget.env}`,
+                cleaned,
+            )).data;
+        },
+        onSuccess: () => {
+            message.success('Target updated successfully');
+            setEditTarget(null);
+            setDetailNode(null);
+            editForm.resetFields();
+            queryClient.invalidateQueries({ queryKey: ['pbx-fleet'] });
+        },
+        onError: (e: any) => {
+            message.error(e?.response?.data?.detail || 'Update failed');
+        },
     });
 
     const nodes = fleet?.nodes || [];
@@ -159,20 +279,22 @@ export default function IntegrationsPbx() {
             dataIndex: 'host',
             key: 'host',
             width: 150,
+            sorter: (a: FleetNode, b: FleetNode) => (a.host || '').localeCompare(b.host || ''),
             render: (h: string) => <Text style={{ color: '#94a3b8', fontSize: 12 }}>{h}</Text>,
         },
         {
             title: 'Status',
             key: 'status',
             width: 90,
-            render: (_: any, r: FleetNode) => (
-                <Tag style={{
-                    background: r.online ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                    color: r.online ? '#4ade80' : '#f87171',
-                    border: `1px solid ${r.online ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-                    borderRadius: 4,
-                }}>{r.online ? 'Online' : 'Offline'}</Tag>
-            ),
+            sorter: (a: FleetNode, b: FleetNode) => {
+                const rank = (n: FleetNode) => !n.online ? 0 : !n.ami_ok ? 1 : 2;
+                return rank(a) - rank(b);
+            },
+            render: (_: any, r: FleetNode) => {
+                if (!r.online) return <Tag style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4 }}>Offline</Tag>;
+                if (!r.ami_ok) return <Tag style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4 }}>No-AMI</Tag>;
+                return <Tag style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4 }}>Online</Tag>;
+            },
         },
         {
             title: 'Asterisk',
@@ -279,13 +401,50 @@ export default function IntegrationsPbx() {
         {
             title: '',
             key: 'actions',
-            width: 60,
+            width: 140,
             render: (_: any, r: FleetNode) => (
-                <Tooltip title="View Details">
-                    <Button size="small" icon={<DashboardOutlined />}
-                        style={{ background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#60a5fa' }}
-                        onClick={() => setDetailNode(r)} />
-                </Tooltip>
+                <Space size={4}>
+                    <Tooltip title="Verify Connectivity">
+                        <Button size="small" icon={<SafetyCertificateOutlined />}
+                            loading={verifyingNodeId === r.target_id}
+                            style={{ background: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.3)', color: '#4ade80' }}
+                            onClick={() => startVerifyStream(r.target_id, r.name)} />
+                    </Tooltip>
+                    <Tooltip title="View Details">
+                        <Button size="small" icon={<DashboardOutlined />}
+                            style={{ background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#60a5fa' }}
+                            onClick={() => setDetailNode(r)} />
+                    </Tooltip>
+                    <Popconfirm
+                        title={<span style={{ color: '#e2e8f0' }}>Remove {r.name}?</span>}
+                        description={<span style={{ color: '#94a3b8' }}>This removes it from the fleet list only — the server itself is not affected.</span>}
+                        onConfirm={async () => {
+                            try {
+                                await pbxClient.delete(`/v1/targets/${r.target_id}`);
+                                message.success(`${r.name} removed from fleet`);
+                                // Immediately remove from local cache so UI updates instantly
+                                queryClient.setQueryData(['pbx_fleet_status'], (old: any) => {
+                                    if (!old) return old;
+                                    return {
+                                        ...old,
+                                        nodes: old.nodes?.filter((n: any) => n.target_id !== r.target_id) || [],
+                                    };
+                                });
+                                refetch();
+                            } catch (e: any) {
+                                message.error(e?.response?.data?.detail || 'Delete failed');
+                            }
+                        }}
+                        okText="Remove"
+                        okButtonProps={{ danger: true }}
+                        placement="left"
+                    >
+                        <Tooltip title="Remove from Fleet">
+                            <Button size="small" icon={<DeleteOutlined />}
+                                style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: '#f87171' }} />
+                        </Tooltip>
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];
@@ -393,7 +552,8 @@ export default function IntegrationsPbx() {
                         <div className="panel-title"><span><PhoneOutlined style={{ marginRight: 6 }} />Call Activity</span></div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 20, paddingTop: 4 }}>
                             <div style={{
-                                width: 90, height: 90, borderRadius: '50%',
+                                width: 90, height: 90, minWidth: 90, minHeight: 90,
+                                flexShrink: 0, aspectRatio: '1 / 1', borderRadius: '50%',
                                 background: (summary.total_active_calls || 0) > 0
                                     ? 'linear-gradient(135deg, #065f4633, #22c55e44)'
                                     : 'linear-gradient(135deg, #1e293b, #0f172a)',
@@ -482,7 +642,7 @@ export default function IntegrationsPbx() {
                     rowKey="target_id"
                     loading={isLoading}
                     size="middle"
-                    pagination={{ pageSize: 20, showTotal: (total) => `${total} PBX systems` }}
+                    pagination={{ defaultPageSize: 25, pageSizeOptions: ['10', '25', '50', '100'], showSizeChanger: true, showTotal: (total) => `${total} PBX systems` }}
                     locale={{
                         emptyText: (
                             <Empty
@@ -496,7 +656,17 @@ export default function IntegrationsPbx() {
 
             {/* Detail Drawer */}
             <Drawer
-                title={<span style={{ color: '#e2e8f0' }}><PhoneOutlined style={{ marginRight: 8, color: '#a78bfa' }} />{detailNode?.name}</span>}
+                title={
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <span style={{ color: '#e2e8f0' }}><PhoneOutlined style={{ marginRight: 8, color: '#a78bfa' }} />{detailNode?.name}</span>
+                        {detailNode && (
+                            <Button size="small" icon={<EditOutlined />}
+                                style={{ background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#60a5fa', marginRight: 24 }}
+                                onClick={() => { openEditModal(detailNode); }}
+                            >Edit</Button>
+                        )}
+                    </div>
+                }
                 open={!!detailNode}
                 onClose={() => setDetailNode(null)}
                 width={520}
@@ -585,25 +755,27 @@ export default function IntegrationsPbx() {
             <Modal
                 title={<span style={{ color: '#e2e8f0' }}><PlusOutlined style={{ marginRight: 8 }} />Register PBX Target</span>}
                 open={addOpen}
-                onCancel={() => setAddOpen(false)}
-                onOk={() => addForm.submit()}
+                onCancel={() => { setAddOpen(false); setRegResult(null); }}
+                onOk={() => regResult ? (() => { setAddOpen(false); setRegResult(null); addForm.resetFields(); })() : addForm.submit()}
                 confirmLoading={addMutation.isPending}
-                okText="Register"
+                okText={regResult ? 'Done' : 'Register & Verify'}
+                width={600}
                 styles={{
                     header: { background: '#0f1729', borderBottom: '1px solid #1e293b' },
-                    body: { background: '#111827' },
+                    body: { background: '#111827', maxHeight: '70vh', overflowY: 'auto' },
                     footer: { background: '#0f1729', borderTop: '1px solid #1e293b' },
                 }}
             >
-                <Form form={addForm} layout="vertical" onFinish={(values) => addMutation.mutate(values)}
-                    initialValues={{ tenant_id: 'acme', env: 'prod', ami_port: 5038, ssh_port: 22, ssh_username: 'root', status: 'active' }}>
+                {!regResult ? (
+                <Form form={addForm} layout="vertical" onFinish={(values: any) => addMutation.mutate(values)}
+                    initialValues={{ tenant_id: 'acme', env: 'prod', ami_port: 5038, ssh_port: 22, ssh_username: 'root' }}>
                     <Form.Item name="name" label={<span style={{ color: '#94a3b8' }}>PBX Name</span>} rules={[{ required: true }]}>
-                        <Input placeholder="e.g. PBX-DC1" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                        <Input placeholder="e.g. PBX-Residential" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
                     </Form.Item>
                     <Row gutter={12}>
                         <Col span={16}>
                             <Form.Item name="host" label={<span style={{ color: '#94a3b8' }}>Host / IP</span>} rules={[{ required: true }]}>
-                                <Input placeholder="192.168.1.10" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                                <Input placeholder="192.168.1.10 or residential.gsmcall.com" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
                             </Form.Item>
                         </Col>
                         <Col span={8}>
@@ -624,22 +796,213 @@ export default function IntegrationsPbx() {
                             </Form.Item>
                         </Col>
                     </Row>
-                    <Form.Item name="ami_secret_alias" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />AMI Secret (vault alias)</span>} rules={[{ required: true }]}>
-                        <Input placeholder="pbx.dc1.ami.secret" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    <Form.Item name="ami_secret" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />AMI Secret / Password</span>} rules={[{ required: true }]}>
+                        <Input.Password placeholder="AMI password from manager.conf" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
                     </Form.Item>
                     <Form.Item name="ssh_username" label={<span style={{ color: '#94a3b8' }}>SSH Username</span>}>
                         <Input placeholder="root" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
                     </Form.Item>
-                    <Form.Item name="ssh_key_alias" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Key (vault alias)</span>}>
-                        <Input placeholder="pbx.dc1.ssh.key" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    <Form.Item name="ssh_key_pem" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Private Key (optional)</span>}>
+                        <Input.TextArea
+                            rows={4}
+                            placeholder={'Paste key, or use Upload below for .ppk / .pem files'}
+                            style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 11 }}
+                        />
                     </Form.Item>
-                    <Form.Item name="ssh_password_alias" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Password (vault alias, fallback)</span>}>
-                        <Input placeholder="pbx.dc1.ssh.password" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    <Upload accept=".ppk,.pem,.key,.id_rsa" beforeUpload={(file: any) => { const reader = new FileReader(); reader.onload = (e) => { addForm.setFieldValue('ssh_key_pem', e.target?.result as string); message.success(`Loaded ${file.name}`); }; reader.readAsText(file); return false; }} showUploadList={false} maxCount={1}>
+                        <Button icon={<UploadOutlined />} size="small" style={{ marginTop: -8, marginBottom: 8 }}>Upload .ppk / .pem Key File</Button>
+                    </Upload>
+                    <Form.Item name="ssh_password" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Password (optional, fallback)</span>}>
+                        <Input.Password placeholder="SSH password" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    </Form.Item>
+                    <Form.Item name="tenant_id" hidden><Input /></Form.Item>
+                    <Form.Item name="env" hidden><Input /></Form.Item>
+                </Form>
+                ) : (
+                <div>
+                    {regResult.registered ? (
+                        <Alert message={`${regResult.target_name} registered successfully`} type="success" showIcon style={{ marginBottom: 16 }} />
+                    ) : (
+                        <Alert message={regResult.error || 'Registration failed'} type="error" showIcon style={{ marginBottom: 16 }} />
+                    )}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Verification Results</div>
+                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                        {regResult.checks?.map((c: any, i: number) => (
+                            <div key={i} style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 10,
+                                padding: '10px 14px', borderRadius: 8,
+                                background: c.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                                border: `1px solid ${c.passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                            }}>
+                                {c.passed ? (
+                                    <CheckCircleOutlined style={{ color: '#22c55e', fontSize: 16, marginTop: 2 }} />
+                                ) : (
+                                    <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 16, marginTop: 2 }} />
+                                )}
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>{c.check}</div>
+                                    {c.detail && <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}>{c.detail}</div>}
+                                </div>
+                            </div>
+                        ))}
+                    </Space>
+                </div>
+                )}
+            </Modal>
+
+            {/* Verify Results Modal */}
+            <Modal
+                title={<span style={{ color: '#e2e8f0', cursor: 'move' }}><SafetyCertificateOutlined style={{ marginRight: 8, color: '#4ade80' }} />Verify: {verifyResult?.target_name}</span>}
+                open={!!verifyResult}
+                onCancel={() => { setVerifyResult(null); setVerifyStreaming(false); }}
+                onOk={() => setVerifyResult(null)}
+                okText="Done"
+                okButtonProps={{ disabled: verifyStreaming }}
+                cancelButtonProps={{ style: { display: 'none' } }}
+                width={550}
+                modalRender={(modal) => {
+                    const dragRef = React.useRef({ x: 0, y: 0, dragging: false });
+                    const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+                    return (
+                        <div
+                            style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+                            onMouseDown={(e) => {
+                                // Only drag from header area
+                                if ((e.target as HTMLElement).closest('.ant-modal-header')) {
+                                    dragRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y, dragging: true };
+                                    const onMove = (ev: MouseEvent) => {
+                                        if (dragRef.current.dragging) {
+                                            setOffset({ x: ev.clientX - dragRef.current.x, y: ev.clientY - dragRef.current.y });
+                                        }
+                                    };
+                                    const onUp = () => { dragRef.current.dragging = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                                    document.addEventListener('mousemove', onMove);
+                                    document.addEventListener('mouseup', onUp);
+                                }
+                            }}
+                        >
+                            {modal}
+                        </div>
+                    );
+                }}
+                styles={{
+                    header: { background: '#0f1729', borderBottom: '1px solid #1e293b', cursor: 'move' },
+                    body: { background: '#111827', maxHeight: '70vh', overflowY: 'auto' },
+                    footer: { background: '#0f1729', borderTop: '1px solid #1e293b' },
+                }}
+            >
+                {verifyResult && (
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Connectivity Checks</div>
+                        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                            {verifyResult.checks?.map((c: any, i: number) => (
+                                <div key={i} style={{
+                                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                                    padding: '10px 14px', borderRadius: 8,
+                                    background: c.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                                    border: `1px solid ${c.passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                    animation: 'fadeIn 0.3s ease-in',
+                                }}>
+                                    {c.passed ? (
+                                        <CheckCircleOutlined style={{ color: '#22c55e', fontSize: 16, marginTop: 2 }} />
+                                    ) : (
+                                        <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 16, marginTop: 2 }} />
+                                    )}
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>{c.check}</div>
+                                        {c.detail && <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}>{c.detail}</div>}
+                                    </div>
+                                </div>
+                            ))}
+                            {verifyStreaming && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '10px 14px', borderRadius: 8,
+                                    background: 'rgba(59,130,246,0.08)',
+                                    border: '1px solid rgba(59,130,246,0.25)',
+                                    animation: 'pulse 1.5s ease-in-out infinite',
+                                }}>
+                                    <LoadingOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
+                                    <div style={{ color: '#93c5fd', fontWeight: 500, fontSize: 13 }}>Running checks…</div>
+                                </div>
+                            )}
+                        </Space>
+                    </div>
+                )}
+            </Modal>
+
+            {/* Edit PBX Modal */}
+            <Modal
+                title={<span style={{ color: '#e2e8f0' }}><EditOutlined style={{ marginRight: 8, color: '#60a5fa' }} />Edit: {editTarget?.name}</span>}
+                open={!!editTarget}
+                onCancel={() => { setEditTarget(null); editForm.resetFields(); }}
+                onOk={() => editForm.submit()}
+                confirmLoading={editMutation.isPending}
+                okText="Save Changes"
+                width={600}
+                styles={{
+                    header: { background: '#0f1729', borderBottom: '1px solid #1e293b' },
+                    body: { background: '#111827', maxHeight: '70vh', overflowY: 'auto' },
+                    footer: { background: '#0f1729', borderTop: '1px solid #1e293b' },
+                }}
+            >
+                <Form form={editForm} layout="vertical" onFinish={(values: any) => editMutation.mutate(values)}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Connection Settings</div>
+                    <Form.Item name="name" label={<span style={{ color: '#94a3b8' }}>PBX Name</span>}>
+                        <Input style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
                     </Form.Item>
                     <Row gutter={12}>
-                        <Col span={12}><Form.Item name="tenant_id" hidden><Input /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="env" hidden><Input /></Form.Item></Col>
+                        <Col span={16}>
+                            <Form.Item name="host" label={<span style={{ color: '#94a3b8' }}>Host / IP</span>}>
+                                <Input style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="ami_port" label={<span style={{ color: '#94a3b8' }}>AMI Port</span>}>
+                                <Input type="number" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                            </Form.Item>
+                        </Col>
                     </Row>
+                    <Form.Item name="ami_username" label={<span style={{ color: '#94a3b8' }}>AMI Username</span>}>
+                        <Input style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    </Form.Item>
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Form.Item name="ssh_port" label={<span style={{ color: '#94a3b8' }}>SSH Port</span>}>
+                                <Input type="number" style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="ssh_username" label={<span style={{ color: '#94a3b8' }}>SSH Username</span>}>
+                                <Input style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 12, marginTop: 20, textTransform: 'uppercase', letterSpacing: 1 }}>Credentials <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b', textTransform: 'none' }}>(leave blank to keep existing)</span></div>
+                    <Form.Item name="ami_secret" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />AMI Secret</span>}>
+                        <Input.Password placeholder="Enter new AMI secret..." style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    </Form.Item>
+                    <Form.Item name="ssh_key_pem" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Private Key</span>}>
+                        <Input.TextArea rows={3} placeholder="Paste SSH key or use Upload below..." style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 11 }} />
+                    </Form.Item>
+                    <Upload accept=".ppk,.pem,.key,.id_rsa" beforeUpload={(file: any) => { const reader = new FileReader(); reader.onload = (e) => { editForm.setFieldValue('ssh_key_pem', e.target?.result as string); message.success(`Loaded ${file.name}`); }; reader.readAsText(file); return false; }} showUploadList={false} maxCount={1}>
+                        <Button icon={<UploadOutlined />} size="small" style={{ marginTop: -8, marginBottom: 8 }}>Upload .ppk / .pem Key File</Button>
+                    </Upload>
+                    <Form.Item name="ssh_password" label={<span style={{ color: '#94a3b8' }}><KeyOutlined style={{ marginRight: 4 }} />SSH Password</span>}>
+                        <Input.Password placeholder="Enter new SSH password..." style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }} />
+                    </Form.Item>
+
+                    {editTarget && (
+                        <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', marginTop: 12 }}>
+                            <div style={{ color: '#94a3b8', fontSize: 11 }}>Current vault aliases:</div>
+                            <div style={{ color: '#60a5fa', fontSize: 11, fontFamily: 'monospace', marginTop: 4 }}>
+                                AMI: {editTarget.ami_secret_alias || '—'}<br />
+                                SSH Key: {editTarget.ssh_key_alias || '—'}<br />
+                                SSH Pass: {editTarget.ssh_password_alias || '—'}
+                            </div>
+                        </div>
+                    )}
                 </Form>
             </Modal>
         </div>

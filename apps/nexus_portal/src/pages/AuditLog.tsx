@@ -28,8 +28,8 @@ interface AuditEvent {
     actor_id: number | null;
     actor_type: string | null;
     action: string;
-    resource_type: string;
-    resource_id: string | null;
+    target_type: string;
+    target_id: number | null;
     meta_data: Record<string, unknown> | null;
     created_at: string;
 }
@@ -118,7 +118,7 @@ export default function AuditLog() {
             title: 'Resource', key: 'resource',
             render: (_: unknown, rec: AuditEvent) => (
                 <Text style={{ color: t.muted, fontSize: 12 }}>
-                    {rec.resource_type}{rec.resource_id ? `:${rec.resource_id}` : ''}
+                    {rec.target_type}{rec.target_id ? `:${rec.target_id}` : ''}
                 </Text>
             ),
         },
@@ -135,6 +135,7 @@ export default function AuditLog() {
 
     return (
         <div style={pageContainer(t)}>
+            <style>{tableStyleOverrides(t, 'nx-table')}</style>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
                     <Title level={3} style={{ color: t.text, margin: 0 }}>
@@ -170,7 +171,7 @@ export default function AuditLog() {
             </Row>
 
             {/* Filters */}
-            <div style={{ ...cardStyle(t), padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ ...cardStyle(t), height: 'auto', padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
                 <FilterOutlined style={{ color: t.muted }} />
                 <Select
                     allowClear placeholder="Action"
@@ -194,8 +195,7 @@ export default function AuditLog() {
             </div>
 
             {/* Table */}
-            <div style={cardStyle(t)}>
-                <style>{tableStyleOverrides(t, 'nx-table')}</style>
+            <div className="nx-table" style={{ ...cardStyle(t), padding: 0, height: 'auto', overflow: 'visible' }}>
                 <Table
                     rowKey="id"
                     dataSource={events}

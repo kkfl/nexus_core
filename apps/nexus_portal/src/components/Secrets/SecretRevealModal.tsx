@@ -119,16 +119,31 @@ export default function SecretRevealModal({ secret, open, onClose }: Props) {
                         </div>
                     </div>
 
-                    <div style={{ background: '#f5f5f5', padding: '24px', borderRadius: '8px', border: '1px solid #d9d9d9', position: 'relative' }}>
-                        <Title level={4} style={{ margin: 0, fontFamily: 'monospace', letterSpacing: isMasked ? 4 : 0 }}>
-                            {isMasked ? '••••••••••••••••' : revealedValue}
-                        </Title>
+                    <div style={{ background: '#f5f5f5', padding: '16px 24px', borderRadius: '8px', border: '1px solid #d9d9d9', position: 'relative' }}>
                         <Button
                             type="text"
                             icon={isMasked ? <EyeOutlined /> : <EyeInvisibleOutlined />}
                             onClick={() => setIsMasked(!isMasked)}
-                            style={{ position: 'absolute', right: 8, top: 8 }}
+                            style={{ position: 'absolute', right: 8, top: 8, zIndex: 1 }}
                         />
+                        {isMasked ? (
+                            <Title level={4} style={{ margin: 0, fontFamily: 'monospace', letterSpacing: 4 }}>
+                                ••••••••••••••••
+                            </Title>
+                        ) : (
+                            <pre style={{
+                                margin: 0,
+                                fontFamily: 'monospace',
+                                fontSize: 13,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                maxHeight: 300,
+                                overflowY: 'auto',
+                                paddingRight: 32,
+                            }}>
+                                {revealedValue}
+                            </pre>
+                        )}
                     </div>
 
                     <Text type="secondary" italic>

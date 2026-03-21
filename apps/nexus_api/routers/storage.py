@@ -13,7 +13,7 @@ from packages.shared.db import get_db
 from packages.shared.models import AuditEvent, Secret, StorageJob, StorageTarget, Task
 from packages.shared.secrets import encrypt_secret
 
-router = APIRouter(prefix="/storage", tags=["storage"])
+router = APIRouter(tags=["storage"])
 
 
 class StorageTargetCreateConfig(BaseModel):

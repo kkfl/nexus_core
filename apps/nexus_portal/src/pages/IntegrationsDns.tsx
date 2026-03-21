@@ -721,7 +721,7 @@ export default function IntegrationsDns() {
                 styles={{ header: { background: MN.bg, borderBottom: `1px solid ${MN.border}` }, body: { background: MN.bg }, footer: { background: MN.bg, borderTop: `1px solid ${MN.border}` } }}
             >
                 <Form form={recordForm} layout="vertical" onFinish={(vals) => upsertRecordMut.mutate(vals)}
-                    initialValues={{ record_type: 'A', ttl: 300 }}>
+                    initialValues={{ record_type: 'A', ttl: 86400 }}>
                     <Form.Item name="record_type" label={<span style={{ color: MN.muted }}>Record Type</span>} rules={[{ required: true }]}>
                         <Select options={['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'PTR', 'NS', 'CAA'].map(t => ({ value: t, label: t }))} />
                     </Form.Item>
@@ -732,8 +732,18 @@ export default function IntegrationsDns() {
                         <Input placeholder="IP address or hostname" style={{ background: MN.card, borderColor: MN.border, color: MN.text }} />
                     </Form.Item>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <Form.Item name="ttl" label={<span style={{ color: MN.muted }}>TTL (seconds)</span>}>
-                            <InputNumber min={60} max={86400} style={{ width: '100%', background: MN.card, borderColor: MN.border, color: MN.text }} />
+                        <Form.Item name="ttl" label={<span style={{ color: MN.muted }}>TTL</span>}>
+                            <Select
+                                options={[
+                                    { value: 300, label: '5 minutes' },
+                                    { value: 600, label: '10 minutes' },
+                                    { value: 3600, label: '1 hour' },
+                                    { value: 21600, label: '6 hours' },
+                                    { value: 86400, label: '1 day' },
+                                    { value: 259200, label: '3 days' },
+                                ]}
+                                style={{ width: '100%' }}
+                            />
                         </Form.Item>
                         <Form.Item name="priority" label={<span style={{ color: MN.muted }}>Priority (MX/SRV)</span>}>
                             <InputNumber min={0} max={65535} style={{ width: '100%', background: MN.card, borderColor: MN.border, color: MN.text }} />

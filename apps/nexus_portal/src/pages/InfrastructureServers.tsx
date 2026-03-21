@@ -39,6 +39,7 @@ export default function InfrastructureServers() {
             const r = await serverClient.get('/servers/v1/servers');
             return r.data;
         },
+        refetchInterval: 30000,
     });
 
     const { data: hosts = [] } = useQuery({
