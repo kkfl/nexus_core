@@ -573,11 +573,15 @@ async def upload_and_restore(
     safety_filename = safety_result.filename if safety_result.success else None
 
     # Step 2: Decompress and restore
+    raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
     try:
-        raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
+        logger.info("upload_restore_decompressing", filename=upload_name)
         with gzip.open(upload_path, "rb") as f_in:
             with open(raw_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
+
+        raw_size = raw_path.stat().st_size
+        logger.info("upload_restore_running_psql", sql_size=_human_size(raw_size))
 
         env = _pg_env()
         proc = await asyncio.create_subprocess_exec(
@@ -586,7 +590,7 @@ async def upload_and_restore(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
 
         raw_path.unlink(missing_ok=True)
 
@@ -617,13 +621,23 @@ async def upload_and_restore(
             safety_backup=safety_filename,
         )
 
+    except asyncio.TimeoutError:
+        raw_path.unlink(missing_ok=True)
+        logger.error("upload_restore_timeout", filename=upload_name)
+        return RestoreResult(
+            success=False,
+            backup_used=upload_name,
+            safety_backup=safety_filename,
+            error="Restore timed out (10 minutes). The backup file may be too large for this server.",
+        )
     except Exception as e:
+        raw_path.unlink(missing_ok=True)
         logger.error("upload_restore_error", error=str(e))
         return RestoreResult(
             success=False,
             backup_used=upload_name,
             safety_backup=safety_filename,
-            error=str(e),
+            error=str(e) or "Unknown error during restore",
         )
 
 
