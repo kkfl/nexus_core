@@ -9,14 +9,14 @@ import React, { useState } from 'react';
 import {
     Card, Button, Table, Typography, Space, Tag, message,
     Modal, Input, Alert, Progress, Statistic, Row, Col,
-    Popconfirm, InputNumber, Tooltip, Empty, Select,
+    Popconfirm, InputNumber, Tooltip, Empty, Select, Upload,
 } from 'antd';
 import {
     CloudDownloadOutlined, CloudUploadOutlined, DeleteOutlined,
     DownloadOutlined, ExclamationCircleOutlined, ReloadOutlined,
     SafetyCertificateOutlined, WarningOutlined, DatabaseOutlined,
     CheckCircleOutlined, ClockCircleOutlined, SettingOutlined,
-    ThunderboltOutlined, FolderOutlined,
+    ThunderboltOutlined, FolderOutlined, InboxOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useThemeStore } from '../stores/themeStore';
@@ -48,6 +48,11 @@ export default function BackupRestore() {
     const [backupModal, setBackupModal] = useState(false);
     const [backupLocation, setBackupLocation] = useState<string>('default');
     const [newLocationName, setNewLocationName] = useState('');
+    const [uploadModal, setUploadModal] = useState(false);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [uploadConfirm, setUploadConfirm] = useState('');
+    const [uploadStep, setUploadStep] = useState<'select' | 'confirm' | 'running' | 'done' | 'error'>('select');
+    const [uploadResult, setUploadResult] = useState<any>(null);
 
     const { data: backups = [], isLoading } = useQuery({
         queryKey: ['backups'],
@@ -257,6 +262,14 @@ export default function BackupRestore() {
                         style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
                     >
                         Backup Now
+                    </Button>
+                    <Button
+                        danger
+                        icon={<CloudUploadOutlined />}
+                        onClick={() => { setUploadModal(true); setUploadStep('select'); setUploadFile(null); setUploadConfirm(''); setUploadResult(null); }}
+                        style={{ borderColor: '#dc2626' }}
+                    >
+                        Upload & Restore
                     </Button>
                 </Space>
             </div>
@@ -600,6 +613,177 @@ export default function BackupRestore() {
                         {restoreResult.safety_backup && (
                             <Alert type="info" message={`Your data is safe — a safety backup was created: ${restoreResult.safety_backup}`} />
                         )}
+                    </div>
+                )}
+            </Modal>
+
+            {/* Upload & Restore — break-glass disaster recovery modal */}
+            <Modal
+                open={uploadModal}
+                onCancel={() => { if (uploadStep !== 'running') { setUploadModal(false); } }}
+                footer={null}
+                width={560}
+                title={
+                    <span style={{ color: '#fca5a5', fontSize: 18 }}>
+                        <WarningOutlined style={{ marginRight: 8, color: '#ef4444' }} />
+                        🚨 Upload & Restore — Disaster Recovery
+                    </span>
+                }
+                styles={{ header: { background: '#1a0a0a', borderBottom: '2px solid #7f1d1d' }, body: { background: '#0f0a0a' } }}
+            >
+                {uploadStep === 'select' && (
+                    <div>
+                        <Alert
+                            type="error"
+                            showIcon
+                            icon={<ExclamationCircleOutlined />}
+                            message="Destructive Operation"
+                            description="This will REPLACE your entire database with the contents of the uploaded file. This should only be used for disaster recovery."
+                            style={{ marginBottom: 16, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)' }}
+                        />
+                        <Upload.Dragger
+                            accept=".sql.gz"
+                            maxCount={1}
+                            beforeUpload={(file) => {
+                                if (!file.name.endsWith('.sql.gz')) {
+                                    message.error('Only .sql.gz backup files are accepted');
+                                    return Upload.LIST_IGNORE;
+                                }
+                                setUploadFile(file);
+                                return false; // prevent auto upload
+                            }}
+                            onRemove={() => setUploadFile(null)}
+                            style={{ background: '#161010', borderColor: '#7f1d1d', borderStyle: 'dashed' }}
+                        >
+                            <p style={{ color: '#94a3b8' }}>
+                                <InboxOutlined style={{ fontSize: 36, color: '#ef4444' }} />
+                            </p>
+                            <p style={{ color: '#cbd5e1', fontSize: 14 }}>Drop a .sql.gz backup file here or click to browse</p>
+                            <p style={{ color: '#64748b', fontSize: 12 }}>Only Nexus backup files (.sql.gz) are accepted</p>
+                        </Upload.Dragger>
+                        <div style={{ marginTop: 16, textAlign: 'right' }}>
+                            <Space>
+                                <Button onClick={() => setUploadModal(false)}>Cancel</Button>
+                                <Button
+                                    danger
+                                    type="primary"
+                                    disabled={!uploadFile}
+                                    onClick={() => setUploadStep('confirm')}
+                                >
+                                    Next →
+                                </Button>
+                            </Space>
+                        </div>
+                    </div>
+                )}
+
+                {uploadStep === 'confirm' && (
+                    <div>
+                        <Alert
+                            type="error"
+                            showIcon
+                            icon={<WarningOutlined />}
+                            message="Final Warning — Point of No Return"
+                            description={
+                                <div style={{ fontSize: 12 }}>
+                                    <p style={{ margin: '8px 0', fontWeight: 600 }}>You are about to:</p>
+                                    <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+                                        <li>✅ Create a <strong>safety backup</strong> of the current database</li>
+                                        <li>⚠️ Upload and restore from: <strong style={{ color: '#f59e0b' }}>{uploadFile?.name}</strong></li>
+                                        <li>🔴 <strong>OVERWRITE</strong> all existing data in the database</li>
+                                    </ul>
+                                    <p style={{ marginTop: 12, fontWeight: 600, color: '#f87171' }}>
+                                        Type <code style={{ padding: '2px 6px', background: '#2a0a0a', borderRadius: 4 }}>UPLOAD_RESTORE</code> to confirm:
+                                    </p>
+                                </div>
+                            }
+                            style={{ marginBottom: 16, background: 'rgba(239,68,68,0.15)', border: '2px solid rgba(239,68,68,0.5)' }}
+                        />
+                        <Input
+                            placeholder="Type UPLOAD_RESTORE to confirm"
+                            value={uploadConfirm}
+                            onChange={(e) => setUploadConfirm(e.target.value)}
+                            style={{
+                                background: '#161010', borderColor: uploadConfirm === 'UPLOAD_RESTORE' ? '#22c55e' : '#7f1d1d',
+                                color: '#e2e8f0', fontFamily: 'monospace', fontSize: 16, textAlign: 'center',
+                            }}
+                            status={uploadConfirm.length > 0 && uploadConfirm !== 'UPLOAD_RESTORE' ? 'error' : undefined}
+                        />
+                        <div style={{ marginTop: 16, textAlign: 'right' }}>
+                            <Space>
+                                <Button onClick={() => setUploadStep('select')}>← Back</Button>
+                                <Button
+                                    danger
+                                    type="primary"
+                                    disabled={uploadConfirm !== 'UPLOAD_RESTORE'}
+                                    onClick={async () => {
+                                        if (!uploadFile) return;
+                                        setUploadStep('running');
+                                        try {
+                                            const formData = new FormData();
+                                            formData.append('file', uploadFile);
+                                            formData.append('confirm', 'UPLOAD_RESTORE');
+                                            const res = await apiClient.post('/settings/backup/upload-restore', formData, {
+                                                headers: { 'Content-Type': 'multipart/form-data' },
+                                                timeout: 300000,
+                                            });
+                                            const result = res.data;
+                                            setUploadResult(result);
+                                            setUploadStep(result.success ? 'done' : 'error');
+                                            if (result.success) {
+                                                message.success('Database restored from uploaded file!');
+                                                qc.invalidateQueries({ queryKey: ['backups'] });
+                                            }
+                                        } catch (err: any) {
+                                            setUploadResult({ success: false, error: err.response?.data?.detail || err.message, backup_used: uploadFile.name });
+                                            setUploadStep('error');
+                                        }
+                                    }}
+                                    style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                                >
+                                    🚨 Restore Database
+                                </Button>
+                            </Space>
+                        </div>
+                    </div>
+                )}
+
+                {uploadStep === 'running' && (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                        <Progress type="circle" percent={-1} status="active" size={80} />
+                        <div style={{ marginTop: 16, color: '#f59e0b', fontWeight: 600 }}>Creating safety backup...</div>
+                        <div style={{ marginTop: 8, color: '#94a3b8' }}>Then restoring from <strong>{uploadFile?.name}</strong></div>
+                        <div style={{ marginTop: 8, color: '#ef4444', fontSize: 12 }}>Do NOT close this window.</div>
+                    </div>
+                )}
+
+                {uploadStep === 'done' && uploadResult && (
+                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <CheckCircleOutlined style={{ fontSize: 48, color: '#22c55e', marginBottom: 16 }} />
+                        <Title level={4} style={{ color: '#4ade80' }}>Restore Complete</Title>
+                        <Paragraph style={{ color: '#94a3b8' }}>
+                            Database restored from <strong>{uploadFile?.name}</strong>
+                        </Paragraph>
+                        {uploadResult.safety_backup && (
+                            <Tag color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>Safety backup: {uploadResult.safety_backup}</Tag>
+                        )}
+                        <div style={{ marginTop: 20 }}>
+                            <Button type="primary" onClick={() => setUploadModal(false)}>Close</Button>
+                        </div>
+                    </div>
+                )}
+
+                {uploadStep === 'error' && uploadResult && (
+                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ef4444', marginBottom: 16 }} />
+                        <Title level={4} style={{ color: '#f87171' }}>Restore Failed</Title>
+                        <Paragraph style={{ color: '#94a3b8' }}>{uploadResult.error}</Paragraph>
+                        {uploadResult.safety_backup && (
+                            <Alert type="info" message={`Your data is safe — safety backup: ${uploadResult.safety_backup}`} />
+                        )}
+                        <div style={{ marginTop: 20 }}>
+                            <Button onClick={() => setUploadModal(false)}>Close</Button>
+                        </div>
                     </div>
                 )}
             </Modal>

@@ -1,14 +1,14 @@
 """
 Backup & Restore router — Settings → Backup & Restore (admin-only)
 
-Endpoints:
-  POST /run           — trigger a new pg_dump backup → .sql.gz
-  GET  /list          — list available backups
-  GET  /download/{fn} — stream-download a backup file
-  DELETE /{fn}        — remove a backup file
-  POST /restore/{fn}  — **break-glass** restore (requires confirm="RESTORE")
-  GET  /config        — get backup config (path, retention)
-  PUT  /config        — update backup config
+  POST /run             — trigger a new pg_dump backup → .sql.gz
+  GET  /list            — list available backups
+  GET  /download/{fn}   — stream-download a backup file
+  DELETE /{fn}          — remove a backup file
+  POST /restore/{fn}    — **break-glass** restore (requires confirm="RESTORE")
+  POST /upload-restore  — **break-glass** upload + restore from external file
+  GET  /config          — get backup config (path, retention)
+  PUT  /config          — update backup config
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -512,6 +512,110 @@ async def restore_backup(
         return RestoreResult(
             success=False,
             backup_used=filename,
+            safety_backup=safety_filename,
+            error=str(e),
+        )
+
+
+@router.post("/upload-restore", response_model=RestoreResult)
+async def upload_and_restore(
+    file: UploadFile = File(...),
+    confirm: str = Form(...),
+    current_user: Any = Depends(RequireRole(["admin"])),
+):
+    """
+    BREAK-GLASS UPLOAD & RESTORE — disaster recovery.
+    Accepts a .sql.gz file upload. Creates a safety backup of the current
+    database first, then restores from the uploaded file.
+    Requires confirm="UPLOAD_RESTORE" as a form field.
+    """
+    if confirm != "UPLOAD_RESTORE":
+        raise HTTPException(
+            status_code=400,
+            detail='You must send confirm="UPLOAD_RESTORE" to proceed.',
+        )
+
+    # Validate file
+    if not file.filename or not file.filename.endswith(".sql.gz"):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be a .sql.gz backup file.",
+        )
+
+    # Save uploaded file
+    upload_name = f"uploaded_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    upload_path = BACKUP_DIR / upload_name
+    try:
+        content = await file.read()
+        # Validate it's actually gzip
+        if content[:2] != b'\x1f\x8b':
+            raise HTTPException(
+                status_code=400,
+                detail="File does not appear to be a valid gzip archive.",
+            )
+        with open(upload_path, "wb") as f:
+            f.write(content)
+        logger.info("upload_restore_file_saved", filename=upload_name, size=len(content))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
+
+    # Step 1: Safety backup of current state
+    logger.info("upload_restore_safety_backup")
+    safety_result = await run_backup(current_user)
+    safety_filename = safety_result.filename if safety_result.success else None
+
+    # Step 2: Decompress and restore
+    try:
+        raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
+        with gzip.open(upload_path, "rb") as f_in:
+            with open(raw_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+        env = _pg_env()
+        proc = await asyncio.create_subprocess_exec(
+            "psql", "-f", str(raw_path),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+
+        raw_path.unlink(missing_ok=True)
+
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace")[:500]
+            logger.error("upload_restore_failed", error=err)
+            return RestoreResult(
+                success=False,
+                backup_used=upload_name,
+                safety_backup=safety_filename,
+                error=f"psql restore failed: {err}",
+            )
+
+        logger.info("upload_restore_success", filename=upload_name, safety=safety_filename)
+
+        from apps.nexus_api.notify import notify_action
+        await notify_action(
+            action="backup.upload_restored",
+            subject="🚨 Database Restored from Upload",
+            body=f"Restored from uploaded file: {file.filename} (safety backup: {safety_filename})",
+            event_type="nexus.backup.upload_restored",
+            severity="critical",
+            payload={"uploaded_file": file.filename, "saved_as": upload_name, "safety_backup": safety_filename},
+        )
+        return RestoreResult(
+            success=True,
+            backup_used=upload_name,
+            safety_backup=safety_filename,
+        )
+
+    except Exception as e:
+        logger.error("upload_restore_error", error=str(e))
+        return RestoreResult(
+            success=False,
+            backup_used=upload_name,
             safety_backup=safety_filename,
             error=str(e),
         )
