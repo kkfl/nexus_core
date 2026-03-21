@@ -589,29 +589,58 @@ async def upload_and_restore(
         raw_size = raw_path.stat().st_size
         logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        # STEP 4: Run psql — use DEVNULL for stdout to prevent pipe deadlock
+        # STEP 4: Run psql — use DEVNULL for BOTH stdout and stderr
+        #   The 168 MB SQL file generates massive output that fills pipe buffers
+        #   and causes a deadlock. We sacrifice error detail for reliability.
         logger.warning("TRACE upload_restore STEP-4 spawning psql", elapsed=f"{_time.monotonic()-t0:.1f}s")
         env = _pg_env()
+
+        # Write stderr to a temp file so we can read it after without pipe deadlock
+        stderr_path = BACKUP_DIR / f".tmp_stderr_{upload_name}.log"
+        stderr_file = open(stderr_path, "w")
+
         proc = await asyncio.create_subprocess_exec(
             "psql", "-f", str(raw_path),
             env=env,
             stdout=_sp.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=stderr_file,
         )
-        logger.warning("TRACE upload_restore STEP-5 psql spawned, waiting for completion", pid=proc.pid, elapsed=f"{_time.monotonic()-t0:.1f}s")
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=proc.returncode, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning("TRACE upload_restore STEP-5 psql spawned, using wait()", pid=proc.pid, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        raw_path.unlink(missing_ok=True)
-
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace")[:500]
-            logger.error("upload_restore_failed", error=err, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        try:
+            returncode = await asyncio.wait_for(proc.wait(), timeout=600)
+        except asyncio.TimeoutError:
+            proc.kill()
+            stderr_file.close()
+            stderr_path.unlink(missing_ok=True)
+            raw_path.unlink(missing_ok=True)
+            logger.error("TRACE upload_restore STEP-5 psql TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
             return RestoreResult(
                 success=False,
                 backup_used=upload_name,
                 safety_backup=safety_filename,
-                error=f"psql restore failed: {err}",
+                error="psql restore timed out (10 minutes)",
+            )
+
+        stderr_file.close()
+        # Read the last 500 chars of stderr for error reporting
+        try:
+            stderr_content = stderr_path.read_text(errors='replace')[-500:]
+        except Exception:
+            stderr_content = ""
+        stderr_path.unlink(missing_ok=True)
+
+        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=returncode, stderr_len=len(stderr_content), elapsed=f"{_time.monotonic()-t0:.1f}s")
+
+        raw_path.unlink(missing_ok=True)
+
+        if returncode != 0:
+            logger.error("upload_restore_failed", error=stderr_content, elapsed=f"{_time.monotonic()-t0:.1f}s")
+            return RestoreResult(
+                success=False,
+                backup_used=upload_name,
+                safety_backup=safety_filename,
+                error=f"psql restore failed: {stderr_content}",
             )
 
         logger.warning("TRACE upload_restore STEP-7 success", filename=upload_name, safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
