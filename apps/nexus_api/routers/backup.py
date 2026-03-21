@@ -259,21 +259,16 @@ async def _enforce_retention():
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Core backup helper (used by endpoint + internal safety backup calls)
 # ---------------------------------------------------------------------------
 
 
-@router.post("/run", response_model=BackupResult)
-async def run_backup(
-    body: RunBackupRequest | None = None,
-    current_user: Any = Depends(RequireRole(["admin"])),
-):
-    """Trigger a new database backup (pg_dump → gzipped SQL)."""
-    # Determine target directory
+async def _create_backup(subdirectory: str | None = None) -> BackupResult:
+    """Core backup logic — runs pg_dump and produces a gzipped SQL file."""
     cfg = _load_config()
-    subdirectory = (body.subdirectory if body else None) or cfg.get("default_location")
-    target_dir = _resolve_backup_dir(subdirectory)
-    location_label = subdirectory if subdirectory and subdirectory not in ("default", "/", ".") else "default"
+    subdir = subdirectory or cfg.get("default_location")
+    target_dir = _resolve_backup_dir(subdir)
+    location_label = subdir if subdir and subdir not in ("default", "/", ".") else "default"
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
     filename = f"nexus_backup_{timestamp}.sql.gz"
@@ -281,7 +276,6 @@ async def run_backup(
     raw_path = target_dir / f".tmp_{filename}.sql"
 
     try:
-        # Run pg_dump
         env = _pg_env()
         proc = await asyncio.create_subprocess_exec(
             "pg_dump", "--clean", "--if-exists", "--no-owner",
@@ -297,7 +291,6 @@ async def run_backup(
             logger.error("backup_pg_dump_failed", error=err)
             return BackupResult(success=False, error=f"pg_dump failed: {err}")
 
-        # Gzip the dump
         with open(raw_path, "rb") as f_in:
             with gzip.open(filepath, "wb", compresslevel=6) as f_out:
                 shutil.copyfileobj(f_in, f_out)
@@ -307,14 +300,12 @@ async def run_backup(
         size = filepath.stat().st_size
         logger.info("backup_created", filename=filename, size=_human_size(size))
 
-        # Enforce retention
         await _enforce_retention()
 
-        # Notify
         from apps.nexus_api.notify import notify_action
         await notify_action(
             action="backup.created",
-            subject="💾 Backup Created",
+            subject="\U0001f4be Backup Created",
             body=f"{filename} ({_human_size(size)})",
             event_type="nexus.backup.created",
             payload={"filename": filename, "size": _human_size(size)},
@@ -336,6 +327,21 @@ async def run_backup(
         filepath.unlink(missing_ok=True)
         logger.error("backup_error", error=str(e))
         return BackupResult(success=False, error=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/run", response_model=BackupResult)
+async def run_backup(
+    body: RunBackupRequest | None = None,
+    current_user: Any = Depends(RequireRole(["admin"])),
+):
+    """Trigger a new database backup (pg_dump \u2192 gzipped SQL)."""
+    subdirectory = (body.subdirectory if body else None)
+    return await _create_backup(subdirectory=subdirectory)
 
 
 @router.get("/list", response_model=list[BackupInfo])
@@ -459,7 +465,7 @@ async def restore_backup(
         raise HTTPException(status_code=404, detail="Backup not found")
 
     # Step 1: Auto-create safety backup of current state
-    safety_result = await run_backup(current_user)
+    safety_result = await _create_backup()
     safety_filename = safety_result.filename if safety_result.success else None
 
     # Step 2: Decompress and restore
@@ -563,7 +569,7 @@ async def upload_and_restore(
 
     # Step 1: Safety backup of current state
     logger.info("upload_restore_safety_backup")
-    safety_result = await run_backup(current_user)
+    safety_result = await _create_backup()
     safety_filename = safety_result.filename if safety_result.success else None
 
     # Step 2: Decompress and restore
