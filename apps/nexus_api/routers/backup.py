@@ -535,6 +535,12 @@ async def upload_and_restore(
     database first, then restores from the uploaded file.
     Requires confirm="UPLOAD_RESTORE" as a form field.
     """
+    import subprocess as _sp
+    import time as _time
+
+    t0 = _time.monotonic()
+    logger.warning("TRACE upload_restore STEP-0 entry")
+
     if confirm != "UPLOAD_RESTORE":
         raise HTTPException(
             status_code=400,
@@ -548,12 +554,12 @@ async def upload_and_restore(
             detail="File must be a .sql.gz backup file.",
         )
 
-    # Save uploaded file
+    # STEP 1: Save uploaded file
     upload_name = f"uploaded_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     upload_path = BACKUP_DIR / upload_name
     try:
+        logger.warning("TRACE upload_restore STEP-1 reading upload", elapsed=f"{_time.monotonic()-t0:.1f}s")
         content = await file.read()
-        # Validate it's actually gzip
         if content[:2] != b'\x1f\x8b':
             raise HTTPException(
                 status_code=400,
@@ -561,42 +567,46 @@ async def upload_and_restore(
             )
         with open(upload_path, "wb") as f:
             f.write(content)
-        logger.info("upload_restore_file_saved", filename=upload_name, size=len(content))
+        logger.warning("TRACE upload_restore STEP-1 done", filename=upload_name, size=len(content), elapsed=f"{_time.monotonic()-t0:.1f}s")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
-    # Step 1: Safety backup of current state
-    logger.info("upload_restore_safety_backup")
+    # STEP 2: Safety backup of current state
+    logger.warning("TRACE upload_restore STEP-2 safety backup starting", elapsed=f"{_time.monotonic()-t0:.1f}s")
     safety_result = await _create_backup()
     safety_filename = safety_result.filename if safety_result.success else None
+    logger.warning("TRACE upload_restore STEP-2 safety backup done", safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-    # Step 2: Decompress and restore
+    # STEP 3: Decompress
     raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
     try:
-        logger.info("upload_restore_decompressing", filename=upload_name)
+        logger.warning("TRACE upload_restore STEP-3 decompressing", elapsed=f"{_time.monotonic()-t0:.1f}s")
         with gzip.open(upload_path, "rb") as f_in:
             with open(raw_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
-
         raw_size = raw_path.stat().st_size
-        logger.info("upload_restore_running_psql", sql_size=_human_size(raw_size))
+        logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
+        # STEP 4: Run psql — use DEVNULL for stdout to prevent pipe deadlock
+        logger.warning("TRACE upload_restore STEP-4 spawning psql", elapsed=f"{_time.monotonic()-t0:.1f}s")
         env = _pg_env()
         proc = await asyncio.create_subprocess_exec(
             "psql", "-f", str(raw_path),
             env=env,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=_sp.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        logger.warning("TRACE upload_restore STEP-5 psql spawned, waiting for completion", pid=proc.pid, elapsed=f"{_time.monotonic()-t0:.1f}s")
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=proc.returncode, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         raw_path.unlink(missing_ok=True)
 
         if proc.returncode != 0:
             err = stderr.decode(errors="replace")[:500]
-            logger.error("upload_restore_failed", error=err)
+            logger.error("upload_restore_failed", error=err, elapsed=f"{_time.monotonic()-t0:.1f}s")
             return RestoreResult(
                 success=False,
                 backup_used=upload_name,
@@ -604,7 +614,7 @@ async def upload_and_restore(
                 error=f"psql restore failed: {err}",
             )
 
-        logger.info("upload_restore_success", filename=upload_name, safety=safety_filename)
+        logger.warning("TRACE upload_restore STEP-7 success", filename=upload_name, safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         from apps.nexus_api.notify import notify_action
         await notify_action(
@@ -615,6 +625,7 @@ async def upload_and_restore(
             severity="critical",
             payload={"uploaded_file": file.filename, "saved_as": upload_name, "safety_backup": safety_filename},
         )
+        logger.warning("TRACE upload_restore STEP-8 returning response", elapsed=f"{_time.monotonic()-t0:.1f}s")
         return RestoreResult(
             success=True,
             backup_used=upload_name,
@@ -623,7 +634,7 @@ async def upload_and_restore(
 
     except asyncio.TimeoutError:
         raw_path.unlink(missing_ok=True)
-        logger.error("upload_restore_timeout", filename=upload_name)
+        logger.error("TRACE upload_restore TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
         return RestoreResult(
             success=False,
             backup_used=upload_name,
@@ -632,7 +643,7 @@ async def upload_and_restore(
         )
     except Exception as e:
         raw_path.unlink(missing_ok=True)
-        logger.error("upload_restore_error", error=str(e))
+        logger.error("TRACE upload_restore EXCEPTION", error=str(e), error_type=type(e).__name__, elapsed=f"{_time.monotonic()-t0:.1f}s")
         return RestoreResult(
             success=False,
             backup_used=upload_name,
