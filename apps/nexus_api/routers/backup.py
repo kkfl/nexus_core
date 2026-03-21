@@ -589,31 +589,37 @@ async def upload_and_restore(
         raw_size = raw_path.stat().st_size
         logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        # STEP 4: Run psql — use DEVNULL for BOTH stdout and stderr
-        #   The 168 MB SQL file generates massive output that fills pipe buffers
-        #   and causes a deadlock. We sacrifice error detail for reliability.
-        logger.warning("TRACE upload_restore STEP-4 spawning psql", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        # STEP 4: Run psql via synchronous subprocess in executor thread
+        #   asyncio subprocess deadlocks on large SQL files regardless of pipe config.
+        #   Using subprocess.run() in a thread executor avoids all asyncio pipe issues.
+        logger.warning("TRACE upload_restore STEP-4 spawning psql via executor", elapsed=f"{_time.monotonic()-t0:.1f}s")
         env = _pg_env()
 
-        # Write stderr to a temp file so we can read it after without pipe deadlock
         stderr_path = BACKUP_DIR / f".tmp_stderr_{upload_name}.log"
-        stderr_file = open(stderr_path, "w")
 
-        proc = await asyncio.create_subprocess_exec(
-            "psql", "-f", str(raw_path),
-            env=env,
-            stdout=_sp.DEVNULL,
-            stderr=stderr_file,
-        )
-        logger.warning("TRACE upload_restore STEP-5 psql spawned, using wait()", pid=proc.pid, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        def _run_psql():
+            """Run psql synchronously in a thread."""
+            with open(stderr_path, "w") as ef:
+                result = _sp.run(
+                    ["psql", "-f", str(raw_path)],
+                    env=env,
+                    stdout=_sp.DEVNULL,
+                    stderr=ef,
+                    timeout=600,
+                )
+            return result.returncode
+
+        loop = asyncio.get_event_loop()
+        logger.warning("TRACE upload_restore STEP-5 executor submit", elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         try:
-            returncode = await asyncio.wait_for(proc.wait(), timeout=600)
-        except asyncio.TimeoutError:
-            proc.kill()
-            stderr_file.close()
-            stderr_path.unlink(missing_ok=True)
+            returncode = await asyncio.wait_for(
+                loop.run_in_executor(None, _run_psql),
+                timeout=660,
+            )
+        except (asyncio.TimeoutError, _sp.TimeoutExpired):
             raw_path.unlink(missing_ok=True)
+            stderr_path.unlink(missing_ok=True)
             logger.error("TRACE upload_restore STEP-5 psql TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
             return RestoreResult(
                 success=False,
@@ -622,8 +628,7 @@ async def upload_and_restore(
                 error="psql restore timed out (10 minutes)",
             )
 
-        stderr_file.close()
-        # Read the last 500 chars of stderr for error reporting
+        # Read stderr output for error reporting
         try:
             stderr_content = stderr_path.read_text(errors='replace')[-500:]
         except Exception:
