@@ -605,7 +605,7 @@ async def upload_and_restore(
                     env=env,
                     stdout=_sp.DEVNULL,
                     stderr=ef,
-                    timeout=600,
+                    timeout=900,
                 )
             return result.returncode
 
@@ -615,7 +615,7 @@ async def upload_and_restore(
         try:
             returncode = await asyncio.wait_for(
                 loop.run_in_executor(None, _run_psql),
-                timeout=660,
+                timeout=960,
             )
         except (asyncio.TimeoutError, _sp.TimeoutExpired):
             raw_path.unlink(missing_ok=True)

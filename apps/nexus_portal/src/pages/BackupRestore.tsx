@@ -725,7 +725,7 @@ export default function BackupRestore() {
                                             formData.append('confirm', 'UPLOAD_RESTORE');
                                             const res = await apiClient.post('/settings/backup/upload-restore', formData, {
                                                 headers: { 'Content-Type': 'multipart/form-data' },
-                                                timeout: 300000,
+                                                timeout: 900000,
                                             });
                                             const result = res.data;
                                             setUploadResult(result);
@@ -750,9 +750,18 @@ export default function BackupRestore() {
 
                 {uploadStep === 'running' && (
                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                        <Progress type="circle" percent={-1} status="active" size={80} />
-                        <div style={{ marginTop: 16, color: '#f59e0b', fontWeight: 600 }}>Creating safety backup...</div>
-                        <div style={{ marginTop: 8, color: '#94a3b8' }}>Then restoring from <strong>{uploadFile?.name}</strong></div>
+                        <div style={{
+                            width: 80, height: 80, margin: '0 auto',
+                            border: '4px solid rgba(245,158,11,0.2)',
+                            borderTop: '4px solid #f59e0b',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                        }} />
+                        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                        <div style={{ marginTop: 16, color: '#f59e0b', fontWeight: 600, fontSize: 16 }}>
+                            Restoring database — this may take several minutes...
+                        </div>
+                        <div style={{ marginTop: 8, color: '#94a3b8' }}>Safety backup → Decompress → Restore from <strong>{uploadFile?.name}</strong></div>
                         <div style={{ marginTop: 8, color: '#ef4444', fontSize: 12 }}>Do NOT close this window.</div>
                     </div>
                 )}
