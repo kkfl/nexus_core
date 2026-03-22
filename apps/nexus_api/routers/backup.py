@@ -589,12 +589,24 @@ async def upload_and_restore(
         raw_size = raw_path.stat().st_size
         logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        # STEP 4: Run psql via synchronous subprocess in executor thread
-        #   asyncio subprocess deadlocks on large SQL files regardless of pipe config.
-        #   Using subprocess.run() in a thread executor avoids all asyncio pipe issues.
-        logger.warning("TRACE upload_restore STEP-4 spawning psql via executor", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        # STEP 4: Terminate other DB connections to prevent lock contention
+        #   The restore SQL has DROP CONSTRAINT / ALTER TABLE which need exclusive locks.
+        #   The API's own connections (auth, heartbeats) hold conflicting locks.
+        logger.warning("TRACE upload_restore STEP-4 terminating other DB sessions", elapsed=f"{_time.monotonic()-t0:.1f}s")
         env = _pg_env()
 
+        # Kill all other connections to the database so psql can acquire exclusive locks
+        kill_sql = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid != pg_backend_pid();"
+        _sp.run(
+            ["psql", "-c", kill_sql],
+            env=env,
+            stdout=_sp.DEVNULL,
+            stderr=_sp.DEVNULL,
+            timeout=10,
+        )
+        logger.warning("TRACE upload_restore STEP-4 sessions terminated", elapsed=f"{_time.monotonic()-t0:.1f}s")
+
+        # STEP 5: Run psql via synchronous subprocess in executor thread
         stderr_path = BACKUP_DIR / f".tmp_stderr_{upload_name}.log"
 
         def _run_psql():
