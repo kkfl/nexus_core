@@ -32,10 +32,18 @@ def _get_kek() -> bytes:
             "VAULT_MASTER_KEY (or NEXUS_MASTER_KEY) environment variable is required. "
             'Generate with: python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"'
         )
-    try:
-        key = base64.b64decode(raw)
-    except Exception as exc:
-        raise RuntimeError("VAULT_MASTER_KEY is not valid base64.") from exc
+    # Support both hex-encoded (64 hex chars → 32 bytes) and base64-encoded keys
+    key: bytes | None = None
+    if len(raw) == 64:
+        try:
+            key = bytes.fromhex(raw)
+        except ValueError:
+            pass  # not valid hex, try base64 below
+    if key is None:
+        try:
+            key = base64.b64decode(raw)
+        except Exception as exc:
+            raise RuntimeError("VAULT_MASTER_KEY is not valid hex or base64.") from exc
     if len(key) != _KEY_SIZE:
         raise RuntimeError(f"VAULT_MASTER_KEY must decode to exactly {_KEY_SIZE} bytes.")
     return key
