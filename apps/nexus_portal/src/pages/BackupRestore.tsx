@@ -54,6 +54,13 @@ export default function BackupRestore() {
     const [uploadStep, setUploadStep] = useState<'select' | 'confirm' | 'running' | 'done' | 'error'>('select');
     const [uploadResult, setUploadResult] = useState<any>(null);
 
+    // Password states for encrypted backups
+    const [backupEncrypt, setBackupEncrypt] = useState(false);
+    const [backupPassword, setBackupPassword] = useState('');
+    const [backupPasswordConfirm, setBackupPasswordConfirm] = useState('');
+    const [restorePassword, setRestorePassword] = useState('');
+    const [uploadPassword, setUploadPassword] = useState('');
+
     const { data: backups = [], isLoading } = useQuery({
         queryKey: ['backups'],
         queryFn: api.list,
@@ -98,11 +105,21 @@ export default function BackupRestore() {
         },
     });
 
+    // Check if a restore target is encrypted
+    const restoreIsEncrypted = restoreModal?.endsWith('.enc') || false;
+
     const handleRestore = async () => {
         if (!restoreModal || restoreConfirm !== 'RESTORE') return;
+        if (restoreIsEncrypted && !restorePassword) {
+            message.error('Password required to restore encrypted backup');
+            return;
+        }
         setRestoreStep('running');
         try {
-            const result = await api.restore(restoreModal, 'RESTORE');
+            const result = await apiClient.post(`/settings/backup/restore/${restoreModal}`, {
+                confirm: 'RESTORE',
+                password: restoreIsEncrypted ? restorePassword : undefined,
+            }).then(r => r.data);
             setRestoreResult(result);
             setRestoreStep(result.success ? 'done' : 'error');
             if (result.success) {
@@ -122,6 +139,7 @@ export default function BackupRestore() {
         setRestoreConfirm('');
         setRestoreStep('confirm');
         setRestoreResult(null);
+        setRestorePassword('');
     };
 
     const cardStyle: React.CSSProperties = {
@@ -132,7 +150,29 @@ export default function BackupRestore() {
 
     const triggerBackup = () => {
         const loc = backupLocation === '__new__' ? newLocationName : backupLocation;
-        backupMutation.mutate(loc === 'default' ? undefined : loc);
+        const password = backupEncrypt ? backupPassword : undefined;
+        // Use apiClient directly to include password
+        apiClient.post('/settings/backup/run', {
+            subdirectory: loc === 'default' ? undefined : loc,
+            password,
+        }).then(r => {
+            const data = r.data;
+            if (data.success) {
+                message.success(`Backup created: ${data.filename} (${data.size_human})${data.location !== 'default' ? ` → ${data.location}` : ''}`);
+            } else {
+                message.error(`Backup failed: ${data.error}`);
+            }
+            qc.invalidateQueries({ queryKey: ['backups'] });
+            qc.invalidateQueries({ queryKey: ['backup-config'] });
+            setBackupModal(false);
+            setBackupLocation('default');
+            setNewLocationName('');
+            setBackupEncrypt(false);
+            setBackupPassword('');
+            setBackupPasswordConfirm('');
+        }).catch(() => {
+            message.error('Backup request failed');
+        });
     };
 
     const columns = [
@@ -140,10 +180,11 @@ export default function BackupRestore() {
             title: 'Filename',
             dataIndex: 'filename',
             key: 'filename',
-            render: (fn: string) => (
+            render: (fn: string, record: any) => (
                 <Space>
                     <DatabaseOutlined style={{ color: '#a78bfa' }} />
                     <Text style={{ color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12 }}>{fn}</Text>
+                    {record.encrypted && <Tag color="gold" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>🔒</Tag>}
                 </Space>
             ),
         },
@@ -459,7 +500,10 @@ export default function BackupRestore() {
                         loading={backupMutation.isPending}
                         onClick={triggerBackup}
                         icon={<CloudDownloadOutlined />}
-                        disabled={backupLocation === '__new__' && !newLocationName.trim()}
+                        disabled={
+                            (backupLocation === '__new__' && !newLocationName.trim()) ||
+                            (backupEncrypt && (backupPassword.length < 8 || backupPassword !== backupPasswordConfirm))
+                        }
                         style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
                     >
                         Start Backup
@@ -507,9 +551,49 @@ export default function BackupRestore() {
                         </Text>
                     </div>
                 )}
+                <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: backupEncrypt ? 12 : 0 }}>
+                        <Space>
+                            <span style={{ fontSize: 16 }}>🔒</span>
+                            <Text style={{ color: '#c7d2fe', fontWeight: 500 }}>Encrypt Backup</Text>
+                        </Space>
+                        <Button
+                            type={backupEncrypt ? 'primary' : 'default'}
+                            size="small"
+                            onClick={() => { setBackupEncrypt(!backupEncrypt); setBackupPassword(''); setBackupPasswordConfirm(''); }}
+                            style={backupEncrypt ? { background: '#6366f1', borderColor: '#6366f1' } : {}}
+                        >
+                            {backupEncrypt ? 'Enabled' : 'Disabled'}
+                        </Button>
+                    </div>
+                    {backupEncrypt && (
+                        <div>
+                            <Text style={{ color: '#94a3b8', fontSize: 11, display: 'block', marginBottom: 8 }}>
+                                Your backup will be AES-256 encrypted. You'll need this password to restore.
+                            </Text>
+                            <Input.Password
+                                placeholder="Password (min 8 characters)"
+                                value={backupPassword}
+                                onChange={(e) => setBackupPassword(e.target.value)}
+                                style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0', marginBottom: 8 }}
+                                status={backupPassword.length > 0 && backupPassword.length < 8 ? 'error' : undefined}
+                            />
+                            <Input.Password
+                                placeholder="Confirm password"
+                                value={backupPasswordConfirm}
+                                onChange={(e) => setBackupPasswordConfirm(e.target.value)}
+                                style={{ background: '#161d2e', borderColor: backupPasswordConfirm && backupPasswordConfirm === backupPassword ? '#22c55e' : '#1e293b', color: '#e2e8f0' }}
+                                status={backupPasswordConfirm.length > 0 && backupPasswordConfirm !== backupPassword ? 'error' : undefined}
+                            />
+                            {backupPasswordConfirm && backupPasswordConfirm !== backupPassword && (
+                                <Text style={{ color: '#ef4444', fontSize: 11, display: 'block', marginTop: 4 }}>Passwords do not match</Text>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <Alert
                     type="info" showIcon
-                    message="A full database dump (pg_dump) will be created and gzipped."
+                    message={backupEncrypt ? 'Backup will be encrypted with AES-256. The vault master key is included inside.' : 'A full database dump (pg_dump) will be created and gzipped.'}
                     style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
                 />
             </Modal>
@@ -578,6 +662,19 @@ export default function BackupRestore() {
                             }}
                             status={restoreConfirm.length > 0 && restoreConfirm !== 'RESTORE' ? 'error' : undefined}
                         />
+                        {restoreIsEncrypted && (
+                            <div style={{ marginTop: 16 }}>
+                                <Text style={{ color: '#fbbf24', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                                    🔒 This backup is encrypted — enter the password:
+                                </Text>
+                                <Input.Password
+                                    placeholder="Backup password"
+                                    value={restorePassword}
+                                    onChange={(e) => setRestorePassword(e.target.value)}
+                                    style={{ background: '#161d2e', borderColor: '#92400e', color: '#e2e8f0' }}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -642,32 +739,45 @@ export default function BackupRestore() {
                             style={{ marginBottom: 16, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)' }}
                         />
                         <Upload.Dragger
-                            accept=".sql.gz"
+                            accept=".sql.gz,.enc"
                             maxCount={1}
                             beforeUpload={(file) => {
-                                if (!file.name.endsWith('.sql.gz')) {
-                                    message.error('Only .sql.gz backup files are accepted');
+                                if (!file.name.endsWith('.sql.gz') && !file.name.endsWith('.sql.gz.enc')) {
+                                    message.error('Only .sql.gz or .sql.gz.enc backup files are accepted');
                                     return Upload.LIST_IGNORE;
                                 }
                                 setUploadFile(file);
                                 return false; // prevent auto upload
                             }}
-                            onRemove={() => setUploadFile(null)}
+                            onRemove={() => { setUploadFile(null); setUploadPassword(''); }}
                             style={{ background: '#161010', borderColor: '#7f1d1d', borderStyle: 'dashed' }}
                         >
                             <p style={{ color: '#94a3b8' }}>
                                 <InboxOutlined style={{ fontSize: 36, color: '#ef4444' }} />
                             </p>
-                            <p style={{ color: '#cbd5e1', fontSize: 14 }}>Drop a .sql.gz backup file here or click to browse</p>
-                            <p style={{ color: '#64748b', fontSize: 12 }}>Only Nexus backup files (.sql.gz) are accepted</p>
+                            <p style={{ color: '#cbd5e1', fontSize: 14 }}>Drop a .sql.gz or .sql.gz.enc backup file here</p>
+                            <p style={{ color: '#64748b', fontSize: 12 }}>Nexus backup files (.sql.gz) or encrypted (.sql.gz.enc)</p>
                         </Upload.Dragger>
+                        {uploadFile?.name.endsWith('.enc') && (
+                            <div style={{ marginTop: 12 }}>
+                                <Text style={{ color: '#fbbf24', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                                    🔒 Encrypted backup — enter password:
+                                </Text>
+                                <Input.Password
+                                    placeholder="Backup password"
+                                    value={uploadPassword}
+                                    onChange={(e) => setUploadPassword(e.target.value)}
+                                    style={{ background: '#161010', borderColor: '#92400e', color: '#e2e8f0' }}
+                                />
+                            </div>
+                        )}
                         <div style={{ marginTop: 16, textAlign: 'right' }}>
                             <Space>
                                 <Button onClick={() => setUploadModal(false)}>Cancel</Button>
                                 <Button
                                     danger
                                     type="primary"
-                                    disabled={!uploadFile}
+                                    disabled={!uploadFile || (uploadFile.name.endsWith('.enc') && !uploadPassword)}
                                     onClick={() => setUploadStep('confirm')}
                                 >
                                     Next →
@@ -723,6 +833,9 @@ export default function BackupRestore() {
                                             const formData = new FormData();
                                             formData.append('file', uploadFile);
                                             formData.append('confirm', 'UPLOAD_RESTORE');
+                                            if (uploadFile.name.endsWith('.enc') && uploadPassword) {
+                                                formData.append('password', uploadPassword);
+                                            }
                                             const res = await apiClient.post('/settings/backup/upload-restore', formData, {
                                                 headers: { 'Content-Type': 'multipart/form-data' },
                                                 timeout: 900000,

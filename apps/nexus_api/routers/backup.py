@@ -113,10 +113,12 @@ class BackupInfo(BaseModel):
     created_at: str
     tables_included: str
     location: str = "default"
+    encrypted: bool = False
 
 
 class RunBackupRequest(BaseModel):
     subdirectory: str | None = None
+    password: str | None = None
 
 
 class BackupConfigIn(BaseModel):
@@ -136,6 +138,7 @@ class BackupConfigOut(BaseModel):
 
 class RestoreRequest(BaseModel):
     confirm: str
+    password: str | None = None
 
 
 class BackupResult(BaseModel):
@@ -199,36 +202,36 @@ def _list_locations() -> list[str]:
 
 
 def _list_backups() -> list[BackupInfo]:
-    """Scan backup directory and subdirectories for .sql.gz files."""
+    """Scan backup directory and subdirectories for .sql.gz and .sql.gz.enc files."""
     backups = []
-    # Scan root
-    for f in sorted(BACKUP_DIR.glob("nexus_backup_*.sql.gz"), reverse=True):
-        stat = f.stat()
-        name = f.stem.replace(".sql", "")
-        date_str = name.replace("nexus_backup_", "")
-        backups.append(BackupInfo(
-            filename=f.name,
-            size_bytes=stat.st_size,
-            size_human=_human_size(stat.st_size),
-            created_at=date_str,
-            tables_included="all (full database)",
-            location="default",
-        ))
-    # Scan subdirectories
-    for subdir in sorted(BACKUP_DIR.iterdir()):
-        if subdir.is_dir() and not subdir.name.startswith("."):
-            for f in sorted(subdir.glob("nexus_backup_*.sql.gz"), reverse=True):
+
+    def _scan_dir(directory: Path, location: str):
+        # Both .sql.gz and .sql.gz.enc
+        for pattern in ("nexus_backup_*.sql.gz", "nexus_backup_*.sql.gz.enc"):
+            for f in sorted(directory.glob(pattern), reverse=True):
                 stat = f.stat()
-                name = f.stem.replace(".sql", "")
-                date_str = name.replace("nexus_backup_", "")
+                is_enc = f.name.endswith(".enc")
+                # Strip extensions to get date
+                base = f.name
+                for ext in (".enc", ".sql.gz", ".sql"):
+                    base = base.replace(ext, "")
+                date_str = base.replace("nexus_backup_", "")
                 backups.append(BackupInfo(
                     filename=f.name,
                     size_bytes=stat.st_size,
                     size_human=_human_size(stat.st_size),
                     created_at=date_str,
                     tables_included="all (full database)",
-                    location=subdir.name,
+                    location=location,
+                    encrypted=is_enc,
                 ))
+
+    # Scan root
+    _scan_dir(BACKUP_DIR, "default")
+    # Scan subdirectories
+    for subdir in sorted(BACKUP_DIR.iterdir()):
+        if subdir.is_dir() and not subdir.name.startswith("."):
+            _scan_dir(subdir, subdir.name)
     # Sort all by date descending
     backups.sort(key=lambda b: b.created_at, reverse=True)
     return backups
@@ -263,17 +266,19 @@ async def _enforce_retention():
 # ---------------------------------------------------------------------------
 
 
-async def _create_backup(subdirectory: str | None = None) -> BackupResult:
-    """Core backup logic — runs pg_dump and produces a gzipped SQL file."""
+async def _create_backup(subdirectory: str | None = None, password: str | None = None) -> BackupResult:
+    """Core backup logic — runs pg_dump and produces a gzipped SQL file, optionally encrypted."""
     cfg = _load_config()
     subdir = subdirectory or cfg.get("default_location")
     target_dir = _resolve_backup_dir(subdir)
     location_label = subdir if subdir and subdir not in ("default", "/", ".") else "default"
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
-    filename = f"nexus_backup_{timestamp}.sql.gz"
+    base_filename = f"nexus_backup_{timestamp}.sql.gz"
+    filename = f"{base_filename}.enc" if password else base_filename
     filepath = target_dir / filename
-    raw_path = target_dir / f".tmp_{filename}.sql"
+    gz_path = target_dir / base_filename
+    raw_path = target_dir / f".tmp_{base_filename}.sql"
 
     try:
         env = _pg_env()
@@ -291,24 +296,35 @@ async def _create_backup(subdirectory: str | None = None) -> BackupResult:
             logger.error("backup_pg_dump_failed", error=err)
             return BackupResult(success=False, error=f"pg_dump failed: {err}")
 
+        # Always create gzip first
         with open(raw_path, "rb") as f_in:
-            with gzip.open(filepath, "wb", compresslevel=6) as f_out:
+            with gzip.open(gz_path, "wb", compresslevel=6) as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
         raw_path.unlink(missing_ok=True)
 
+        # Encrypt if password provided
+        if password:
+            from packages.shared.backup_crypto import encrypt_backup
+            master_key = os.environ.get("NEXUS_MASTER_KEY", "")
+            sql_gz_data = gz_path.read_bytes()
+            encrypted = encrypt_backup(sql_gz_data, password, master_key)
+            filepath.write_bytes(encrypted)
+            gz_path.unlink(missing_ok=True)  # remove unencrypted .sql.gz
+            logger.info("backup_encrypted", filename=filename)
+
         size = filepath.stat().st_size
-        logger.info("backup_created", filename=filename, size=_human_size(size))
+        logger.info("backup_created", filename=filename, size=_human_size(size), encrypted=bool(password))
 
         await _enforce_retention()
 
         from apps.nexus_api.notify import notify_action
         await notify_action(
             action="backup.created",
-            subject="\U0001f4be Backup Created",
+            subject="\U0001f4be Backup Created" + (" 🔒" if password else ""),
             body=f"{filename} ({_human_size(size)})",
             event_type="nexus.backup.created",
-            payload={"filename": filename, "size": _human_size(size)},
+            payload={"filename": filename, "size": _human_size(size), "encrypted": bool(password)},
         )
 
         return BackupResult(
@@ -320,10 +336,12 @@ async def _create_backup(subdirectory: str | None = None) -> BackupResult:
 
     except asyncio.TimeoutError:
         raw_path.unlink(missing_ok=True)
+        gz_path.unlink(missing_ok=True)
         filepath.unlink(missing_ok=True)
         return BackupResult(success=False, error="Backup timed out (120s)")
     except Exception as e:
         raw_path.unlink(missing_ok=True)
+        gz_path.unlink(missing_ok=True)
         filepath.unlink(missing_ok=True)
         logger.error("backup_error", error=str(e))
         return BackupResult(success=False, error=str(e))
@@ -339,9 +357,10 @@ async def run_backup(
     body: RunBackupRequest | None = None,
     current_user: Any = Depends(RequireRole(["admin"])),
 ):
-    """Trigger a new database backup (pg_dump \u2192 gzipped SQL)."""
+    """Trigger a new database backup (pg_dump → gzipped SQL, optionally encrypted)."""
     subdirectory = (body.subdirectory if body else None)
-    return await _create_backup(subdirectory=subdirectory)
+    password = (body.password if body else None)
+    return await _create_backup(subdirectory=subdirectory, password=password)
 
 
 @router.get("/list", response_model=list[BackupInfo])
@@ -453,6 +472,7 @@ async def restore_backup(
     """
     BREAK-GLASS RESTORE — requires confirm="RESTORE" in request body.
     Auto-creates a safety backup before restoring.
+    Encrypted (.enc) backups require password.
     """
     if body.confirm != "RESTORE":
         raise HTTPException(
@@ -460,20 +480,52 @@ async def restore_backup(
             detail='You must send {"confirm": "RESTORE"} to proceed.',
         )
 
+    # Search all directories for the backup file
     filepath = BACKUP_DIR / filename
+    if not filepath.exists():
+        for subdir in BACKUP_DIR.iterdir():
+            if subdir.is_dir():
+                candidate = subdir / filename
+                if candidate.exists():
+                    filepath = candidate
+                    break
     if not filepath.exists() or not filepath.name.startswith("nexus_backup_"):
         raise HTTPException(status_code=404, detail="Backup not found")
+
+    is_encrypted = filepath.name.endswith(".enc")
+    if is_encrypted and not body.password:
+        raise HTTPException(status_code=400, detail="Password required to restore encrypted backup.")
 
     # Step 1: Auto-create safety backup of current state
     safety_result = await _create_backup()
     safety_filename = safety_result.filename if safety_result.success else None
 
-    # Step 2: Decompress and restore
+    # Step 2: Decrypt (if encrypted), decompress, and restore
     try:
         raw_path = BACKUP_DIR / f".tmp_restore_{filename}.sql"
-        with gzip.open(filepath, "rb") as f_in:
-            with open(raw_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+
+        if is_encrypted:
+            from packages.shared.backup_crypto import decrypt_backup
+            try:
+                master_key, sql_gz_data = decrypt_backup(filepath.read_bytes(), body.password)
+            except ValueError as e:
+                return RestoreResult(
+                    success=False, backup_used=filename,
+                    safety_backup=safety_filename, error=str(e),
+                )
+            # Decompress the decrypted gzip data
+            import io
+            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in:
+                with open(raw_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            # Update NEXUS_MASTER_KEY in .env
+            _write_env_value("NEXUS_MASTER_KEY", master_key)
+            os.environ["NEXUS_MASTER_KEY"] = master_key
+            logger.info("restore_master_key_updated", source=filename)
+        else:
+            with gzip.open(filepath, "rb") as f_in:
+                with open(raw_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
 
         env = _pg_env()
         proc = await asyncio.create_subprocess_exec(
@@ -496,12 +548,12 @@ async def restore_backup(
                 error=f"psql restore failed: {err}",
             )
 
-        logger.info("restore_success", filename=filename, safety=safety_filename)
+        logger.info("restore_success", filename=filename, safety=safety_filename, encrypted=is_encrypted)
 
         from apps.nexus_api.notify import notify_action
         await notify_action(
             action="backup.restored",
-            subject="⚠️ Database Restored",
+            subject="⚠️ Database Restored" + (" 🔒" if is_encrypted else ""),
             body=f"Restored from {filename} (safety backup: {safety_filename})",
             event_type="nexus.backup.restored",
             severity="warn",
@@ -527,6 +579,7 @@ async def restore_backup(
 async def upload_and_restore(
     file: UploadFile = File(...),
     confirm: str = Form(...),
+    password: str = Form(""),
     current_user: Any = Depends(RequireRole(["admin"])),
 ):
     """
@@ -548,11 +601,15 @@ async def upload_and_restore(
         )
 
     # Validate file
-    if not file.filename or not file.filename.endswith(".sql.gz"):
+    valid_ext = file.filename and (file.filename.endswith(".sql.gz") or file.filename.endswith(".sql.gz.enc"))
+    if not file.filename or not valid_ext:
         raise HTTPException(
             status_code=400,
-            detail="File must be a .sql.gz backup file.",
+            detail="File must be a .sql.gz or .sql.gz.enc backup file.",
         )
+    is_encrypted = file.filename.endswith(".enc")
+    if is_encrypted and not password:
+        raise HTTPException(status_code=400, detail="Password required to restore encrypted backup.")
 
     # STEP 1: Save uploaded file
     upload_name = f"uploaded_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
@@ -560,14 +617,16 @@ async def upload_and_restore(
     try:
         logger.warning("TRACE upload_restore STEP-1 reading upload", elapsed=f"{_time.monotonic()-t0:.1f}s")
         content = await file.read()
-        if content[:2] != b'\x1f\x8b':
+        # Validate file header: gzip magic (1f 8b) or NEXUS_ENC_V1 magic
+        from packages.shared.backup_crypto import MAGIC as _ENC_MAGIC
+        if content[:2] != b'\x1f\x8b' and not content[:len(_ENC_MAGIC)] == _ENC_MAGIC:
             raise HTTPException(
                 status_code=400,
-                detail="File does not appear to be a valid gzip archive.",
+                detail="File does not appear to be a valid gzip or encrypted backup.",
             )
         with open(upload_path, "wb") as f:
             f.write(content)
-        logger.warning("TRACE upload_restore STEP-1 done", filename=upload_name, size=len(content), elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning("TRACE upload_restore STEP-1 done", filename=upload_name, size=len(content), encrypted=is_encrypted, elapsed=f"{_time.monotonic()-t0:.1f}s")
     except HTTPException:
         raise
     except Exception as e:
@@ -582,10 +641,31 @@ async def upload_and_restore(
     # STEP 3: Decompress
     raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
     try:
-        logger.warning("TRACE upload_restore STEP-3 decompressing", elapsed=f"{_time.monotonic()-t0:.1f}s")
-        with gzip.open(upload_path, "rb") as f_in:
-            with open(raw_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        logger.warning("TRACE upload_restore STEP-3 decompressing", encrypted=is_encrypted, elapsed=f"{_time.monotonic()-t0:.1f}s")
+
+        if is_encrypted:
+            from packages.shared.backup_crypto import decrypt_backup
+            try:
+                master_key, sql_gz_data = decrypt_backup(upload_path.read_bytes(), password)
+            except ValueError as e:
+                upload_path.unlink(missing_ok=True)
+                return RestoreResult(
+                    success=False, backup_used=upload_name,
+                    safety_backup=safety_filename, error=str(e),
+                )
+            import io
+            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in:
+                with open(raw_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            # Update NEXUS_MASTER_KEY in .env so vault secrets work after restore
+            _write_env_value("NEXUS_MASTER_KEY", master_key)
+            os.environ["NEXUS_MASTER_KEY"] = master_key
+            logger.info("restore_master_key_updated", source=upload_name)
+        else:
+            with gzip.open(upload_path, "rb") as f_in:
+                with open(raw_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+
         raw_size = raw_path.stat().st_size
         logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
