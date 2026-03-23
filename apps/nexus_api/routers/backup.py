@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import re
 import os
 import shutil
 from datetime import datetime, timezone
@@ -262,8 +263,55 @@ async def _enforce_retention():
 
 
 # ---------------------------------------------------------------------------
+# Progress tracking
+# ---------------------------------------------------------------------------
+
+_backup_progress: dict = {
+    "active": False,
+    "stage": "idle",       # idle | counting | dumping | compressing | encrypting | done | error
+    "current_table": "",
+    "tables_done": 0,
+    "tables_total": 0,
+    "message": "",
+}
+
+_TABLE_DATA_RE = re.compile(r'(?:dumping contents of|saving data for) table "(?:public\.)?(.+?)"', re.IGNORECASE)
+
+
+def _reset_progress():
+    _backup_progress.update(
+        active=False, stage="idle", current_table="",
+        tables_done=0, tables_total=0, message="",
+    )
+
+
+def _set_progress(stage: str, message: str = "", **kwargs):
+    _backup_progress["active"] = stage not in ("idle", "done", "error")
+    _backup_progress["stage"] = stage
+    if message:
+        _backup_progress["message"] = message
+    _backup_progress.update(kwargs)
+
+
+# ---------------------------------------------------------------------------
 # Core backup helper (used by endpoint + internal safety backup calls)
 # ---------------------------------------------------------------------------
+
+
+async def _count_tables(env: dict) -> int:
+    """Count user tables in the database."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "psql", "-t", "-A", "-c",
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        return int(stdout.decode().strip())
+    except Exception:
+        return 0
 
 
 async def _create_backup(subdirectory: str | None = None, password: str | None = None) -> BackupResult:
@@ -282,21 +330,51 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
 
     try:
         env = _pg_env()
+
+        # Count tables for progress
+        _set_progress("counting", message="Counting database tables...")
+        total_tables = await _count_tables(env)
+        _set_progress("dumping", message="Starting database dump...", tables_total=total_tables, tables_done=0)
+
+        # Use --verbose to get per-table progress via stderr
         proc = await asyncio.create_subprocess_exec(
-            "pg_dump", "--clean", "--if-exists", "--no-owner",
+            "pg_dump", "--clean", "--if-exists", "--no-owner", "--verbose",
             "-f", str(raw_path),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+
+        # Read stderr line-by-line for progress
+        tables_dumped = 0
+        stderr_lines = []
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            text = line.decode(errors="replace").strip()
+            stderr_lines.append(text)
+            m = _TABLE_DATA_RE.search(text)
+            if m:
+                tables_dumped += 1
+                table_name = m.group(1)
+                _set_progress(
+                    "dumping",
+                    message=f"Dumping: {table_name}",
+                    current_table=table_name,
+                    tables_done=tables_dumped,
+                )
+
+        await asyncio.wait_for(proc.wait(), timeout=120)
 
         if proc.returncode != 0:
-            err = stderr.decode(errors="replace")[:500]
+            err = "\n".join(stderr_lines[-5:])[:500]
             logger.error("backup_pg_dump_failed", error=err)
+            _set_progress("error", message=f"pg_dump failed: {err}")
             return BackupResult(success=False, error=f"pg_dump failed: {err}")
 
-        # Always create gzip first
+        # Compress
+        _set_progress("compressing", message="Compressing backup...")
         with open(raw_path, "rb") as f_in:
             with gzip.open(gz_path, "wb", compresslevel=6) as f_out:
                 shutil.copyfileobj(f_in, f_out)
@@ -305,15 +383,17 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
 
         # Encrypt if password provided
         if password:
+            _set_progress("encrypting", message="Encrypting with AES-256...")
             from packages.shared.backup_crypto import encrypt_backup
             master_key = os.environ.get("NEXUS_MASTER_KEY", "")
             sql_gz_data = gz_path.read_bytes()
             encrypted = encrypt_backup(sql_gz_data, password, master_key)
             filepath.write_bytes(encrypted)
-            gz_path.unlink(missing_ok=True)  # remove unencrypted .sql.gz
+            gz_path.unlink(missing_ok=True)
             logger.info("backup_encrypted", filename=filename)
 
         size = filepath.stat().st_size
+        _set_progress("done", message=f"Backup complete: {filename} ({_human_size(size)})")
         logger.info("backup_created", filename=filename, size=_human_size(size), encrypted=bool(password))
 
         await _enforce_retention()
@@ -338,12 +418,14 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
         raw_path.unlink(missing_ok=True)
         gz_path.unlink(missing_ok=True)
         filepath.unlink(missing_ok=True)
+        _set_progress("error", message="Backup timed out (120s)")
         return BackupResult(success=False, error="Backup timed out (120s)")
     except Exception as e:
         raw_path.unlink(missing_ok=True)
         gz_path.unlink(missing_ok=True)
         filepath.unlink(missing_ok=True)
         logger.error("backup_error", error=str(e))
+        _set_progress("error", message=str(e))
         return BackupResult(success=False, error=str(e))
 
 
@@ -360,7 +442,16 @@ async def run_backup(
     """Trigger a new database backup (pg_dump → gzipped SQL, optionally encrypted)."""
     subdirectory = (body.subdirectory if body else None)
     password = (body.password if body else None)
+    _reset_progress()
     return await _create_backup(subdirectory=subdirectory, password=password)
+
+
+@router.get("/progress")
+async def backup_progress(
+    current_user: Any = Depends(RequireRole(["admin"])),
+):
+    """Return current backup progress for polling."""
+    return dict(_backup_progress)
 
 
 @router.get("/list", response_model=list[BackupInfo])

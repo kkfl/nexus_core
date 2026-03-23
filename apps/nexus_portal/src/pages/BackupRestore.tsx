@@ -5,7 +5,7 @@
  * break-glass restores. Uses the Midnight design system.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Card, Button, Table, Typography, Space, Tag, message,
     Modal, Input, Alert, Progress, Statistic, Row, Col,
@@ -46,6 +46,8 @@ export default function BackupRestore() {
     const [restoreStep, setRestoreStep] = useState<'confirm' | 'running' | 'done' | 'error'>('confirm');
     const [restoreResult, setRestoreResult] = useState<any>(null);
     const [backupModal, setBackupModal] = useState(false);
+    const [backupStep, setBackupStep] = useState<'config' | 'running' | 'done' | 'error'>('config');
+    const [backupResult, setBackupResult] = useState<any>(null);
     const [backupLocation, setBackupLocation] = useState<string>('default');
     const [newLocationName, setNewLocationName] = useState('');
     const [uploadModal, setUploadModal] = useState(false);
@@ -60,6 +62,7 @@ export default function BackupRestore() {
     const [backupPasswordConfirm, setBackupPasswordConfirm] = useState('');
     const [restorePassword, setRestorePassword] = useState('');
     const [uploadPassword, setUploadPassword] = useState('');
+    const [backupProgress, setBackupProgress] = useState<any>(null);
 
     const { data: backups = [], isLoading } = useQuery({
         queryKey: ['backups'],
@@ -148,32 +151,48 @@ export default function BackupRestore() {
         borderRadius: 12,
     };
 
+    const closeBackupModal = () => {
+        setBackupModal(false);
+        setBackupStep('config');
+        setBackupResult(null);
+        setBackupLocation('default');
+        setNewLocationName('');
+        setBackupEncrypt(false);
+        setBackupPassword('');
+        setBackupPasswordConfirm('');
+    };
+
     const triggerBackup = () => {
         const loc = backupLocation === '__new__' ? newLocationName : backupLocation;
         const password = backupEncrypt ? backupPassword : undefined;
-        // Use apiClient directly to include password
+        setBackupStep('running');
+        setBackupProgress(null);
         apiClient.post('/settings/backup/run', {
             subdirectory: loc === 'default' ? undefined : loc,
             password,
         }).then(r => {
             const data = r.data;
-            if (data.success) {
-                message.success(`Backup created: ${data.filename} (${data.size_human})${data.location !== 'default' ? ` → ${data.location}` : ''}`);
-            } else {
-                message.error(`Backup failed: ${data.error}`);
-            }
+            setBackupResult(data);
+            setBackupStep(data.success ? 'done' : 'error');
             qc.invalidateQueries({ queryKey: ['backups'] });
             qc.invalidateQueries({ queryKey: ['backup-config'] });
-            setBackupModal(false);
-            setBackupLocation('default');
-            setNewLocationName('');
-            setBackupEncrypt(false);
-            setBackupPassword('');
-            setBackupPasswordConfirm('');
-        }).catch(() => {
-            message.error('Backup request failed');
+        }).catch((err) => {
+            setBackupResult({ success: false, error: err.response?.data?.detail || err.message || 'Network error' });
+            setBackupStep('error');
         });
     };
+
+    // Poll for backup progress while running
+    useEffect(() => {
+        if (backupStep !== 'running') return;
+        const interval = setInterval(async () => {
+            try {
+                const r = await apiClient.get('/settings/backup/progress');
+                setBackupProgress(r.data);
+            } catch { /* ignore polling errors */ }
+        }, 800);
+        return () => clearInterval(interval);
+    }, [backupStep]);
 
     const columns = [
         {
@@ -299,7 +318,7 @@ export default function BackupRestore() {
                         type="primary"
                         icon={<CloudDownloadOutlined />}
                         loading={backupMutation.isPending}
-                        onClick={() => setBackupModal(true)}
+                        onClick={() => { setBackupStep('config'); setBackupResult(null); setBackupModal(true); }}
                         style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
                     >
                         Backup Now
@@ -481,7 +500,7 @@ export default function BackupRestore() {
                 </Row>
             </Card>
 
-            {/* Backup Now Modal — location picker */}
+            {/* Backup Now Modal — with running/done/error states */}
             <Modal
                 title={
                     <span style={{ color: '#e2e8f0' }}>
@@ -490,14 +509,11 @@ export default function BackupRestore() {
                     </span>
                 }
                 open={backupModal}
-                onCancel={() => { setBackupModal(false); setBackupLocation('default'); setNewLocationName(''); }}
-                footer={[
-                    <Button key="cancel" onClick={() => { setBackupModal(false); setBackupLocation('default'); setNewLocationName(''); }}>
-                        Cancel
-                    </Button>,
+                onCancel={() => { if (backupStep !== 'running') closeBackupModal(); }}
+                footer={backupStep === 'config' ? [
+                    <Button key="cancel" onClick={closeBackupModal}>Cancel</Button>,
                     <Button
                         key="backup" type="primary"
-                        loading={backupMutation.isPending}
                         onClick={triggerBackup}
                         icon={<CloudDownloadOutlined />}
                         disabled={
@@ -508,6 +524,10 @@ export default function BackupRestore() {
                     >
                         Start Backup
                     </Button>,
+                ] : [
+                    <Button key="close" onClick={closeBackupModal} disabled={backupStep === 'running'}>
+                        {backupStep === 'running' ? 'Please wait...' : 'Close'}
+                    </Button>,
                 ]}
                 width={480}
                 styles={{
@@ -516,86 +536,163 @@ export default function BackupRestore() {
                     footer: { background: '#111827', borderTop: '1px solid #1e293b' },
                 }}
             >
-                <div style={{ marginBottom: 16 }}>
-                    <Text style={{ color: '#94a3b8', display: 'block', marginBottom: 8 }}>
-                        <FolderOutlined style={{ marginRight: 6 }} />
-                        Save backup to:
-                    </Text>
-                    <Select
-                        value={backupLocation}
-                        onChange={setBackupLocation}
-                        style={{ width: '100%' }}
-                        options={[
-                            { value: 'default', label: '📁 default (root backup directory)' },
-                            ...(config?.locations || []).filter((l: string) => l !== 'default').map((l: string) => ({
-                                value: l,
-                                label: `📂 ${l}`,
-                            })),
-                            { value: '__new__', label: '➕ Create new location...' },
-                        ]}
-                    />
-                </div>
-                {backupLocation === '__new__' && (
+                {backupStep === 'config' && (
+                  <>
                     <div style={{ marginBottom: 16 }}>
-                        <Text style={{ color: '#94a3b8', display: 'block', marginBottom: 4, fontSize: 12 }}>
-                            New location name:
+                        <Text style={{ color: '#94a3b8', display: 'block', marginBottom: 8 }}>
+                            <FolderOutlined style={{ marginRight: 6 }} />
+                            Save backup to:
                         </Text>
-                        <Input
-                            placeholder="e.g. weekly, synology-nas, archive"
-                            value={newLocationName}
-                            onChange={(e) => setNewLocationName(e.target.value)}
-                            style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }}
+                        <Select
+                            value={backupLocation}
+                            onChange={setBackupLocation}
+                            style={{ width: '100%' }}
+                            options={[
+                                { value: 'default', label: '📁 default (root backup directory)' },
+                                ...(config?.locations || []).filter((l: string) => l !== 'default').map((l: string) => ({
+                                    value: l,
+                                    label: `📂 ${l}`,
+                                })),
+                                { value: '__new__', label: '➕ Create new location...' },
+                            ]}
                         />
-                        <Text style={{ color: '#475569', fontSize: 11, display: 'block', marginTop: 4 }}>
-                            Creates a subdirectory under {config?.backup_host_dir || './backups'}
-                        </Text>
                     </div>
-                )}
-                <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: backupEncrypt ? 12 : 0 }}>
-                        <Space>
-                            <span style={{ fontSize: 16 }}>🔒</span>
-                            <Text style={{ color: '#c7d2fe', fontWeight: 500 }}>Encrypt Backup</Text>
-                        </Space>
-                        <Button
-                            type={backupEncrypt ? 'primary' : 'default'}
-                            size="small"
-                            onClick={() => { setBackupEncrypt(!backupEncrypt); setBackupPassword(''); setBackupPasswordConfirm(''); }}
-                            style={backupEncrypt ? { background: '#6366f1', borderColor: '#6366f1' } : {}}
-                        >
-                            {backupEncrypt ? 'Enabled' : 'Disabled'}
-                        </Button>
-                    </div>
-                    {backupEncrypt && (
-                        <div>
-                            <Text style={{ color: '#94a3b8', fontSize: 11, display: 'block', marginBottom: 8 }}>
-                                Your backup will be AES-256 encrypted. You'll need this password to restore.
+                    {backupLocation === '__new__' && (
+                        <div style={{ marginBottom: 16 }}>
+                            <Text style={{ color: '#94a3b8', display: 'block', marginBottom: 4, fontSize: 12 }}>
+                                New location name:
                             </Text>
-                            <Input.Password
-                                placeholder="Password (min 8 characters)"
-                                value={backupPassword}
-                                onChange={(e) => setBackupPassword(e.target.value)}
-                                style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0', marginBottom: 8 }}
-                                status={backupPassword.length > 0 && backupPassword.length < 8 ? 'error' : undefined}
+                            <Input
+                                placeholder="e.g. weekly, synology-nas, archive"
+                                value={newLocationName}
+                                onChange={(e) => setNewLocationName(e.target.value)}
+                                style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0' }}
                             />
-                            <Input.Password
-                                placeholder="Confirm password"
-                                value={backupPasswordConfirm}
-                                onChange={(e) => setBackupPasswordConfirm(e.target.value)}
-                                style={{ background: '#161d2e', borderColor: backupPasswordConfirm && backupPasswordConfirm === backupPassword ? '#22c55e' : '#1e293b', color: '#e2e8f0' }}
-                                status={backupPasswordConfirm.length > 0 && backupPasswordConfirm !== backupPassword ? 'error' : undefined}
-                            />
-                            {backupPasswordConfirm && backupPasswordConfirm !== backupPassword && (
-                                <Text style={{ color: '#ef4444', fontSize: 11, display: 'block', marginTop: 4 }}>Passwords do not match</Text>
-                            )}
+                            <Text style={{ color: '#475569', fontSize: 11, display: 'block', marginTop: 4 }}>
+                                Creates a subdirectory under {config?.backup_host_dir || './backups'}
+                            </Text>
                         </div>
                     )}
-                </div>
-                <Alert
-                    type="info" showIcon
-                    message={backupEncrypt ? 'Backup will be encrypted with AES-256. The vault master key is included inside.' : 'A full database dump (pg_dump) will be created and gzipped.'}
-                    style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
-                />
+                    <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: backupEncrypt ? 12 : 0 }}>
+                            <Space>
+                                <span style={{ fontSize: 16 }}>🔒</span>
+                                <Text style={{ color: '#c7d2fe', fontWeight: 500 }}>Encrypt Backup</Text>
+                            </Space>
+                            <Button
+                                type={backupEncrypt ? 'primary' : 'default'}
+                                size="small"
+                                onClick={() => { setBackupEncrypt(!backupEncrypt); setBackupPassword(''); setBackupPasswordConfirm(''); }}
+                                style={backupEncrypt ? { background: '#6366f1', borderColor: '#6366f1' } : {}}
+                            >
+                                {backupEncrypt ? 'Enabled' : 'Disabled'}
+                            </Button>
+                        </div>
+                        {backupEncrypt && (
+                            <div>
+                                <Text style={{ color: '#94a3b8', fontSize: 11, display: 'block', marginBottom: 8 }}>
+                                    Your backup will be AES-256 encrypted. You'll need this password to restore.
+                                </Text>
+                                <Input.Password
+                                    placeholder="Password (min 8 characters)"
+                                    value={backupPassword}
+                                    onChange={(e) => setBackupPassword(e.target.value)}
+                                    style={{ background: '#161d2e', borderColor: '#1e293b', color: '#e2e8f0', marginBottom: 8 }}
+                                    status={backupPassword.length > 0 && backupPassword.length < 8 ? 'error' : undefined}
+                                />
+                                <Input.Password
+                                    placeholder="Confirm password"
+                                    value={backupPasswordConfirm}
+                                    onChange={(e) => setBackupPasswordConfirm(e.target.value)}
+                                    style={{ background: '#161d2e', borderColor: backupPasswordConfirm && backupPasswordConfirm === backupPassword ? '#22c55e' : '#1e293b', color: '#e2e8f0' }}
+                                    status={backupPasswordConfirm.length > 0 && backupPasswordConfirm !== backupPassword ? 'error' : undefined}
+                                />
+                                {backupPasswordConfirm && backupPasswordConfirm !== backupPassword && (
+                                    <Text style={{ color: '#ef4444', fontSize: 11, display: 'block', marginTop: 4 }}>Passwords do not match</Text>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <Alert
+                        type="info" showIcon
+                        message={backupEncrypt ? 'Backup will be encrypted with AES-256. The vault master key is included inside.' : 'A full database dump (pg_dump) will be created and gzipped.'}
+                        style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
+                    />
+                  </>
+                )}
+
+                {backupStep === 'running' && (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                        <div style={{
+                            width: 80, height: 80, margin: '0 auto',
+                            border: '4px solid rgba(99,102,241,0.2)',
+                            borderTop: '4px solid #8b5cf6',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                        }} />
+                        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                        <div style={{ marginTop: 16, color: '#a78bfa', fontWeight: 600, fontSize: 16 }}>
+                            {backupProgress?.stage === 'compressing' ? 'Compressing...' :
+                             backupProgress?.stage === 'encrypting' ? 'Encrypting with AES-256...' :
+                             backupProgress?.stage === 'counting' ? 'Counting tables...' :
+                             'Creating backup...'}
+                        </div>
+                        {backupProgress?.stage === 'dumping' && backupProgress.tables_total > 0 && (
+                            <>
+                                <div style={{ marginTop: 12, color: '#e2e8f0', fontSize: 14, fontFamily: 'monospace' }}>
+                                    {backupProgress.current_table || 'Starting...'}
+                                </div>
+                                <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
+                                    Table {backupProgress.tables_done} of {backupProgress.tables_total}
+                                </div>
+                                <div style={{ margin: '12px auto 0', width: '80%', height: 6, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(100, (backupProgress.tables_done / backupProgress.tables_total) * 100)}%`,
+                                        background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease',
+                                    }} />
+                                </div>
+                            </>
+                        )}
+                        {backupProgress?.stage === 'dumping' && backupProgress.tables_total === 0 && (
+                            <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
+                                {backupProgress.message || 'Dumping database...'}
+                            </div>
+                        )}
+                        {(backupProgress?.stage === 'compressing' || backupProgress?.stage === 'encrypting') && (
+                            <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
+                                {backupProgress.message}
+                            </div>
+                        )}
+                        <div style={{ marginTop: 12, color: '#64748b', fontSize: 12 }}>Do NOT close this window.</div>
+                    </div>
+                )}
+
+                {backupStep === 'done' && backupResult && (
+                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <CheckCircleOutlined style={{ fontSize: 48, color: '#22c55e', marginBottom: 16 }} />
+                        <Title level={4} style={{ color: '#4ade80', margin: '0 0 8px' }}>Backup Complete</Title>
+                        <Paragraph style={{ color: '#94a3b8', margin: 0 }}>
+                            <strong style={{ color: '#e2e8f0', fontFamily: 'monospace', fontSize: 13 }}>{backupResult.filename}</strong>
+                        </Paragraph>
+                        <div style={{ marginTop: 12 }}>
+                            <Tag color="purple" style={{ fontSize: 13, padding: '4px 12px' }}>{backupResult.size_human}</Tag>
+                            {backupResult.filename?.endsWith('.enc') && (
+                                <Tag color="gold" style={{ fontSize: 13, padding: '4px 12px' }}>🔒 Encrypted</Tag>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {backupStep === 'error' && backupResult && (
+                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ef4444', marginBottom: 16 }} />
+                        <Title level={4} style={{ color: '#f87171' }}>Backup Failed</Title>
+                        <Paragraph style={{ color: '#94a3b8' }}>{backupResult.error}</Paragraph>
+                    </div>
+                )}
             </Modal>
 
             {/* Restore Break-Glass Modal */}
