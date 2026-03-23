@@ -187,13 +187,32 @@ async def get_portal_secret(
     id_or_alias: str,
     tenant_id: str | None = Query(None),
     env: str | None = Query(None),
+    reason: str | None = Query(None),
     current_user: User = Depends(RequireRole(["admin", "operator", "BreakGlass"])),
 ) -> Any:
-    """Get secret metadata. Note: if id_or_alias is alias, tenant_id and env are required."""
-    # secrets_agent GET /{id} expects UUID. If alias is passed, we might need a workaround.
-    # For now, let's assume id_or_alias IS the ID unless we implement a search by alias.
-    # Looking at secrets_agent/api/secrets.py, it only has GET /{secret_id}.
-    return await proxy_request("GET", f"/v1/secrets/{id_or_alias}")
+    """Get secret metadata by UUID or by alias (with tenant_id + env)."""
+    # Try UUID lookup first
+    try:
+        return await proxy_request("GET", f"/v1/secrets/{id_or_alias}")
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+
+    # UUID not found — try alias lookup via list + filter
+    if not tenant_id or not env:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Secret not found. For alias lookup, provide tenant_id and env.",
+        )
+
+    all_secrets = await proxy_request(
+        "GET", "/v1/secrets", params={"tenant_id": tenant_id, "env": env, "limit": 200}
+    )
+    for s in all_secrets:
+        if s.get("alias") == id_or_alias:
+            return s
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found.")
 
 
 @router.patch("/{secret_id}")

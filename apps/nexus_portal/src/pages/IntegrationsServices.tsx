@@ -21,6 +21,10 @@ const RESOURCE_TYPES = [
     { value: 'storage', label: 'Storage' },
     { value: 'llm', label: 'LLM' },
     { value: 'kb', label: 'Knowledge Base' },
+    { value: 'servers', label: 'Servers' },
+    { value: 'email', label: 'Email' },
+    { value: 'dns', label: 'DNS' },
+    { value: 'carriers', label: 'Carrier Inventory' },
 ];
 
 const ACTION_OPTIONS: Record<string, string[]> = {
@@ -28,6 +32,10 @@ const ACTION_OPTIONS: Record<string, string[]> = {
     storage: ['read', 'write', 'delete', 'list'],
     llm: ['query', 'list'],
     kb: ['read', 'search', 'ingest'],
+    servers: ['create', 'start', 'stop', 'delete', 'list'],
+    email: ['create', 'delete', 'list', 'manage'],
+    dns: ['add', 'remove', 'list', 'update'],
+    carriers: ['add_did', 'remove_did', 'update_e911', 'manage_ip', 'list'],
 };
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
