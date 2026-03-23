@@ -114,6 +114,7 @@ export default function AdminLayout() {
                 { key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> },
                 { key: '/integrations/email', label: 'Email Administration', icon: <MailOutlined /> },
                 { key: '/integrations/dns', label: 'DNS Management', icon: <GlobalOutlined /> },
+                { key: '/integrations/services', label: 'Service Integrations', icon: <ApiOutlined /> },
             ],
         },
         {

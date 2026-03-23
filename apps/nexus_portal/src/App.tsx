@@ -26,6 +26,7 @@ import IntegrationsStorage from './pages/IntegrationsStorage';
 import IntegrationsCarrier from './pages/IntegrationsCarrier';
 import IntegrationsEmail from './pages/IntegrationsEmail';
 import IntegrationsDns from './pages/IntegrationsDns';
+import IntegrationsServices from './pages/IntegrationsServices';
 import InfrastructureServers from './pages/InfrastructureServers';
 import MonitoringDashboard from './pages/MonitoringDashboard';
 import MailboxInbox from './pages/MailboxInbox';
@@ -104,6 +105,7 @@ function App() {
             <Route path="integrations/email" element={<IntegrationsEmail />} />
             <Route path="integrations/email/mailbox/:email" element={<MailboxInbox />} />
             <Route path="integrations/dns" element={<IntegrationsDns />} />
+            <Route path="integrations/services" element={<IntegrationsServices />} />
 
             {/* Infrastructure */}
             <Route path="infrastructure/servers" element={<InfrastructureServers />} />

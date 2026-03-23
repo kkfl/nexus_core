@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from apps.secrets_agent.models import VaultPolicy
 from apps.secrets_agent.policy.engine import PolicyEngine
+from packages.shared.models.core import ServiceIntegration, ServiceUsageLog
 
 # ---------------------------------------------------------------------------
 # Database
@@ -102,29 +103,73 @@ async def get_service_identity(
 ) -> ServiceIdentity:
     """
     Validate service identity from headers. 401 if not recognised.
+    Checks DB-registered service integrations first, then falls back to
+    env-var VAULT_AGENT_KEYS for backward compatibility.
     Admin status is granted if the key is also in VAULT_ADMIN_KEYS.
     """
-    agent_keys = _load_agent_keys()
-    admin_keys = _load_admin_keys()
+    import hashlib
+    from datetime import UTC, datetime
 
-    expected = agent_keys.get(x_service_id)
-    # Also accept admin keys for full access
-    is_admin = admin_keys.get(x_service_id) == x_agent_key
+    # --- 1. Try DB-backed service integrations ---
+    db_match = False
+    if _SessionLocal is not None:
+        try:
+            async with _SessionLocal() as db:
+                key_hash = hashlib.sha256(x_agent_key.encode()).hexdigest()
+                result = await db.execute(
+                    select(ServiceIntegration).where(
+                        ServiceIntegration.service_id == x_service_id,
+                        ServiceIntegration.api_key_hash == key_hash,
+                        ServiceIntegration.is_active.is_(True),
+                    )
+                )
+                svc = result.scalars().first()
+                if svc:
+                    db_match = True
+                    # Update last_seen_at
+                    svc.last_seen_at = datetime.now(UTC)
+                    # Log usage
+                    log_entry = ServiceUsageLog(
+                        id=str(uuid.uuid4()),
+                        service_id=x_service_id,
+                        endpoint=str(request.url.path),
+                        method=request.method,
+                        ip_address=request.client.host if request.client else None,
+                    )
+                    db.add(log_entry)
+                    await db.commit()
+        except Exception:
+            pass  # Fall through to env-var check
 
-    # Implicitly trust the nexus core service as an admin for auditing
-    if x_service_id == "nexus" and expected == x_agent_key:
-        is_admin = True
+    # --- 2. Fallback to env-var keys ---
+    if not db_match:
+        agent_keys = _load_agent_keys()
+        admin_keys = _load_admin_keys()
 
-    if expected != x_agent_key and not is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid service identity or API key.",
+        expected = agent_keys.get(x_service_id)
+        is_admin = admin_keys.get(x_service_id) == x_agent_key
+
+        # Implicitly trust the nexus core service as an admin for auditing
+        if x_service_id == "nexus" and expected == x_agent_key:
+            is_admin = True
+
+        if expected != x_agent_key and not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid service identity or API key.",
+            )
+
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        ip = request.client.host if request.client else None
+        return ServiceIdentity(
+            service_id=x_service_id, is_admin=is_admin, request_id=request_id, ip_address=ip
         )
 
+    # DB-authenticated service (never admin for vault operations)
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     ip = request.client.host if request.client else None
     return ServiceIdentity(
-        service_id=x_service_id, is_admin=is_admin, request_id=request_id, ip_address=ip
+        service_id=x_service_id, is_admin=False, request_id=request_id, ip_address=ip
     )
 
 

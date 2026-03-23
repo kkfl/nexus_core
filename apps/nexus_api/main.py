@@ -27,6 +27,7 @@ from apps.nexus_api.routers import (
     personas,
     portal_secrets,
     secrets,
+    service_integrations,
     storage,
     task_routes,
     tasks,
@@ -408,6 +409,11 @@ app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(ip_allowlist.router, prefix="/settings/ip-allowlist", tags=["settings"])
 app.include_router(email_events.router, prefix="/notify", tags=["notifications"])
 app.include_router(backup.router, prefix="/settings/backup", tags=["settings"])
+app.include_router(
+    service_integrations.router,
+    prefix="/portal/service-integrations",
+    tags=["service-integrations"],
+)
 
 
 @app.get("/healthz", tags=["health"])
