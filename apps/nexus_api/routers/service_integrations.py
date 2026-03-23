@@ -99,9 +99,7 @@ def _fmt_dt(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
-async def _get_usage_counts(
-    db: AsyncSession, service_id: str
-) -> tuple[int, int]:
+async def _get_usage_counts(db: AsyncSession, service_id: str) -> tuple[int, int]:
     """Return (requests_24h, requests_30d) for a service."""
     now = datetime.now(UTC)
     day_ago = now - timedelta(days=1)
@@ -153,14 +151,9 @@ async def list_services(
     current_user: User = Depends(RequireRole(["admin", "operator"])),
 ) -> list[dict[str, Any]]:
     """List all registered service integrations with usage stats."""
-    result = await db.execute(
-        select(ServiceIntegration).order_by(ServiceIntegration.name)
-    )
+    result = await db.execute(select(ServiceIntegration).order_by(ServiceIntegration.name))
     services = result.scalars().all()
-    return [
-        (await _to_response(db, svc)).model_dump()
-        for svc in services
-    ]
+    return [(await _to_response(db, svc)).model_dump() for svc in services]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -214,8 +207,7 @@ async def get_service(
     """Get service details by ID or service_id."""
     result = await db.execute(
         select(ServiceIntegration).where(
-            (ServiceIntegration.id == service_id)
-            | (ServiceIntegration.service_id == service_id)
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
         )
     )
     svc = result.scalars().first()
@@ -234,8 +226,7 @@ async def update_service(
     """Update service name, limits, permissions, etc."""
     result = await db.execute(
         select(ServiceIntegration).where(
-            (ServiceIntegration.id == service_id)
-            | (ServiceIntegration.service_id == service_id)
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
         )
     )
     svc = result.scalars().first()
@@ -262,8 +253,7 @@ async def delete_service(
     """Revoke and delete a service integration."""
     result = await db.execute(
         select(ServiceIntegration).where(
-            (ServiceIntegration.id == service_id)
-            | (ServiceIntegration.service_id == service_id)
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
         )
     )
     svc = result.scalars().first()
@@ -271,9 +261,7 @@ async def delete_service(
         raise HTTPException(status_code=404, detail="Service not found.")
 
     # Delete usage log entries
-    await db.execute(
-        delete(ServiceUsageLog).where(ServiceUsageLog.service_id == svc.service_id)
-    )
+    await db.execute(delete(ServiceUsageLog).where(ServiceUsageLog.service_id == svc.service_id))
     await db.delete(svc)
     await db.commit()
 
@@ -287,8 +275,7 @@ async def regenerate_key(
     """Generate a new API key for a service (invalidates the old one)."""
     result = await db.execute(
         select(ServiceIntegration).where(
-            (ServiceIntegration.id == service_id)
-            | (ServiceIntegration.service_id == service_id)
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
         )
     )
     svc = result.scalars().first()
@@ -320,8 +307,7 @@ async def get_usage(
     # Resolve to canonical service_id
     svc_result = await db.execute(
         select(ServiceIntegration).where(
-            (ServiceIntegration.id == service_id)
-            | (ServiceIntegration.service_id == service_id)
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
         )
     )
     svc = svc_result.scalars().first()
@@ -333,7 +319,11 @@ async def get_usage(
 
     # Count requests in different time windows
     counts = {}
-    for label, delta in [("today", timedelta(days=1)), ("7d", timedelta(days=7)), ("30d", timedelta(days=30))]:
+    for label, delta in [
+        ("today", timedelta(days=1)),
+        ("7d", timedelta(days=7)),
+        ("30d", timedelta(days=30)),
+    ]:
         r = await db.execute(
             select(func.count(ServiceUsageLog.id)).where(
                 ServiceUsageLog.service_id == sid,

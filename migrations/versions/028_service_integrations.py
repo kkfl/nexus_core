@@ -26,7 +26,9 @@ def upgrade() -> None:
         sa.Column("api_key_hash", sa.String(128), nullable=False),
         sa.Column("api_key_prefix", sa.String(12), nullable=False),
         sa.Column("description", sa.Text),
-        sa.Column("permissions", JSONB, nullable=False, server_default='["secrets:read","secrets:list"]'),
+        sa.Column(
+            "permissions", JSONB, nullable=False, server_default='["secrets:read","secrets:list"]'
+        ),
         sa.Column("alias_pattern", sa.String(255), nullable=False, server_default="*"),
         sa.Column("rate_limit_rpm", sa.Integer, nullable=True),
         sa.Column("daily_request_limit", sa.Integer, nullable=True),
