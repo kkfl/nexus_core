@@ -16,20 +16,19 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
-import re
 import os
+import re
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from apps.nexus_api.dependencies import RequireRole
-from apps.nexus_api.routers.auth import get_current_user
 
 logger = structlog.get_logger(__name__)
 
@@ -217,15 +216,17 @@ def _list_backups() -> list[BackupInfo]:
                 for ext in (".enc", ".sql.gz", ".sql"):
                     base = base.replace(ext, "")
                 date_str = base.replace("nexus_backup_", "")
-                backups.append(BackupInfo(
-                    filename=f.name,
-                    size_bytes=stat.st_size,
-                    size_human=_human_size(stat.st_size),
-                    created_at=date_str,
-                    tables_included="all (full database)",
-                    location=location,
-                    encrypted=is_enc,
-                ))
+                backups.append(
+                    BackupInfo(
+                        filename=f.name,
+                        size_bytes=stat.st_size,
+                        size_human=_human_size(stat.st_size),
+                        created_at=date_str,
+                        tables_included="all (full database)",
+                        location=location,
+                        encrypted=is_enc,
+                    )
+                )
 
     # Scan root
     _scan_dir(BACKUP_DIR, "default")
@@ -253,6 +254,7 @@ async def _enforce_retention():
                 logger.info("backup_rotated", filename=old.filename)
         if removed:
             from apps.nexus_api.notify import notify_action
+
             await notify_action(
                 action="backup.retention",
                 subject="\U0001f9f9 Backup Retention Cleanup",
@@ -268,20 +270,26 @@ async def _enforce_retention():
 
 _backup_progress: dict = {
     "active": False,
-    "stage": "idle",       # idle | counting | dumping | compressing | encrypting | done | error
+    "stage": "idle",  # idle | counting | dumping | compressing | encrypting | done | error
     "current_table": "",
     "tables_done": 0,
     "tables_total": 0,
     "message": "",
 }
 
-_TABLE_DATA_RE = re.compile(r'(?:dumping contents of|saving data for) table "(?:public\.)?(.+?)"', re.IGNORECASE)
+_TABLE_DATA_RE = re.compile(
+    r'(?:dumping contents of|saving data for) table "(?:public\.)?(.+?)"', re.IGNORECASE
+)
 
 
 def _reset_progress():
     _backup_progress.update(
-        active=False, stage="idle", current_table="",
-        tables_done=0, tables_total=0, message="",
+        active=False,
+        stage="idle",
+        current_table="",
+        tables_done=0,
+        tables_total=0,
+        message="",
     )
 
 
@@ -308,8 +316,12 @@ _COPY_RE = re.compile(r'^COPY\s+(?:public\.)?"?([\w]+)"?\s', re.IGNORECASE)
 
 def _reset_restore_progress():
     _restore_progress.update(
-        active=False, stage="idle", current_table="",
-        tables_done=0, tables_total=0, message="",
+        active=False,
+        stage="idle",
+        current_table="",
+        tables_done=0,
+        tables_total=0,
+        message="",
     )
 
 
@@ -324,7 +336,7 @@ def _set_restore_progress(stage: str, message: str = "", **kwargs):
 def _count_copy_statements(sql_path) -> int:
     """Count COPY statements in a SQL file to estimate restore table count."""
     count = 0
-    with open(sql_path, "r", errors="replace") as f:
+    with open(sql_path, errors="replace") as f:
         for line in f:
             if _COPY_RE.match(line):
                 count += 1
@@ -334,7 +346,9 @@ def _count_copy_statements(sql_path) -> int:
 async def _run_psql_tracked(raw_path, env: dict) -> tuple[int, str]:
     """Run psql feeding SQL line-by-line, tracking COPY statements for progress."""
     total = _count_copy_statements(raw_path)
-    _set_restore_progress("restoring", message="Starting restore...", tables_total=total, tables_done=0)
+    _set_restore_progress(
+        "restoring", message="Starting restore...", tables_total=total, tables_done=0
+    )
 
     proc = await asyncio.create_subprocess_exec(
         "psql",
@@ -345,7 +359,6 @@ async def _run_psql_tracked(raw_path, env: dict) -> tuple[int, str]:
     )
 
     tables_done = 0
-    stderr_lines = []
 
     # Feed SQL file line-by-line through stdin
     with open(raw_path, "rb") as f:
@@ -389,7 +402,10 @@ async def _count_tables(env: dict) -> int:
     """Count user tables in the database."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "psql", "-t", "-A", "-c",
+            "psql",
+            "-t",
+            "-A",
+            "-c",
             "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
             env=env,
             stdout=asyncio.subprocess.PIPE,
@@ -401,14 +417,16 @@ async def _count_tables(env: dict) -> int:
         return 0
 
 
-async def _create_backup(subdirectory: str | None = None, password: str | None = None) -> BackupResult:
+async def _create_backup(
+    subdirectory: str | None = None, password: str | None = None
+) -> BackupResult:
     """Core backup logic — runs pg_dump and produces a gzipped SQL file, optionally encrypted."""
     cfg = _load_config()
     subdir = subdirectory or cfg.get("default_location")
     target_dir = _resolve_backup_dir(subdir)
     location_label = subdir if subdir and subdir not in ("default", "/", ".") else "default"
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M")
     base_filename = f"nexus_backup_{timestamp}.sql.gz"
     filename = f"{base_filename}.enc" if password else base_filename
     filepath = target_dir / filename
@@ -421,12 +439,19 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
         # Count tables for progress
         _set_progress("counting", message="Counting database tables...")
         total_tables = await _count_tables(env)
-        _set_progress("dumping", message="Starting database dump...", tables_total=total_tables, tables_done=0)
+        _set_progress(
+            "dumping", message="Starting database dump...", tables_total=total_tables, tables_done=0
+        )
 
         # Use --verbose to get per-table progress via stderr
         proc = await asyncio.create_subprocess_exec(
-            "pg_dump", "--clean", "--if-exists", "--no-owner", "--verbose",
-            "-f", str(raw_path),
+            "pg_dump",
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--verbose",
+            "-f",
+            str(raw_path),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -462,9 +487,8 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
 
         # Compress
         _set_progress("compressing", message="Compressing backup...")
-        with open(raw_path, "rb") as f_in:
-            with gzip.open(gz_path, "wb", compresslevel=6) as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        with open(raw_path, "rb") as f_in, gzip.open(gz_path, "wb", compresslevel=6) as f_out:
+            shutil.copyfileobj(f_in, f_out)
 
         raw_path.unlink(missing_ok=True)
 
@@ -472,6 +496,7 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
         if password:
             _set_progress("encrypting", message="Encrypting with AES-256...")
             from packages.shared.backup_crypto import encrypt_backup
+
             master_key = os.environ.get("NEXUS_MASTER_KEY", "")
             sql_gz_data = gz_path.read_bytes()
             encrypted = encrypt_backup(sql_gz_data, password, master_key)
@@ -481,11 +506,14 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
 
         size = filepath.stat().st_size
         _set_progress("done", message=f"Backup complete: {filename} ({_human_size(size)})")
-        logger.info("backup_created", filename=filename, size=_human_size(size), encrypted=bool(password))
+        logger.info(
+            "backup_created", filename=filename, size=_human_size(size), encrypted=bool(password)
+        )
 
         await _enforce_retention()
 
         from apps.nexus_api.notify import notify_action
+
         await notify_action(
             action="backup.created",
             subject="\U0001f4be Backup Created" + (" 🔒" if password else ""),
@@ -501,7 +529,7 @@ async def _create_backup(subdirectory: str | None = None, password: str | None =
             location=location_label,
         )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raw_path.unlink(missing_ok=True)
         gz_path.unlink(missing_ok=True)
         filepath.unlink(missing_ok=True)
@@ -527,8 +555,8 @@ async def run_backup(
     current_user: Any = Depends(RequireRole(["admin"])),
 ):
     """Trigger a new database backup (pg_dump → gzipped SQL, optionally encrypted)."""
-    subdirectory = (body.subdirectory if body else None)
-    password = (body.password if body else None)
+    subdirectory = body.subdirectory if body else None
+    password = body.password if body else None
     _reset_progress()
     return await _create_backup(subdirectory=subdirectory, password=password)
 
@@ -568,7 +596,9 @@ async def download_backup(
     if not token:
         raise HTTPException(status_code=401, detail="Token required (?token=JWT)")
 
-    from jose import JWTError, jwt as jose_jwt
+    from jose import JWTError
+    from jose import jwt as jose_jwt
+
     from packages.shared.config import settings
 
     try:
@@ -580,8 +610,9 @@ async def download_backup(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Verify admin role
-    from packages.shared.db import get_db_context
     from sqlalchemy.future import select
+
+    from packages.shared.db import get_db_context
     from packages.shared.models import User
 
     async with get_db_context() as db:
@@ -638,6 +669,7 @@ async def delete_backup(
     logger.info("backup_deleted", filename=filename)
 
     from apps.nexus_api.notify import notify_action
+
     await notify_action(
         action="backup.deleted",
         subject="🗑️ Backup Deleted",
@@ -680,7 +712,9 @@ async def restore_backup(
 
     is_encrypted = filepath.name.endswith(".enc")
     if is_encrypted and not body.password:
-        raise HTTPException(status_code=400, detail="Password required to restore encrypted backup.")
+        raise HTTPException(
+            status_code=400, detail="Password required to restore encrypted backup."
+        )
 
     # Step 1: Auto-create safety backup of current state
     safety_result = await _create_backup()
@@ -698,27 +732,29 @@ async def restore_backup(
 
         if is_encrypted:
             from packages.shared.backup_crypto import decrypt_backup
+
             try:
                 master_key, sql_gz_data = decrypt_backup(filepath.read_bytes(), body.password)
             except ValueError as e:
                 _set_restore_progress("error", message=str(e))
                 return RestoreResult(
-                    success=False, backup_used=filename,
-                    safety_backup=safety_filename, error=str(e),
+                    success=False,
+                    backup_used=filename,
+                    safety_backup=safety_filename,
+                    error=str(e),
                 )
             # Decompress the decrypted gzip data
             import io
-            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in:
-                with open(raw_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+
+            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in, open(raw_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             # Update NEXUS_MASTER_KEY in .env
             _write_env_value("NEXUS_MASTER_KEY", master_key)
             os.environ["NEXUS_MASTER_KEY"] = master_key
             logger.info("restore_master_key_updated", source=filename)
         else:
-            with gzip.open(filepath, "rb") as f_in:
-                with open(raw_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with gzip.open(filepath, "rb") as f_in, open(raw_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
         returncode, stderr_text = await _run_psql_tracked(raw_path, _pg_env())
 
@@ -735,9 +771,12 @@ async def restore_backup(
             )
 
         _set_restore_progress("done", message="Restore complete!")
-        logger.info("restore_success", filename=filename, safety=safety_filename, encrypted=is_encrypted)
+        logger.info(
+            "restore_success", filename=filename, safety=safety_filename, encrypted=is_encrypted
+        )
 
         from apps.nexus_api.notify import notify_action
+
         await notify_action(
             action="backup.restored",
             subject="⚠️ Database Restored" + (" 🔒" if is_encrypted else ""),
@@ -788,7 +827,9 @@ async def upload_and_restore(
         )
 
     # Validate file
-    valid_ext = file.filename and (file.filename.endswith(".sql.gz") or file.filename.endswith(".sql.gz.enc"))
+    valid_ext = file.filename and (
+        file.filename.endswith(".sql.gz") or file.filename.endswith(".sql.gz.enc")
+    )
     if not file.filename or not valid_ext:
         raise HTTPException(
             status_code=400,
@@ -796,39 +837,61 @@ async def upload_and_restore(
         )
     is_encrypted = file.filename.endswith(".enc")
     if is_encrypted and not password:
-        raise HTTPException(status_code=400, detail="Password required to restore encrypted backup.")
+        raise HTTPException(
+            status_code=400, detail="Password required to restore encrypted backup."
+        )
 
     # STEP 1: Save uploaded file
-    upload_name = f"uploaded_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    upload_name = f"uploaded_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     upload_path = BACKUP_DIR / upload_name
     try:
-        logger.warning("TRACE upload_restore STEP-1 reading upload", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-1 reading upload", elapsed=f"{_time.monotonic() - t0:.1f}s"
+        )
         content = await file.read()
         # Validate file header: gzip magic (1f 8b) or NEXUS_ENC_V1 magic
         from packages.shared.backup_crypto import MAGIC as _ENC_MAGIC
-        if content[:2] != b'\x1f\x8b' and not content[:len(_ENC_MAGIC)] == _ENC_MAGIC:
+
+        if content[:2] != b"\x1f\x8b" and not content[: len(_ENC_MAGIC)] == _ENC_MAGIC:
             raise HTTPException(
                 status_code=400,
                 detail="File does not appear to be a valid gzip or encrypted backup.",
             )
         with open(upload_path, "wb") as f:
             f.write(content)
-        logger.warning("TRACE upload_restore STEP-1 done", filename=upload_name, size=len(content), encrypted=is_encrypted, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-1 done",
+            filename=upload_name,
+            size=len(content),
+            encrypted=is_encrypted,
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
 
     # STEP 2: Safety backup of current state
-    logger.warning("TRACE upload_restore STEP-2 safety backup starting", elapsed=f"{_time.monotonic()-t0:.1f}s")
+    logger.warning(
+        "TRACE upload_restore STEP-2 safety backup starting",
+        elapsed=f"{_time.monotonic() - t0:.1f}s",
+    )
     safety_result = await _create_backup()
     safety_filename = safety_result.filename if safety_result.success else None
-    logger.warning("TRACE upload_restore STEP-2 safety backup done", safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
+    logger.warning(
+        "TRACE upload_restore STEP-2 safety backup done",
+        safety=safety_filename,
+        elapsed=f"{_time.monotonic() - t0:.1f}s",
+    )
 
     # STEP 3: Decompress
     raw_path = BACKUP_DIR / f".tmp_upload_restore_{upload_name}.sql"
     try:
-        logger.warning("TRACE upload_restore STEP-3 decompressing", encrypted=is_encrypted, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-3 decompressing",
+            encrypted=is_encrypted,
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
         _reset_restore_progress()
         if is_encrypted:
@@ -838,34 +901,43 @@ async def upload_and_restore(
 
         if is_encrypted:
             from packages.shared.backup_crypto import decrypt_backup
+
             try:
                 master_key, sql_gz_data = decrypt_backup(upload_path.read_bytes(), password)
             except ValueError as e:
                 upload_path.unlink(missing_ok=True)
                 return RestoreResult(
-                    success=False, backup_used=upload_name,
-                    safety_backup=safety_filename, error=str(e),
+                    success=False,
+                    backup_used=upload_name,
+                    safety_backup=safety_filename,
+                    error=str(e),
                 )
             import io
-            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in:
-                with open(raw_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+
+            with gzip.open(io.BytesIO(sql_gz_data), "rb") as f_in, open(raw_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             # Update NEXUS_MASTER_KEY in .env so vault secrets work after restore
             _write_env_value("NEXUS_MASTER_KEY", master_key)
             os.environ["NEXUS_MASTER_KEY"] = master_key
             logger.info("restore_master_key_updated", source=upload_name)
         else:
-            with gzip.open(upload_path, "rb") as f_in:
-                with open(raw_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with gzip.open(upload_path, "rb") as f_in, open(raw_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
         raw_size = raw_path.stat().st_size
-        logger.warning("TRACE upload_restore STEP-3 done", sql_size=_human_size(raw_size), elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-3 done",
+            sql_size=_human_size(raw_size),
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
         # STEP 4: Terminate other DB connections to prevent lock contention
         #   The restore SQL has DROP CONSTRAINT / ALTER TABLE which need exclusive locks.
         #   The API's own connections (auth, heartbeats) hold conflicting locks.
-        logger.warning("TRACE upload_restore STEP-4 terminating other DB sessions", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-4 terminating other DB sessions",
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
         env = _pg_env()
 
         # Kill all other connections to the database so psql can acquire exclusive locks
@@ -877,16 +949,24 @@ async def upload_and_restore(
             stderr=_sp.DEVNULL,
             timeout=10,
         )
-        logger.warning("TRACE upload_restore STEP-4 sessions terminated", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-4 sessions terminated",
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
         # STEP 5: Run psql with progress tracking
-        logger.warning("TRACE upload_restore STEP-5 psql starting", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-5 psql starting", elapsed=f"{_time.monotonic() - t0:.1f}s"
+        )
 
         def _run_psql_sync():
             """Run psql synchronously with COPY tracking."""
             import subprocess as _sp2
+
             total = _count_copy_statements(raw_path)
-            _set_restore_progress("restoring", message="Starting restore...", tables_total=total, tables_done=0)
+            _set_restore_progress(
+                "restoring", message="Starting restore...", tables_total=total, tables_done=0
+            )
 
             proc = _sp2.Popen(
                 ["psql"],
@@ -921,17 +1001,21 @@ async def upload_and_restore(
             return proc.returncode, stderr_text
 
         loop = asyncio.get_event_loop()
-        logger.warning("TRACE upload_restore STEP-5 executor submit", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-5 executor submit", elapsed=f"{_time.monotonic() - t0:.1f}s"
+        )
 
         try:
             returncode, stderr_content = await asyncio.wait_for(
                 loop.run_in_executor(None, _run_psql_sync),
                 timeout=960,
             )
-        except (asyncio.TimeoutError, _sp.TimeoutExpired):
+        except (TimeoutError, _sp.TimeoutExpired):
             raw_path.unlink(missing_ok=True)
             _set_restore_progress("error", message="Restore timed out (10 minutes)")
-            logger.error("TRACE upload_restore STEP-5 psql TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
+            logger.error(
+                "TRACE upload_restore STEP-5 psql TIMEOUT", elapsed=f"{_time.monotonic() - t0:.1f}s"
+            )
             return RestoreResult(
                 success=False,
                 backup_used=upload_name,
@@ -939,14 +1023,28 @@ async def upload_and_restore(
                 error="psql restore timed out (10 minutes)",
             )
 
-        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=returncode, stderr_len=len(stderr_content), elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-6 psql finished",
+            returncode=returncode,
+            stderr_len=len(stderr_content),
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
-        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=returncode, stderr_len=len(stderr_content), elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-6 psql finished",
+            returncode=returncode,
+            stderr_len=len(stderr_content),
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
         raw_path.unlink(missing_ok=True)
 
         if returncode != 0:
-            logger.error("upload_restore_failed", error=stderr_content, elapsed=f"{_time.monotonic()-t0:.1f}s")
+            logger.error(
+                "upload_restore_failed",
+                error=stderr_content,
+                elapsed=f"{_time.monotonic() - t0:.1f}s",
+            )
             return RestoreResult(
                 success=False,
                 backup_used=upload_name,
@@ -955,27 +1053,40 @@ async def upload_and_restore(
             )
 
         _set_restore_progress("done", message="Restore complete!")
-        logger.warning("TRACE upload_restore STEP-7 success", filename=upload_name, safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-7 success",
+            filename=upload_name,
+            safety=safety_filename,
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
 
         from apps.nexus_api.notify import notify_action
+
         await notify_action(
             action="backup.upload_restored",
             subject="🚨 Database Restored from Upload",
             body=f"Restored from uploaded file: {file.filename} (safety backup: {safety_filename})",
             event_type="nexus.backup.upload_restored",
             severity="critical",
-            payload={"uploaded_file": file.filename, "saved_as": upload_name, "safety_backup": safety_filename},
+            payload={
+                "uploaded_file": file.filename,
+                "saved_as": upload_name,
+                "safety_backup": safety_filename,
+            },
         )
-        logger.warning("TRACE upload_restore STEP-8 returning response", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.warning(
+            "TRACE upload_restore STEP-8 returning response",
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
         return RestoreResult(
             success=True,
             backup_used=upload_name,
             safety_backup=safety_filename,
         )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raw_path.unlink(missing_ok=True)
-        logger.error("TRACE upload_restore TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.error("TRACE upload_restore TIMEOUT", elapsed=f"{_time.monotonic() - t0:.1f}s")
         return RestoreResult(
             success=False,
             backup_used=upload_name,
@@ -984,7 +1095,12 @@ async def upload_and_restore(
         )
     except Exception as e:
         raw_path.unlink(missing_ok=True)
-        logger.error("TRACE upload_restore EXCEPTION", error=str(e), error_type=type(e).__name__, elapsed=f"{_time.monotonic()-t0:.1f}s")
+        logger.error(
+            "TRACE upload_restore EXCEPTION",
+            error=str(e),
+            error_type=type(e).__name__,
+            elapsed=f"{_time.monotonic() - t0:.1f}s",
+        )
         return RestoreResult(
             success=False,
             backup_used=upload_name,
@@ -1082,6 +1198,7 @@ async def update_backup_dir(
     logger.info("backup_dir_changed", new_dir=new_dir)
 
     from apps.nexus_api.notify import notify_action
+
     await notify_action(
         action="backup.config_changed",
         subject="⚙️ Backup Directory Changed",

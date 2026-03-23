@@ -116,8 +116,8 @@ def decrypt_backup(encrypted_data: bytes, password: str) -> tuple[str, bytes]:
 
 def is_encrypted_backup(data_or_path) -> bool:
     """Check if data or file starts with the NEXUS_ENC_V1 magic header."""
-    if isinstance(data_or_path, (bytes, bytearray)):
-        return data_or_path[:len(MAGIC)] == MAGIC
+    if isinstance(data_or_path, bytes | bytearray):
+        return data_or_path[: len(MAGIC)] == MAGIC
     # Assume it's a path
     try:
         with open(data_or_path, "rb") as f:
