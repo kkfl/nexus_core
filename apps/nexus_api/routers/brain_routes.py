@@ -239,11 +239,16 @@ async def dashboard_summary(
     active_pbx = 0
     try:
         from sqlalchemy import text
-        pbx_row = (await db.execute(text(
-            "SELECT count(*) AS total, "
-            "count(*) FILTER (WHERE status = 'active') AS active "
-            "FROM pbx_targets"
-        ))).first()
+
+        pbx_row = (
+            await db.execute(
+                text(
+                    "SELECT count(*) AS total, "
+                    "count(*) FILTER (WHERE status = 'active') AS active "
+                    "FROM pbx_targets"
+                )
+            )
+        ).first()
         if pbx_row:
             total_pbx = pbx_row.total
             active_pbx = pbx_row.active
@@ -255,11 +260,16 @@ async def dashboard_summary(
     active_storage = 0
     try:
         from sqlalchemy import text as sa_text
-        storage_row = (await db.execute(sa_text(
-            "SELECT count(*) AS total, "
-            "count(*) FILTER (WHERE is_active = true) AS active "
-            "FROM storage_targets"
-        ))).first()
+
+        storage_row = (
+            await db.execute(
+                sa_text(
+                    "SELECT count(*) AS total, "
+                    "count(*) FILTER (WHERE is_active = true) AS active "
+                    "FROM storage_targets"
+                )
+            )
+        ).first()
         if storage_row:
             total_storage = storage_row.total
             active_storage = storage_row.active
@@ -314,4 +324,3 @@ async def dashboard_summary(
         "recent_activity": recent_activity,
         "recent_transactions": recent_transactions,
     }
-

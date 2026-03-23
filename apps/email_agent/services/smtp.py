@@ -75,6 +75,7 @@ async def _save_to_sent_folder(from_address: str, raw_message: str) -> None:
     except Exception as exc:
         logger.warning("sent_folder_save_failed", error=str(exc)[:200])
 
+
 async def send_email(
     *,
     to: list[str],
@@ -154,14 +155,19 @@ async def send_email(
             ssh = _build_ssh_client(host, port, username, pem)
             try:
                 stdin, stdout, stderr = ssh.exec_command(
-                    f"sendmail -t {recip_str}", timeout=30,
+                    f"sendmail -t {recip_str}",
+                    timeout=30,
                 )
                 stdin.write(raw_msg)
                 stdin.channel.shutdown_write()
                 exit_code = stdout.channel.recv_exit_status()
                 err = stderr.read().decode().strip()
                 if exit_code != 0:
-                    return {"ok": False, "message_id": None, "error": f"sendmail exit {exit_code}: {err[:200]}"}
+                    return {
+                        "ok": False,
+                        "message_id": None,
+                        "error": f"sendmail exit {exit_code}: {err[:200]}",
+                    }
                 return {"ok": True, "message_id": msg_id}
             finally:
                 ssh.close()

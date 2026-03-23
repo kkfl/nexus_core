@@ -159,15 +159,19 @@ async def create_mailbox(
     send_alert("mailbox_create", "email-agent", f"Mailbox: {req.email}")
 
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="email-agent",
             api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
         )
         await nc.notify(
-            tenant_id="nexus", env="prod", severity="info",
+            tenant_id="nexus",
+            env="prod",
+            severity="info",
             channels=["telegram"],
             subject="\U0001f4e7 Email Account Created",
             body=req.email,
@@ -201,15 +205,19 @@ async def disable_mailbox(
     send_alert("mailbox_disable", "email-agent", f"Mailbox: {req.email}")
 
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="email-agent",
             api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
         )
         await nc.notify(
-            tenant_id="nexus", env="prod", severity="warn",
+            tenant_id="nexus",
+            env="prod",
+            severity="warn",
             channels=["telegram"],
             subject="\U0001f6ab Email Account Disabled",
             body=req.email,

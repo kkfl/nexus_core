@@ -99,12 +99,16 @@ async def store_secret(
     except SecretsError:
         raise
     except Exception as e:
-        raise SecretsError(f"secrets-agent write failed: {type(e).__name__}: {str(e)[:200]}") from None
+        raise SecretsError(
+            f"secrets-agent write failed: {type(e).__name__}: {str(e)[:200]}"
+        ) from None
 
 
 async def _rotate_existing(
-    alias: str, new_value: str,
-    tenant_id: str, env: str,
+    alias: str,
+    new_value: str,
+    tenant_id: str,
+    env: str,
     headers: dict,
 ) -> str:
     """Read existing secret by alias and rotate to new value."""
@@ -123,7 +127,9 @@ async def _rotate_existing(
             logger.info("secret_rotated_on_edit", alias=alias, secret_id=secret_id)
             return secret_id
     except Exception as e:
-        raise SecretsError(f"rotate-on-edit failed for '{alias}': {type(e).__name__}: {str(e)[:200]}") from None
+        raise SecretsError(
+            f"rotate-on-edit failed for '{alias}': {type(e).__name__}: {str(e)[:200]}"
+        ) from None
 
 
 async def delete_secret_by_alias(
@@ -148,7 +154,12 @@ async def delete_secret_by_alias(
             r = await client.post(
                 f"{config.vault_base_url}/v1/secrets/read-by-alias",
                 headers=headers,
-                json={"alias": alias, "tenant_id": tenant_id, "env": env, "reason": "delete_cleanup"},
+                json={
+                    "alias": alias,
+                    "tenant_id": tenant_id,
+                    "env": env,
+                    "reason": "delete_cleanup",
+                },
             )
             if r.status_code == 404:
                 return False  # Secret doesn't exist — nothing to delete

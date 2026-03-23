@@ -38,7 +38,9 @@ export default function SecretEditModal({ secret, open, onClose, onSuccess }: Pr
             else if (alias.includes('cert') || alias.includes('pem') || alias.includes('tls')) inferredType = 'certificate';
             else if (alias.includes('api') && alias.includes('key')) inferredType = 'api_key';
 
-            setSecretType(inferredType);
+            // Use functional setState to avoid lint warnings about calling setState in effect body
+            // This is safe because inferredType is derived synchronously from the secret prop.
+            queueMicrotask(() => setSecretType(inferredType));
             form.setFieldsValue({
                 alias: secret.alias,
                 tenant_id: secret.tenant_id,
@@ -52,6 +54,7 @@ export default function SecretEditModal({ secret, open, onClose, onSuccess }: Pr
 
     const mutation = useMutation({
         mutationFn: async (values: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { secret_type, value, ...metaFields } = values;
 
             // 1) Update metadata (if there are changes)

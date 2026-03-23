@@ -118,8 +118,10 @@ async def batch_upsert(
 
     # Telegram notification
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="dns-agent",
@@ -127,7 +129,9 @@ async def batch_upsert(
         )
         rec_lines = ", ".join(f"{r.record_type} {r.name}" for r in payload.records[:5])
         await nc.notify(
-            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            tenant_id=payload.tenant_id,
+            env=payload.env,
+            severity="info",
             channels=["telegram"],
             subject="\U0001f310 DNS Records Added",
             body=f"Zone: {payload.zone}\n{rec_lines}",
@@ -204,8 +208,10 @@ async def batch_delete(
 
     # Telegram notification
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="dns-agent",
@@ -213,7 +219,9 @@ async def batch_delete(
         )
         rec_lines = ", ".join(f"{r.record_type} {r.name}" for r in payload.records[:5])
         await nc.notify(
-            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            tenant_id=payload.tenant_id,
+            env=payload.env,
+            severity="info",
             channels=["telegram"],
             subject="\U0001f5d1\ufe0f DNS Records Deleted",
             body=f"Zone: {payload.zone}\n{rec_lines}",

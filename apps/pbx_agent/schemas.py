@@ -205,20 +205,20 @@ def _sanitize_pem_key(v: str | None) -> str | None:
     if not v:
         return v
     # Strip carriage returns (Windows line endings)
-    v = v.replace('\r\n', '\n').replace('\r', '\n')
+    v = v.replace("\r\n", "\n").replace("\r", "\n")
     # Strip trailing whitespace from each line
-    lines = [line.rstrip() for line in v.split('\n')]
+    lines = [line.rstrip() for line in v.split("\n")]
     # Remove any blank lines in the middle of the key (but keep header/footer)
     cleaned = []
     for line in lines:
         if line:  # skip blank lines
             cleaned.append(line)
-    return '\n'.join(cleaned) + '\n'
-
+    return "\n".join(cleaned) + "\n"
 
 
 class PbxTargetRegister(BaseModel):
     """Registration request that accepts raw credentials (not vault aliases)."""
+
     name: str = Field(..., max_length=255)
     tenant_id: str = "acme"
     env: str = "prod"
@@ -231,7 +231,7 @@ class PbxTargetRegister(BaseModel):
     ssh_key_pem: str | None = Field(None, description="Raw SSH private key PEM")
     ssh_password: str | None = Field(None, description="Raw SSH password (fallback)")
 
-    @field_validator('ssh_key_pem', mode='before')
+    @field_validator("ssh_key_pem", mode="before")
     @classmethod
     def clean_ssh_key(cls, v: str | None) -> str | None:
         return _sanitize_pem_key(v)
@@ -239,17 +239,24 @@ class PbxTargetRegister(BaseModel):
 
 class PbxTargetEdit(BaseModel):
     """Edit request — all fields optional. Credential fields (if provided) are re-stored in vault."""
+
     name: str | None = None
     host: str | None = None
     ami_port: int | None = None
     ami_username: str | None = None
-    ami_secret: str | None = Field(None, description="New AMI secret — leave blank to keep existing")
+    ami_secret: str | None = Field(
+        None, description="New AMI secret — leave blank to keep existing"
+    )
     ssh_port: int | None = None
     ssh_username: str | None = None
-    ssh_key_pem: str | None = Field(None, description="New SSH key PEM — leave blank to keep existing")
-    ssh_password: str | None = Field(None, description="New SSH password — leave blank to keep existing")
+    ssh_key_pem: str | None = Field(
+        None, description="New SSH key PEM — leave blank to keep existing"
+    )
+    ssh_password: str | None = Field(
+        None, description="New SSH password — leave blank to keep existing"
+    )
 
-    @field_validator('ssh_key_pem', mode='before')
+    @field_validator("ssh_key_pem", mode="before")
     @classmethod
     def clean_ssh_key(cls, v: str | None) -> str | None:
         return _sanitize_pem_key(v)

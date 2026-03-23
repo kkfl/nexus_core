@@ -346,8 +346,10 @@ async def import_provider_zones(
     # Telegram notification for all imported zones
     if imported:
         try:
-            from apps.notifications_agent.client.notifications_client import NotificationsClient
             import os
+
+            from apps.notifications_agent.client.notifications_client import NotificationsClient
+
             nc = NotificationsClient(
                 base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
                 service_id="dns-agent",
@@ -355,7 +357,9 @@ async def import_provider_zones(
             )
             zone_list = ", ".join(z.zone_name for z in imported[:5])
             await nc.notify(
-                tenant_id=payload.tenant_id, env=payload.env, severity="info",
+                tenant_id=payload.tenant_id,
+                env=payload.env,
+                severity="info",
                 channels=["telegram"],
                 subject="\U0001f310 DNS Zones Imported",
                 body=f"{len(imported)} zone(s) from {payload.provider}: {zone_list}",

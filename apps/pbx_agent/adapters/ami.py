@@ -15,6 +15,7 @@ AMI protocol overview:
 """
 
 import asyncio
+import contextlib
 import re
 
 import structlog
@@ -123,22 +124,18 @@ async def _ami_connect(
     writer.write(b"Action: Events\r\nEventMask: off\r\n\r\n")
     await writer.drain()
     # Read (and discard) the Events response
-    try:
+    with contextlib.suppress(AmiTimeoutError):
         await _read_response(reader, timeout=3.0)
-    except AmiTimeoutError:
-        pass  # Non-fatal if this times out
 
     return reader, writer
 
 
 async def _ami_logoff(writer: asyncio.StreamWriter) -> None:
-    try:
+    with contextlib.suppress(Exception):
         writer.write(b"Action: Logoff\r\n\r\n")
         await writer.drain()
         writer.close()
         await writer.wait_closed()
-    except Exception:
-        pass  # Best-effort cleanup
 
 
 async def run_ami_command(

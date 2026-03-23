@@ -16,8 +16,8 @@ from fastapi import FastAPI, Request, Response
 
 from apps.pbx_agent.api.audit import router as audit_router
 from apps.pbx_agent.api.diagnostics import router as diagnostics_router
-from apps.pbx_agent.api.fleet import router as fleet_router
 from apps.pbx_agent.api.fleet import fleet_background_poller
+from apps.pbx_agent.api.fleet import router as fleet_router
 from apps.pbx_agent.api.jobs import router as jobs_router
 from apps.pbx_agent.api.status import router as status_router
 from apps.pbx_agent.api.targets import router as targets_router

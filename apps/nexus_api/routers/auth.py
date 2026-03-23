@@ -59,6 +59,7 @@ async def login_for_access_token(
     if not user or not verify_password(form_data.password, user.password_hash):
         # Audit failed login attempt
         from packages.shared.models import AuditEvent as AuditEventModel
+
         failed_event = AuditEventModel(
             actor_type="user",
             actor_id=0,
@@ -84,7 +85,11 @@ async def login_for_access_token(
 
     user.refresh_token_hash = get_password_hash(refresh_token)
     log_audit_event(
-        db, "login_success", "user", user, str(user.id),
+        db,
+        "login_success",
+        "user",
+        user,
+        str(user.id),
         {"email": user.email, "role": user.role, "ip": request.client.host},
     )
     await metrics_emitter.emit(db, "login", meta={"user_id": user.id, "role": user.role})
@@ -92,6 +97,7 @@ async def login_for_access_token(
 
     # Telegram notification
     from apps.nexus_api.notify import notify_action
+
     await notify_action(
         action="user.login",
         subject="\U0001f464 User Login",
@@ -181,11 +187,11 @@ async def verify_password_endpoint(
 # ---------------------------------------------------------------------------
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 
 _log = structlog.get_logger(__name__)
 
@@ -196,7 +202,7 @@ _PORTAL_ORIGIN = os.environ.get("PORTAL_ORIGIN", "https://nexus.gsmcall.com")
 def _build_reset_email_html(reset_url: str, user_email: str) -> str:
     """Premium branded Nexus password-reset email (inline HTML)."""
     logo_url = f"{_PORTAL_ORIGIN}/nexus-brain.png"
-    year = datetime.now(timezone.utc).year
+    year = datetime.now(UTC).year
     return f"""\
 <!DOCTYPE html>
 <html lang="en">
@@ -325,7 +331,7 @@ async def forgot_password(
     token_payload = {
         "sub": str(user.id),
         "purpose": "password_reset",
-        "exp": datetime.now(timezone.utc) + _RESET_TOKEN_TTL,
+        "exp": datetime.now(UTC) + _RESET_TOKEN_TTL,
     }
     token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     reset_url = f"{_PORTAL_ORIGIN}/reset-password/{token}"

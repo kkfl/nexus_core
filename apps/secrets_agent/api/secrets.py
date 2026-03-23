@@ -89,15 +89,19 @@ async def create_secret(
 
     # Telegram notification (skip internal/automated secrets)
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="secrets-agent",
             api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
         )
         await nc.notify(
-            tenant_id=payload.tenant_id, env=payload.env, severity="info",
+            tenant_id=payload.tenant_id,
+            env=payload.env,
+            severity="info",
             channels=["telegram"],
             subject="\U0001f512 Secret Created",
             body=f"{payload.alias} (by {identity.service_id})",
@@ -221,7 +225,9 @@ async def read_secret_by_alias(
     """
     secret = await _store.get_by_alias(db, body.alias, body.tenant_id, body.env)
     if not secret or not secret.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Secret alias '{body.alias}' not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Secret alias '{body.alias}' not found."
+        )
 
     decision = policy.check(
         service_id=identity.service_id,
@@ -389,15 +395,19 @@ async def delete_secret(
 
     # Telegram notification
     try:
-        from apps.notifications_agent.client.notifications_client import NotificationsClient
         import os
+
+        from apps.notifications_agent.client.notifications_client import NotificationsClient
+
         nc = NotificationsClient(
             base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
             service_id="secrets-agent",
             api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
         )
         await nc.notify(
-            tenant_id=secret.tenant_id, env=secret.env, severity="info",
+            tenant_id=secret.tenant_id,
+            env=secret.env,
+            severity="info",
             channels=["telegram"],
             subject="\U0001f5d1\ufe0f Secret Deleted",
             body=f"{secret.alias} (by {identity.service_id})",

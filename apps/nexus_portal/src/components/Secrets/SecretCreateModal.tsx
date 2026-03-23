@@ -44,6 +44,7 @@ export default function SecretCreateModal({ open, onClose, onSuccess }: Props) {
     const handleOk = () => {
         form.validateFields().then(values => {
             // Strip the secret_type field — backend doesn't need it
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { secret_type, ...rest } = values;
             mutation.mutate(rest);
         });

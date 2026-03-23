@@ -106,6 +106,7 @@ async def create_user(
     )
 
     from apps.nexus_api.notify import notify_action
+
     await notify_action(
         action="user.created",
         subject="\U0001f465 User Created",
@@ -172,6 +173,7 @@ async def update_user(
         send_security_alert("user_update", admin.email, ", ".join(detail_parts), severity=sev)
 
         from apps.nexus_api.notify import notify_action
+
         await notify_action(
             action="user.updated",
             subject="\U0001f465 User Updated",
@@ -207,6 +209,7 @@ async def reset_password(
     )
 
     from apps.nexus_api.notify import notify_action
+
     await notify_action(
         action="user.password_reset",
         subject="\U0001f510 Password Reset",

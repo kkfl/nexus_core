@@ -62,7 +62,9 @@ async def _fetch_ssh_creds(target: PbxTarget) -> tuple[str | None, str | None]:
                 reason="fleet_status",
             )
         except SecretsError as e:
-            logger.warning("ssh_password_fetch_failed", alias=target.ssh_password_alias, error=str(e)[:200])
+            logger.warning(
+                "ssh_password_fetch_failed", alias=target.ssh_password_alias, error=str(e)[:200]
+            )
 
     return key_pem, password
 
@@ -137,8 +139,10 @@ async def _poll_single_target(target: PbxTarget) -> PbxFleetNodeOut:
                     reason="fleet_status_ami",
                 )
                 node.ami_ok = await ami.check_ami_login(
-                    host=target.host, port=target.ami_port,
-                    username=target.ami_username, secret=ami_secret,
+                    host=target.host,
+                    port=target.ami_port,
+                    username=target.ami_username,
+                    secret=ami_secret,
                 )
             except Exception:
                 node.ami_ok = False
@@ -180,9 +184,7 @@ async def _refresh_fleet() -> PbxFleetStatusOut:
     _fleet_refreshing = True
     try:
         async with async_session() as db:
-            result = await db.execute(
-                select(PbxTarget).where(PbxTarget.status == "active")
-            )
+            result = await db.execute(select(PbxTarget).where(PbxTarget.status == "active"))
             targets = result.scalars().all()
 
         logger.info("fleet_poll_start", target_count=len(targets))
@@ -236,9 +238,8 @@ async def fleet_status(
     now = time.time()
     is_stale = (now - _fleet_cache_ts) > CACHE_TTL
 
-    if _fleet_cache is None or is_stale:
-        if not _fleet_refreshing:
-            asyncio.create_task(_refresh_fleet())
+    if (_fleet_cache is None or is_stale) and not _fleet_refreshing:
+        asyncio.create_task(_refresh_fleet())
 
     if _fleet_cache:
         return _fleet_cache

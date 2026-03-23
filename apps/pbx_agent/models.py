@@ -38,7 +38,9 @@ class PbxTarget(Base):
     ssh_port = Column(Integer, nullable=False, default=22)
     ssh_username = Column(String(128), nullable=False, default="root")
     ssh_key_alias = Column(String(255), nullable=True)  # vault alias for SSH private key PEM
-    ssh_password_alias = Column(String(255), nullable=True)  # vault alias for SSH password (fallback)
+    ssh_password_alias = Column(
+        String(255), nullable=True
+    )  # vault alias for SSH password (fallback)
 
     status = Column(String(32), nullable=False, default="active")
     metadata_ = Column("metadata", JSONB, nullable=True)

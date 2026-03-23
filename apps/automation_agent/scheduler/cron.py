@@ -74,20 +74,29 @@ async def check_cron_schedules(db: AsyncSession):
                             cron_parts = auto.schedule_cron.split()
                             minute_field = cron_parts[0] if cron_parts else "*"
                             # If minute field is * or */N where N < 60, it's sub-hourly
-                            is_sub_hourly = (
-                                minute_field == "*"
-                                or (minute_field.startswith("*/") and int(minute_field[2:]) < 60)
+                            is_sub_hourly = minute_field == "*" or (
+                                minute_field.startswith("*/") and int(minute_field[2:]) < 60
                             )
                             if not is_sub_hourly:
-                                from apps.notifications_agent.client.notifications_client import NotificationsClient
                                 import os
+
+                                from apps.notifications_agent.client.notifications_client import (
+                                    NotificationsClient,
+                                )
+
                                 nc = NotificationsClient(
-                                    base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                    base_url=os.getenv(
+                                        "NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"
+                                    ),
                                     service_id="automation-agent",
-                                    api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                    api_key=os.getenv(
+                                        "NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"
+                                    ),
                                 )
                                 await nc.notify(
-                                    tenant_id=auto.tenant_id, env=auto.env, severity="info",
+                                    tenant_id=auto.tenant_id,
+                                    env=auto.env,
+                                    severity="info",
                                     channels=["telegram"],
                                     subject="\u23f0 Scheduled Automation",
                                     body=f"{auto.name} (cron: {auto.schedule_cron})",

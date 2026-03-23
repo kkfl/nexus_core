@@ -96,6 +96,8 @@ export default function IntegrationsPbx() {
     const [verifyStreaming, setVerifyStreaming] = useState(false);
     const [editTarget, setEditTarget] = useState<any>(null);
     const [editForm] = Form.useForm();
+    const verifyDragRef = React.useRef({ x: 0, y: 0, dragging: false });
+    const [verifyOffset, setVerifyOffset] = React.useState({ x: 0, y: 0 });
 
     // Fleet status query
     const { data: fleet, isLoading, refetch } = useQuery<FleetStatus>({
@@ -861,21 +863,19 @@ export default function IntegrationsPbx() {
                 cancelButtonProps={{ style: { display: 'none' } }}
                 width={550}
                 modalRender={(modal) => {
-                    const dragRef = React.useRef({ x: 0, y: 0, dragging: false });
-                    const [offset, setOffset] = React.useState({ x: 0, y: 0 });
                     return (
                         <div
-                            style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+                            style={{ transform: `translate(${verifyOffset.x}px, ${verifyOffset.y}px)` }}
                             onMouseDown={(e) => {
                                 // Only drag from header area
                                 if ((e.target as HTMLElement).closest('.ant-modal-header')) {
-                                    dragRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y, dragging: true };
+                                    verifyDragRef.current = { x: e.clientX - verifyOffset.x, y: e.clientY - verifyOffset.y, dragging: true };
                                     const onMove = (ev: MouseEvent) => {
-                                        if (dragRef.current.dragging) {
-                                            setOffset({ x: ev.clientX - dragRef.current.x, y: ev.clientY - dragRef.current.y });
+                                        if (verifyDragRef.current.dragging) {
+                                            setVerifyOffset({ x: ev.clientX - verifyDragRef.current.x, y: ev.clientY - verifyDragRef.current.y });
                                         }
                                     };
-                                    const onUp = () => { dragRef.current.dragging = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                                    const onUp = () => { verifyDragRef.current.dragging = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
                                     document.addEventListener('mousemove', onMove);
                                     document.addEventListener('mouseup', onUp);
                                 }

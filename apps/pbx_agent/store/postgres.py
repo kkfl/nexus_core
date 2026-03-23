@@ -95,9 +95,7 @@ async def update_target(
     return target
 
 
-async def delete_target(
-    db: AsyncSession, target_id: str, tenant_id: str, env: str
-) -> bool:
+async def delete_target(db: AsyncSession, target_id: str, tenant_id: str, env: str) -> bool:
     """Delete a PBX target. Returns True if deleted, False if not found."""
     target = await get_target(db, target_id, tenant_id, env)
     if not target:

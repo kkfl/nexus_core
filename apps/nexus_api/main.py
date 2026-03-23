@@ -214,6 +214,7 @@ async def lifespan(app: FastAPI):
 
                             # Telegram alert
                             from apps.nexus_api.notify import notify_action
+
                             await notify_action(
                                 action="agent.down",
                                 subject="\U0001f6a8 Agent DOWN",
@@ -230,6 +231,7 @@ async def lifespan(app: FastAPI):
                             _alerted.discard(name)
                             # Recovery notification
                             from apps.nexus_api.notify import notify_action
+
                             await notify_action(
                                 action="agent.recovered",
                                 subject="\u2705 Agent Recovered",
@@ -257,7 +259,7 @@ async def lifespan(app: FastAPI):
                             severity="info",
                             payload={
                                 "summary": f"\U0001f49a Heartbeat OK — {healthy_count}/{len(agents_list)} agents healthy",
-                                "detail": f"All monitored agents responding normally",
+                                "detail": "All monitored agents responding normally",
                             },
                         )
                         async with AsyncSessionLocal() as db:

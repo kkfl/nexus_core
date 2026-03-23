@@ -83,15 +83,28 @@ async def notify_action(
     # Run both in parallel, catch all exceptions
     await asyncio.gather(
         _send_telegram(subject, body, severity, tenant_id, env, correlation_id),
-        _publish_event(event_type, subject, body, severity, actor_type, actor_id,
-                       payload or {}, tenant_id, correlation_id),
+        _publish_event(
+            event_type,
+            subject,
+            body,
+            severity,
+            actor_type,
+            actor_id,
+            payload or {},
+            tenant_id,
+            correlation_id,
+        ),
         return_exceptions=True,
     )
 
 
 async def _send_telegram(
-    subject: str, body: str, severity: str,
-    tenant_id: str, env: str, correlation_id: str,
+    subject: str,
+    body: str,
+    severity: str,
+    tenant_id: str,
+    env: str,
+    correlation_id: str,
 ) -> None:
     """Send Telegram notification via notifications-agent. Never raises."""
     try:
@@ -111,9 +124,15 @@ async def _send_telegram(
 
 
 async def _publish_event(
-    event_type: str, subject: str, body: str, severity: str,
-    actor_type: str, actor_id: str, payload: dict,
-    tenant_id: str, correlation_id: str,
+    event_type: str,
+    subject: str,
+    body: str,
+    severity: str,
+    actor_type: str,
+    actor_id: str,
+    payload: dict,
+    tenant_id: str,
+    correlation_id: str,
 ) -> None:
     """Publish to Redis event bus AND persist to Postgres for the System Activity Log. Never raises."""
     try:
@@ -150,4 +169,3 @@ async def _publish_event(
 
     except Exception as exc:
         logger.warning("event_bus_publish_failed", error=str(exc)[:200])
-

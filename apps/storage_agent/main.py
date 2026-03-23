@@ -60,11 +60,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                                 _unreachable.discard(tid)
                                 logger.info("storage_target_recovered", target=tid)
                                 try:
-                                    from apps.notifications_agent.client.notifications_client import NotificationsClient
+                                    from apps.notifications_agent.client.notifications_client import (
+                                        NotificationsClient,
+                                    )
+
                                     nc = NotificationsClient(
-                                        base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                        base_url=os.getenv(
+                                            "NOTIFICATIONS_BASE_URL",
+                                            "http://notifications-agent:8008",
+                                        ),
                                         service_id="storage-agent",
-                                        api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                        api_key=os.getenv(
+                                            "NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"
+                                        ),
                                     )
                                     await nc.notify(
                                         tenant_id=target.tenant_id or "nexus",
@@ -80,13 +88,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         except Exception as exc:
                             if tid not in _unreachable:
                                 _unreachable.add(tid)
-                                logger.warning("storage_target_unreachable", target=tid, error=str(exc)[:200])
+                                logger.warning(
+                                    "storage_target_unreachable", target=tid, error=str(exc)[:200]
+                                )
                                 try:
-                                    from apps.notifications_agent.client.notifications_client import NotificationsClient
+                                    from apps.notifications_agent.client.notifications_client import (
+                                        NotificationsClient,
+                                    )
+
                                     nc = NotificationsClient(
-                                        base_url=os.getenv("NOTIFICATIONS_BASE_URL", "http://notifications-agent:8008"),
+                                        base_url=os.getenv(
+                                            "NOTIFICATIONS_BASE_URL",
+                                            "http://notifications-agent:8008",
+                                        ),
                                         service_id="storage-agent",
-                                        api_key=os.getenv("NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"),
+                                        api_key=os.getenv(
+                                            "NEXUS_NOTIF_AGENT_KEY", "nexus-notif-key-change-me"
+                                        ),
                                     )
                                     await nc.notify(
                                         tenant_id=target.tenant_id or "nexus",

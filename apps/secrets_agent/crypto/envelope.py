@@ -15,6 +15,7 @@ INVARIANT: Plaintext secret values NEVER leave this module without being
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 from dataclasses import dataclass
 
@@ -35,10 +36,8 @@ def _get_kek() -> bytes:
     # Support both hex-encoded (64 hex chars → 32 bytes) and base64-encoded keys
     key: bytes | None = None
     if len(raw) == 64:
-        try:
+        with contextlib.suppress(ValueError):
             key = bytes.fromhex(raw)
-        except ValueError:
-            pass  # not valid hex, try base64 below
     if key is None:
         try:
             key = base64.b64decode(raw)
