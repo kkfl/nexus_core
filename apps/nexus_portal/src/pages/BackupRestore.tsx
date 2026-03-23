@@ -63,6 +63,7 @@ export default function BackupRestore() {
     const [restorePassword, setRestorePassword] = useState('');
     const [uploadPassword, setUploadPassword] = useState('');
     const [backupProgress, setBackupProgress] = useState<any>(null);
+    const [restoreProgress, setRestoreProgress] = useState<any>(null);
 
     const { data: backups = [], isLoading } = useQuery({
         queryKey: ['backups'],
@@ -193,6 +194,18 @@ export default function BackupRestore() {
         }, 800);
         return () => clearInterval(interval);
     }, [backupStep]);
+
+    // Poll for restore progress while running
+    useEffect(() => {
+        if (restoreStep !== 'running') return;
+        const interval = setInterval(async () => {
+            try {
+                const r = await apiClient.get('/settings/backup/restore-progress');
+                setRestoreProgress(r.data);
+            } catch { /* ignore */ }
+        }, 800);
+        return () => clearInterval(interval);
+    }, [restoreStep]);
 
     const columns = [
         {
@@ -777,10 +790,39 @@ export default function BackupRestore() {
 
                 {restoreStep === 'running' && (
                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                        <Progress type="circle" percent={-1} status="active" size={80} />
-                        <div style={{ marginTop: 16, color: '#94a3b8' }}>
-                            Restoring database... Do not close this window.
+                        <div style={{
+                            width: 80, height: 80, margin: '0 auto',
+                            border: '4px solid rgba(239,68,68,0.2)',
+                            borderTop: '4px solid #ef4444',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                        }} />
+                        <div style={{ marginTop: 16, color: '#f87171', fontWeight: 600, fontSize: 16 }}>
+                            {restoreProgress?.stage === 'decrypting' ? 'Decrypting backup...' :
+                             restoreProgress?.stage === 'decompressing' ? 'Decompressing backup...' :
+                             restoreProgress?.stage === 'restoring' ? 'Restoring database...' :
+                             'Preparing restore...'}
                         </div>
+                        {restoreProgress?.stage === 'restoring' && restoreProgress.tables_total > 0 && (
+                            <>
+                                <div style={{ marginTop: 12, color: '#e2e8f0', fontSize: 14, fontFamily: 'monospace' }}>
+                                    {restoreProgress.current_table || 'Starting...'}
+                                </div>
+                                <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
+                                    Table {restoreProgress.tables_done} of {restoreProgress.tables_total}
+                                </div>
+                                <div style={{ margin: '12px auto 0', width: '80%', height: 6, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(100, (restoreProgress.tables_done / restoreProgress.tables_total) * 100)}%`,
+                                        background: 'linear-gradient(90deg, #ef4444, #f87171)',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease',
+                                    }} />
+                                </div>
+                            </>
+                        )}
+                        <div style={{ marginTop: 12, color: '#64748b', fontSize: 12 }}>Do NOT close this window.</div>
                     </div>
                 )}
 

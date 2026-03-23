@@ -293,6 +293,93 @@ def _set_progress(stage: str, message: str = "", **kwargs):
     _backup_progress.update(kwargs)
 
 
+# Restore progress tracking
+_restore_progress: dict = {
+    "active": False,
+    "stage": "idle",
+    "current_table": "",
+    "tables_done": 0,
+    "tables_total": 0,
+    "message": "",
+}
+
+_COPY_RE = re.compile(r'^COPY\s+(?:public\.)?"?([\w]+)"?\s', re.IGNORECASE)
+
+
+def _reset_restore_progress():
+    _restore_progress.update(
+        active=False, stage="idle", current_table="",
+        tables_done=0, tables_total=0, message="",
+    )
+
+
+def _set_restore_progress(stage: str, message: str = "", **kwargs):
+    _restore_progress["active"] = stage not in ("idle", "done", "error")
+    _restore_progress["stage"] = stage
+    if message:
+        _restore_progress["message"] = message
+    _restore_progress.update(kwargs)
+
+
+def _count_copy_statements(sql_path) -> int:
+    """Count COPY statements in a SQL file to estimate restore table count."""
+    count = 0
+    with open(sql_path, "r", errors="replace") as f:
+        for line in f:
+            if _COPY_RE.match(line):
+                count += 1
+    return count
+
+
+async def _run_psql_tracked(raw_path, env: dict) -> tuple[int, str]:
+    """Run psql feeding SQL line-by-line, tracking COPY statements for progress."""
+    total = _count_copy_statements(raw_path)
+    _set_restore_progress("restoring", message="Starting restore...", tables_total=total, tables_done=0)
+
+    proc = await asyncio.create_subprocess_exec(
+        "psql",
+        env=env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    tables_done = 0
+    stderr_lines = []
+
+    # Feed SQL file line-by-line through stdin
+    with open(raw_path, "rb") as f:
+        for line in f:
+            proc.stdin.write(line)
+            # Check for COPY statements
+            try:
+                text = line.decode("utf-8", "replace")
+                m = _COPY_RE.match(text)
+                if m:
+                    tables_done += 1
+                    table_name = m.group(1)
+                    _set_restore_progress(
+                        "restoring",
+                        message=f"Restoring: {table_name}",
+                        current_table=table_name,
+                        tables_done=tables_done,
+                    )
+            except Exception:
+                pass
+            # Flush periodically to keep psql processing
+            if tables_done % 5 == 0:
+                try:
+                    await proc.stdin.drain()
+                except Exception:
+                    break
+
+    proc.stdin.close()
+    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)
+    stderr_text = stderr.decode(errors="replace")[-500:] if stderr else ""
+
+    return proc.returncode, stderr_text
+
+
 # ---------------------------------------------------------------------------
 # Core backup helper (used by endpoint + internal safety backup calls)
 # ---------------------------------------------------------------------------
@@ -454,6 +541,14 @@ async def backup_progress(
     return dict(_backup_progress)
 
 
+@router.get("/restore-progress")
+async def restore_progress_endpoint(
+    current_user: Any = Depends(RequireRole(["admin"])),
+):
+    """Return current restore progress for polling."""
+    return dict(_restore_progress)
+
+
 @router.get("/list", response_model=list[BackupInfo])
 async def list_backups(
     current_user: Any = Depends(RequireRole(["admin"])),
@@ -595,11 +690,18 @@ async def restore_backup(
     try:
         raw_path = BACKUP_DIR / f".tmp_restore_{filename}.sql"
 
+        _reset_restore_progress()
+        if is_encrypted:
+            _set_restore_progress("decrypting", message="Decrypting backup...")
+        else:
+            _set_restore_progress("decompressing", message="Decompressing backup...")
+
         if is_encrypted:
             from packages.shared.backup_crypto import decrypt_backup
             try:
                 master_key, sql_gz_data = decrypt_backup(filepath.read_bytes(), body.password)
             except ValueError as e:
+                _set_restore_progress("error", message=str(e))
                 return RestoreResult(
                     success=False, backup_used=filename,
                     safety_backup=safety_filename, error=str(e),
@@ -618,27 +720,21 @@ async def restore_backup(
                 with open(raw_path, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
 
-        env = _pg_env()
-        proc = await asyncio.create_subprocess_exec(
-            "psql", "-f", str(raw_path),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        returncode, stderr_text = await _run_psql_tracked(raw_path, _pg_env())
 
         raw_path.unlink(missing_ok=True)
 
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace")[:500]
-            logger.error("restore_failed", error=err)
+        if returncode != 0:
+            logger.error("restore_failed", error=stderr_text)
+            _set_restore_progress("error", message=f"psql restore failed: {stderr_text}")
             return RestoreResult(
                 success=False,
                 backup_used=filename,
                 safety_backup=safety_filename,
-                error=f"psql restore failed: {err}",
+                error=f"psql restore failed: {stderr_text}",
             )
 
+        _set_restore_progress("done", message="Restore complete!")
         logger.info("restore_success", filename=filename, safety=safety_filename, encrypted=is_encrypted)
 
         from apps.nexus_api.notify import notify_action
@@ -734,6 +830,12 @@ async def upload_and_restore(
     try:
         logger.warning("TRACE upload_restore STEP-3 decompressing", encrypted=is_encrypted, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
+        _reset_restore_progress()
+        if is_encrypted:
+            _set_restore_progress("decrypting", message="Decrypting backup...")
+        else:
+            _set_restore_progress("decompressing", message="Decompressing backup...")
+
         if is_encrypted:
             from packages.shared.backup_crypto import decrypt_backup
             try:
@@ -777,32 +879,58 @@ async def upload_and_restore(
         )
         logger.warning("TRACE upload_restore STEP-4 sessions terminated", elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        # STEP 5: Run psql via synchronous subprocess in executor thread
-        stderr_path = BACKUP_DIR / f".tmp_stderr_{upload_name}.log"
+        # STEP 5: Run psql with progress tracking
+        logger.warning("TRACE upload_restore STEP-5 psql starting", elapsed=f"{_time.monotonic()-t0:.1f}s")
 
-        def _run_psql():
-            """Run psql synchronously in a thread."""
-            with open(stderr_path, "w") as ef:
-                result = _sp.run(
-                    ["psql", "-f", str(raw_path)],
-                    env=env,
-                    stdout=_sp.DEVNULL,
-                    stderr=ef,
-                    timeout=900,
-                )
-            return result.returncode
+        def _run_psql_sync():
+            """Run psql synchronously with COPY tracking."""
+            import subprocess as _sp2
+            total = _count_copy_statements(raw_path)
+            _set_restore_progress("restoring", message="Starting restore...", tables_total=total, tables_done=0)
+
+            proc = _sp2.Popen(
+                ["psql"],
+                env=env,
+                stdin=_sp2.PIPE,
+                stdout=_sp2.DEVNULL,
+                stderr=_sp2.PIPE,
+            )
+
+            tables_done = 0
+            with open(raw_path, "rb") as f:
+                for line in f:
+                    proc.stdin.write(line)
+                    try:
+                        text = line.decode("utf-8", "replace")
+                        m = _COPY_RE.match(text)
+                        if m:
+                            tables_done += 1
+                            table_name = m.group(1)
+                            _set_restore_progress(
+                                "restoring",
+                                message=f"Restoring: {table_name}",
+                                current_table=table_name,
+                                tables_done=tables_done,
+                            )
+                    except Exception:
+                        pass
+
+            proc.stdin.close()
+            proc.wait(timeout=900)
+            stderr_text = proc.stderr.read().decode(errors="replace")[-500:] if proc.stderr else ""
+            return proc.returncode, stderr_text
 
         loop = asyncio.get_event_loop()
         logger.warning("TRACE upload_restore STEP-5 executor submit", elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         try:
-            returncode = await asyncio.wait_for(
-                loop.run_in_executor(None, _run_psql),
+            returncode, stderr_content = await asyncio.wait_for(
+                loop.run_in_executor(None, _run_psql_sync),
                 timeout=960,
             )
         except (asyncio.TimeoutError, _sp.TimeoutExpired):
             raw_path.unlink(missing_ok=True)
-            stderr_path.unlink(missing_ok=True)
+            _set_restore_progress("error", message="Restore timed out (10 minutes)")
             logger.error("TRACE upload_restore STEP-5 psql TIMEOUT", elapsed=f"{_time.monotonic()-t0:.1f}s")
             return RestoreResult(
                 success=False,
@@ -811,12 +939,7 @@ async def upload_and_restore(
                 error="psql restore timed out (10 minutes)",
             )
 
-        # Read stderr output for error reporting
-        try:
-            stderr_content = stderr_path.read_text(errors='replace')[-500:]
-        except Exception:
-            stderr_content = ""
-        stderr_path.unlink(missing_ok=True)
+        logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=returncode, stderr_len=len(stderr_content), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         logger.warning("TRACE upload_restore STEP-6 psql finished", returncode=returncode, stderr_len=len(stderr_content), elapsed=f"{_time.monotonic()-t0:.1f}s")
 
@@ -831,6 +954,7 @@ async def upload_and_restore(
                 error=f"psql restore failed: {stderr_content}",
             )
 
+        _set_restore_progress("done", message="Restore complete!")
         logger.warning("TRACE upload_restore STEP-7 success", filename=upload_name, safety=safety_filename, elapsed=f"{_time.monotonic()-t0:.1f}s")
 
         from apps.nexus_api.notify import notify_action
