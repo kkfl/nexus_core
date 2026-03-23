@@ -20,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.nexus_api.dependencies import RequireRole
 from packages.shared.db import get_db
-from packages.shared.models.core import ServiceIntegration, ServiceUsageLog, User
+from packages.shared.models.core import User
+from packages.shared.service_integration_models import ServiceIntegration, ServiceUsageLog
 
 router = APIRouter()
 

@@ -1,4 +1,5 @@
 from packages.shared.db import Base  # noqa: F401 — needed by migrations/env.py
+from packages.shared.service_integration_models import ServiceIntegration, ServiceUsageLog
 
 from .core import (
     Agent,
@@ -28,8 +29,6 @@ from .core import (
     PersonaDefault,
     PersonaVersion,
     Secret,
-    ServiceIntegration,
-    ServiceUsageLog,
     Setting,
     StorageJob,
     StorageTarget,

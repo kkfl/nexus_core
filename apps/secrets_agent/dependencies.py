@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from apps.secrets_agent.models import VaultPolicy
 from apps.secrets_agent.policy.engine import PolicyEngine
-from packages.shared.models.core import ServiceIntegration, ServiceUsageLog
+from packages.shared.service_integration_models import ServiceIntegration, ServiceUsageLog
 
 # ---------------------------------------------------------------------------
 # Database
