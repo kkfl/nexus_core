@@ -21,7 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.nexus_api.dependencies import RequireRole
 from packages.shared.db import get_db
 from packages.shared.models.core import User
-from packages.shared.service_integration_models import ServiceIntegration, ServiceUsageLog
+from packages.shared.service_integration_models import (
+    ServiceIntegration,
+    ServicePermissionRule,
+    ServiceUsageLog,
+)
 
 router = APIRouter()
 
@@ -80,6 +84,35 @@ class UsageStats(BaseModel):
     requests_7d: int
     requests_30d: int
     recent_requests: list[dict[str, Any]]
+
+
+class RuleCreate(BaseModel):
+    resource_type: str = Field(..., min_length=1, max_length=64)
+    resource_pattern: str = Field(default="*", max_length=255)
+    actions: list[str] = Field(default=["read"])
+    rate_limit_rpm: int | None = Field(default=None, ge=1)
+    daily_limit: int | None = Field(default=None, ge=1)
+
+
+class RuleUpdate(BaseModel):
+    resource_type: str | None = None
+    resource_pattern: str | None = None
+    actions: list[str] | None = None
+    rate_limit_rpm: int | None = None
+    daily_limit: int | None = None
+    is_active: bool | None = None
+
+
+class RuleResponse(BaseModel):
+    id: str
+    service_integration_id: str
+    resource_type: str
+    resource_pattern: str
+    actions: list[str]
+    rate_limit_rpm: int | None
+    daily_limit: int | None
+    is_active: bool
+    created_at: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -359,3 +392,144 @@ async def get_usage(
         requests_30d=counts["requests_30d"],
         recent_requests=recent_list,
     ).model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Permission Rule Routes
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_service(db: AsyncSession, service_id: str) -> ServiceIntegration:
+    """Find a service by id or service_id, or 404."""
+    result = await db.execute(
+        select(ServiceIntegration).where(
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
+        )
+    )
+    svc = result.scalars().first()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found.")
+    return svc
+
+
+@router.get("/{service_id}/rules")
+async def list_rules(
+    service_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(RequireRole(["admin", "operator"])),
+) -> list[dict[str, Any]]:
+    """List all permission rules for a service."""
+    svc = await _resolve_service(db, service_id)
+    result = await db.execute(
+        select(ServicePermissionRule)
+        .where(ServicePermissionRule.service_integration_id == svc.id)
+        .order_by(ServicePermissionRule.resource_type, ServicePermissionRule.resource_pattern)
+    )
+    rules = result.scalars().all()
+    return [
+        RuleResponse(
+            id=r.id,
+            service_integration_id=r.service_integration_id,
+            resource_type=r.resource_type,
+            resource_pattern=r.resource_pattern,
+            actions=r.actions or [],
+            rate_limit_rpm=r.rate_limit_rpm,
+            daily_limit=r.daily_limit,
+            is_active=r.is_active,
+            created_at=_fmt_dt(r.created_at),
+        ).model_dump()
+        for r in rules
+    ]
+
+
+@router.post("/{service_id}/rules", status_code=status.HTTP_201_CREATED)
+async def create_rule(
+    service_id: str,
+    payload: RuleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(RequireRole(["admin"])),
+) -> dict[str, Any]:
+    """Add a permission rule to a service."""
+    svc = await _resolve_service(db, service_id)
+    rule = ServicePermissionRule(
+        id=str(uuid.uuid4()),
+        service_integration_id=svc.id,
+        resource_type=payload.resource_type,
+        resource_pattern=payload.resource_pattern,
+        actions=payload.actions,
+        rate_limit_rpm=payload.rate_limit_rpm,
+        daily_limit=payload.daily_limit,
+    )
+    db.add(rule)
+    await db.commit()
+    await db.refresh(rule)
+    return RuleResponse(
+        id=rule.id,
+        service_integration_id=rule.service_integration_id,
+        resource_type=rule.resource_type,
+        resource_pattern=rule.resource_pattern,
+        actions=rule.actions or [],
+        rate_limit_rpm=rule.rate_limit_rpm,
+        daily_limit=rule.daily_limit,
+        is_active=rule.is_active,
+        created_at=_fmt_dt(rule.created_at),
+    ).model_dump()
+
+
+@router.patch("/{service_id}/rules/{rule_id}")
+async def update_rule(
+    service_id: str,
+    rule_id: str,
+    payload: RuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(RequireRole(["admin"])),
+) -> dict[str, Any]:
+    """Update a permission rule."""
+    svc = await _resolve_service(db, service_id)
+    result = await db.execute(
+        select(ServicePermissionRule).where(
+            ServicePermissionRule.id == rule_id,
+            ServicePermissionRule.service_integration_id == svc.id,
+        )
+    )
+    rule = result.scalars().first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(rule, key, value)
+    await db.commit()
+    await db.refresh(rule)
+    return RuleResponse(
+        id=rule.id,
+        service_integration_id=rule.service_integration_id,
+        resource_type=rule.resource_type,
+        resource_pattern=rule.resource_pattern,
+        actions=rule.actions or [],
+        rate_limit_rpm=rule.rate_limit_rpm,
+        daily_limit=rule.daily_limit,
+        is_active=rule.is_active,
+        created_at=_fmt_dt(rule.created_at),
+    ).model_dump()
+
+
+@router.delete("/{service_id}/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rule(
+    service_id: str,
+    rule_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(RequireRole(["admin"])),
+) -> None:
+    """Delete a permission rule."""
+    svc = await _resolve_service(db, service_id)
+    result = await db.execute(
+        select(ServicePermissionRule).where(
+            ServicePermissionRule.id == rule_id,
+            ServicePermissionRule.service_integration_id == svc.id,
+        )
+    )
+    rule = result.scalars().first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    await db.delete(rule)
+    await db.commit()

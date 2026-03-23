@@ -7,7 +7,7 @@ Kept in a separate module from core.py to avoid pulling in pgvector
 
 import datetime
 
-from sqlalchemy import JSON, DateTime, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -51,3 +51,21 @@ class ServiceUsageLog(Base):
     ts: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class ServicePermissionRule(Base):
+    """Scoped permission rule granting a service access to a specific resource."""
+
+    __tablename__ = "service_permission_rules"
+
+    id: Mapped[str] = mapped_column(primary_key=True, index=True)
+    service_integration_id: Mapped[str] = mapped_column(
+        ForeignKey("service_integrations.id", ondelete="CASCADE"), index=True
+    )
+    resource_type: Mapped[str]  # secrets, storage, llm, kb
+    resource_pattern: Mapped[str] = mapped_column(default="*")  # glob pattern
+    actions: Mapped[list[str]] = mapped_column(type_=JSON, default=list)  # read, write, list, etc.
+    rate_limit_rpm: Mapped[int | None]
+    daily_limit: Mapped[int | None]
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())

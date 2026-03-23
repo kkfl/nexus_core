@@ -1,5 +1,9 @@
 from packages.shared.db import Base  # noqa: F401 — needed by migrations/env.py
-from packages.shared.service_integration_models import ServiceIntegration, ServiceUsageLog
+from packages.shared.service_integration_models import (
+    ServiceIntegration,
+    ServicePermissionRule,
+    ServiceUsageLog,
+)
 
 from .core import (
     Agent,
@@ -69,6 +73,7 @@ __all__ = [
     "PersonaVersion",
     "Secret",
     "ServiceIntegration",
+    "ServicePermissionRule",
     "ServiceUsageLog",
     "Setting",
     "StorageJob",

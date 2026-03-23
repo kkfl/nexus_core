@@ -1,4 +1,4 @@
-import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Select, Drawer, Switch, Badge, Alert } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Select, Drawer, Switch, Badge, Alert, Popconfirm, Divider } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useState } from 'react';
@@ -7,11 +7,28 @@ import {
     DeleteOutlined, EditOutlined, KeyOutlined, CopyOutlined,
     CheckCircleOutlined, ClockCircleOutlined,
     SafetyCertificateOutlined, ThunderboltOutlined, EyeOutlined,
+    StopOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const RESOURCE_TYPES = [
+    { value: 'secrets', label: 'Secrets' },
+    { value: 'storage', label: 'Storage' },
+    { value: 'llm', label: 'LLM' },
+    { value: 'kb', label: 'Knowledge Base' },
+];
+
+const ACTION_OPTIONS: Record<string, string[]> = {
+    secrets: ['read', 'list', 'write', 'rotate'],
+    storage: ['read', 'write', 'delete', 'list'],
+    llm: ['query', 'list'],
+    kb: ['read', 'search', 'ingest'],
+};
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -30,7 +47,19 @@ interface ServiceIntegration {
     created_at: string;
     requests_24h: number;
     requests_30d: number;
-    api_key?: string; // Only present on create / regenerate
+    api_key?: string;
+}
+
+interface PermissionRule {
+    id: string;
+    service_integration_id: string;
+    resource_type: string;
+    resource_pattern: string;
+    actions: string[];
+    rate_limit_rpm: number | null;
+    daily_limit: number | null;
+    is_active: boolean;
+    created_at: string | null;
 }
 
 interface UsageStats {
@@ -41,7 +70,7 @@ interface UsageStats {
     recent_requests: any[];
 }
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatTimeAgo(isoStr: string | null): string {
     if (!isoStr) return 'Never';
@@ -54,7 +83,7 @@ function formatTimeAgo(isoStr: string | null): string {
 
 function isOnline(lastSeen: string | null): boolean {
     if (!lastSeen) return false;
-    return Date.now() - new Date(lastSeen).getTime() < 300_000; // 5 min
+    return Date.now() - new Date(lastSeen).getTime() < 300_000;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -69,8 +98,12 @@ export default function IntegrationsServices() {
     const [editForm] = Form.useForm();
     const [newApiKey, setNewApiKey] = useState<string | null>(null);
     const [detailService, setDetailService] = useState<ServiceIntegration | null>(null);
+    const [ruleFormOpen, setRuleFormOpen] = useState(false);
+    const [editingRule, setEditingRule] = useState<PermissionRule | null>(null);
+    const [ruleForm] = Form.useForm();
+    const [selectedResourceType, setSelectedResourceType] = useState<string>('secrets');
 
-    // ── Query ────────────────────────────────────────────────────────────────
+    // ── Queries ──────────────────────────────────────────────────────────────
 
     const { data: services, isLoading, refetch } = useQuery<ServiceIntegration[]>({
         queryKey: ['service_integrations'],
@@ -81,6 +114,12 @@ export default function IntegrationsServices() {
     const { data: usageData } = useQuery<UsageStats>({
         queryKey: ['service_usage', detailService?.service_id],
         queryFn: async () => (await apiClient.get(`/portal/service-integrations/${detailService!.service_id}/usage`)).data,
+        enabled: !!detailService,
+    });
+
+    const { data: rules, refetch: refetchRules } = useQuery<PermissionRule[]>({
+        queryKey: ['service_rules', detailService?.service_id],
+        queryFn: async () => (await apiClient.get(`/portal/service-integrations/${detailService!.service_id}/rules`)).data,
         enabled: !!detailService,
     });
 
@@ -114,6 +153,7 @@ export default function IntegrationsServices() {
         onSuccess: () => {
             message.success('Service revoked');
             queryClient.invalidateQueries({ queryKey: ['service_integrations'] });
+            setDetailService(null);
         },
     });
 
@@ -125,6 +165,74 @@ export default function IntegrationsServices() {
             queryClient.invalidateQueries({ queryKey: ['service_integrations'] });
         },
     });
+
+    // Rule mutations
+    const createRuleMutation = useMutation({
+        mutationFn: async (values: any) =>
+            (await apiClient.post(`/portal/service-integrations/${detailService!.service_id}/rules`, values)).data,
+        onSuccess: () => {
+            message.success('Rule added');
+            refetchRules();
+            setRuleFormOpen(false);
+            setEditingRule(null);
+            ruleForm.resetFields();
+        },
+        onError: (err: any) => message.error(err.response?.data?.detail || 'Failed'),
+    });
+
+    const updateRuleMutation = useMutation({
+        mutationFn: async ({ ruleId, values }: { ruleId: string; values: any }) =>
+            (await apiClient.patch(`/portal/service-integrations/${detailService!.service_id}/rules/${ruleId}`, values)).data,
+        onSuccess: () => {
+            message.success('Rule updated');
+            refetchRules();
+            setRuleFormOpen(false);
+            setEditingRule(null);
+            ruleForm.resetFields();
+        },
+        onError: (err: any) => message.error(err.response?.data?.detail || 'Failed'),
+    });
+
+    const deleteRuleMutation = useMutation({
+        mutationFn: async (ruleId: string) =>
+            await apiClient.delete(`/portal/service-integrations/${detailService!.service_id}/rules/${ruleId}`),
+        onSuccess: () => {
+            message.success('Rule deleted');
+            refetchRules();
+        },
+    });
+
+    const toggleRuleMutation = useMutation({
+        mutationFn: async ({ ruleId, active }: { ruleId: string; active: boolean }) =>
+            (await apiClient.patch(`/portal/service-integrations/${detailService!.service_id}/rules/${ruleId}`, { is_active: active })).data,
+        onSuccess: () => refetchRules(),
+    });
+
+    // ── Handlers ─────────────────────────────────────────────────────────────
+
+    const handleOpenAddRule = () => {
+        setEditingRule(null);
+        ruleForm.resetFields();
+        setSelectedResourceType('secrets');
+        setRuleFormOpen(true);
+    };
+
+    const handleEditRule = (rule: PermissionRule) => {
+        setEditingRule(rule);
+        setSelectedResourceType(rule.resource_type);
+        ruleForm.setFieldsValue(rule);
+        setRuleFormOpen(true);
+    };
+
+    const handleSubmitRule = () => {
+        ruleForm.validateFields().then(v => {
+            if (editingRule) {
+                updateRuleMutation.mutate({ ruleId: editingRule.id, values: v });
+            } else {
+                createRuleMutation.mutate(v);
+            }
+        });
+    };
 
     // ── Stats Cards ──────────────────────────────────────────────────────────
 
@@ -175,14 +283,6 @@ export default function IntegrationsServices() {
             ),
         },
         {
-            title: 'Alias Pattern',
-            key: 'alias',
-            width: 160,
-            render: (_: any, row: ServiceIntegration) => (
-                <Text code style={{ fontSize: 11 }}>{row.alias_pattern}</Text>
-            ),
-        },
-        {
             title: 'Requests (24h)',
             dataIndex: 'requests_24h',
             width: 120,
@@ -214,7 +314,7 @@ export default function IntegrationsServices() {
                         <Button size="small" type="text" icon={<KeyOutlined />}
                             onClick={() => Modal.confirm({
                                 title: 'Regenerate API Key?',
-                                content: 'The old key will be invalidated immediately. The service will need to be updated with the new key.',
+                                content: 'The old key will be invalidated immediately.',
                                 onOk: () => regenMutation.mutate(row.service_id),
                             })} />
                     </Tooltip>
@@ -222,12 +322,63 @@ export default function IntegrationsServices() {
                         <Button size="small" type="text" danger icon={<DeleteOutlined />}
                             onClick={() => Modal.confirm({
                                 title: `Revoke ${row.name}?`,
-                                content: 'This will delete the service registration and all usage logs. The service will no longer be able to authenticate.',
+                                content: 'This will delete the service, all permission rules, and usage logs.',
                                 okText: 'Revoke',
                                 okButtonProps: { danger: true },
                                 onOk: () => deleteMutation.mutate(row.service_id),
                             })} />
                     </Tooltip>
+                </Space>
+            ),
+        },
+    ];
+
+    // ── Rule Columns (for drawer) ────────────────────────────────────────────
+
+    const ruleColumns = [
+        {
+            title: 'Resource',
+            key: 'resource',
+            render: (_: any, rule: PermissionRule) => (
+                <Space direction="vertical" size={0}>
+                    <Tag color="blue" style={{ fontSize: 11 }}>{rule.resource_type}</Tag>
+                    <Text code style={{ fontSize: 10 }}>{rule.resource_pattern}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: 'Actions',
+            key: 'actions',
+            render: (_: any, rule: PermissionRule) => (
+                <Space size={2} wrap>{rule.actions?.map(a => <Tag key={a} style={{ fontSize: 10 }}>{a}</Tag>)}</Space>
+            ),
+        },
+        {
+            title: 'Limits',
+            key: 'limits',
+            width: 90,
+            render: (_: any, rule: PermissionRule) => (
+                <Space direction="vertical" size={0}>
+                    <Text style={{ fontSize: 10, color: t.muted }}>{rule.rate_limit_rpm ? `${rule.rate_limit_rpm}/min` : '∞ rpm'}</Text>
+                    <Text style={{ fontSize: 10, color: t.muted }}>{rule.daily_limit ? `${rule.daily_limit}/day` : '∞ day'}</Text>
+                </Space>
+            ),
+        },
+        {
+            title: '',
+            key: 'ops',
+            width: 90,
+            render: (_: any, rule: PermissionRule) => (
+                <Space size={2}>
+                    <Tooltip title={rule.is_active ? 'Enabled' : 'Disabled'}>
+                        <Switch size="small" checked={rule.is_active}
+                            onChange={(checked) => toggleRuleMutation.mutate({ ruleId: rule.id, active: checked })} />
+                    </Tooltip>
+                    <Button size="small" type="text" icon={<EditOutlined style={{ fontSize: 12 }} />}
+                        onClick={() => handleEditRule(rule)} />
+                    <Popconfirm title="Delete this rule?" onConfirm={() => deleteRuleMutation.mutate(rule.id)}>
+                        <Button size="small" type="text" danger icon={<DeleteOutlined style={{ fontSize: 12 }} />} />
+                    </Popconfirm>
                 </Space>
             ),
         },
@@ -322,7 +473,7 @@ export default function IntegrationsServices() {
                 </Button>
             </Modal>
 
-            {/* ── Add Service Modal ────────────────────────────────────────── */}
+            {/* ── Add Service Modal (simplified — rules added after) ─────── */}
             <Modal
                 title={<><PlusOutlined style={{ color: '#4169E1', marginRight: 8 }} />Register New Service</>}
                 open={addOpen}
@@ -343,30 +494,12 @@ export default function IntegrationsServices() {
                     <Form.Item name="description" label="Description">
                         <Input.TextArea rows={2} placeholder="What does this service do?" />
                     </Form.Item>
-                    <Form.Item name="alias_pattern" label="Secret Alias Pattern" initialValue="*"
-                        extra="Glob pattern controlling which secrets this service can access">
-                        <Input placeholder="e.g. vibeprompter.*" />
-                    </Form.Item>
-                    <Form.Item name="permissions" label="Permissions" initialValue={['secrets:read', 'secrets:list']}>
-                        <Select mode="tags" placeholder="permissions">
-                            <Select.Option value="secrets:read">secrets:read</Select.Option>
-                            <Select.Option value="secrets:list">secrets:list</Select.Option>
-                            <Select.Option value="secrets:write">secrets:write</Select.Option>
-                            <Select.Option value="secrets:rotate">secrets:rotate</Select.Option>
-                        </Select>
-                    </Form.Item>
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="rate_limit_rpm" label="Rate Limit (req/min)">
-                                <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="daily_request_limit" label="Daily Request Limit">
-                                <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
+                    <Alert
+                        message="After registering, open the service details to add permission rules that control what resources this service can access."
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 0 }}
+                    />
                 </Form>
             </Modal>
 
@@ -387,29 +520,6 @@ export default function IntegrationsServices() {
                     <Form.Item name="description" label="Description">
                         <Input.TextArea rows={2} />
                     </Form.Item>
-                    <Form.Item name="alias_pattern" label="Secret Alias Pattern">
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="permissions" label="Permissions">
-                        <Select mode="tags" placeholder="permissions">
-                            <Select.Option value="secrets:read">secrets:read</Select.Option>
-                            <Select.Option value="secrets:list">secrets:list</Select.Option>
-                            <Select.Option value="secrets:write">secrets:write</Select.Option>
-                            <Select.Option value="secrets:rotate">secrets:rotate</Select.Option>
-                        </Select>
-                    </Form.Item>
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="rate_limit_rpm" label="Rate Limit (req/min)">
-                                <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="daily_request_limit" label="Daily Request Limit">
-                                <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
                     <Form.Item name="is_active" label="Active" valuePropName="checked">
                         <Switch />
                     </Form.Item>
@@ -420,11 +530,12 @@ export default function IntegrationsServices() {
             <Drawer
                 title={detailService?.name || 'Service Details'}
                 open={!!detailService}
-                onClose={() => setDetailService(null)}
-                width={480}
+                onClose={() => { setDetailService(null); setRuleFormOpen(false); setEditingRule(null); }}
+                width={560}
             >
                 {detailService && (
                     <Space direction="vertical" style={{ width: '100%' }} size="large">
+                        {/* Info Card */}
                         <Card size="small" style={{ background: t.cardBg, border: `1px solid ${t.border}` }}>
                             <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                 <div><Text type="secondary">Service ID:</Text> <Text code>{detailService.service_id}</Text></div>
@@ -436,15 +547,88 @@ export default function IntegrationsServices() {
                             </Space>
                         </Card>
 
-                        <Card size="small" title="Permissions & Limits" style={{ background: t.cardBg, border: `1px solid ${t.border}` }}>
-                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                <div><Text type="secondary">Alias Pattern:</Text> <Text code>{detailService.alias_pattern}</Text></div>
-                                <div><Text type="secondary">Permissions:</Text> {detailService.permissions.map(p => <Tag key={p}>{p}</Tag>)}</div>
-                                <div><Text type="secondary">Rate Limit:</Text> <Text>{detailService.rate_limit_rpm ? `${detailService.rate_limit_rpm} req/min` : 'Unlimited'}</Text></div>
-                                <div><Text type="secondary">Daily Limit:</Text> <Text>{detailService.daily_request_limit ? `${detailService.daily_request_limit} req/day` : 'Unlimited'}</Text></div>
-                            </Space>
+                        {/* Permission Rules Card */}
+                        <Card
+                            size="small"
+                            title={<><SafetyCertificateOutlined style={{ color: '#4169E1', marginRight: 6 }} />Permission Rules</>}
+                            extra={<Button size="small" type="primary" icon={<PlusOutlined />} onClick={handleOpenAddRule}>Add Rule</Button>}
+                            style={{ background: t.cardBg, border: `1px solid ${t.border}` }}
+                        >
+                            {(!rules || rules.length === 0) ? (
+                                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                                    <StopOutlined style={{ fontSize: 24, color: t.muted, marginBottom: 8 }} />
+                                    <div><Text type="secondary" style={{ fontSize: 12 }}>No permission rules — this service cannot access any resources.</Text></div>
+                                    <Button size="small" type="link" onClick={handleOpenAddRule}>Add your first rule</Button>
+                                </div>
+                            ) : (
+                                <Table
+                                    dataSource={rules}
+                                    columns={ruleColumns}
+                                    rowKey="id"
+                                    pagination={false}
+                                    size="small"
+                                    style={{ fontSize: 12 }}
+                                />
+                            )}
+
+                            {/* Inline Rule Form */}
+                            {ruleFormOpen && (
+                                <>
+                                    <Divider style={{ margin: '12px 0' }} />
+                                    <div style={{ padding: '8px 0' }}>
+                                        <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                                            {editingRule ? 'Edit Rule' : 'New Permission Rule'}
+                                        </Text>
+                                        <Form form={ruleForm} layout="vertical" size="small">
+                                            <Row gutter={8}>
+                                                <Col span={10}>
+                                                    <Form.Item name="resource_type" label="Resource Type" rules={[{ required: true }]}>
+                                                        <Select onChange={(v) => { setSelectedResourceType(v); ruleForm.setFieldValue('actions', ['read']); }}>
+                                                            {RESOURCE_TYPES.map(rt => <Select.Option key={rt.value} value={rt.value}>{rt.label}</Select.Option>)}
+                                                        </Select>
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col span={14}>
+                                                    <Form.Item name="resource_pattern" label="Resource Pattern" initialValue="*"
+                                                        extra={<span style={{ fontSize: 10 }}>Glob: openai.*, storage-1, *</span>}>
+                                                        <Input placeholder="*" />
+                                                    </Form.Item>
+                                                </Col>
+                                            </Row>
+                                            <Form.Item name="actions" label="Allowed Actions" initialValue={['read']} rules={[{ required: true }]}>
+                                                <Select mode="multiple">
+                                                    {(ACTION_OPTIONS[selectedResourceType] || ['read']).map(a =>
+                                                        <Select.Option key={a} value={a}>{a}</Select.Option>)}
+                                                </Select>
+                                            </Form.Item>
+                                            <Row gutter={8}>
+                                                <Col span={12}>
+                                                    <Form.Item name="rate_limit_rpm" label="RPM Limit">
+                                                        <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col span={12}>
+                                                    <Form.Item name="daily_limit" label="Daily Limit">
+                                                        <InputNumber min={1} style={{ width: '100%' }} placeholder="Unlimited" />
+                                                    </Form.Item>
+                                                </Col>
+                                            </Row>
+                                            <Space>
+                                                <Button type="primary" size="small" onClick={handleSubmitRule}
+                                                    loading={createRuleMutation.isPending || updateRuleMutation.isPending}>
+                                                    {editingRule ? 'Update' : 'Add Rule'}
+                                                </Button>
+                                                <Button size="small" onClick={() => { setRuleFormOpen(false); setEditingRule(null); ruleForm.resetFields(); }}>
+                                                    Cancel
+                                                </Button>
+                                            </Space>
+                                        </Form>
+                                    </div>
+                                </>
+                            )}
                         </Card>
 
+                        {/* Usage Stats */}
                         {usageData && (
                             <Card size="small" title="Usage Stats" style={{ background: t.cardBg, border: `1px solid ${t.border}` }}>
                                 <Row gutter={16}>
