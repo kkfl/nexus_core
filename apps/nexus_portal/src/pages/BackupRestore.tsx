@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Card, Button, Table, Typography, Space, Tag, message,
-    Modal, Input, Alert, Progress, Statistic, Row, Col,
+    Modal, Input, Alert, Statistic, Row, Col,
     Popconfirm, InputNumber, Tooltip, Empty, Select, Upload,
 } from 'antd';
 import {
