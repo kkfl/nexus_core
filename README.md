@@ -1,4 +1,4 @@
-# Nexus Core V1
+﻿# Nexus Core V1
 
 Nexus Core is the central orchestrator that coordinates agents and personas. It serves as the system-of-record for tasks, metadata, and audit logs.
 
@@ -6,35 +6,44 @@ Nexus Core is the central orchestrator that coordinates agents and personas. It 
 - **API (nexus-api):** FastAPI service for handling user and agent requests, persona registry, and enqueuing tasks.
 - **Worker (nexus-worker):** Background task runner (RQ + Redis) that dispatches tasks to agents over HTTP.
 - **Portal (nexus-portal):** React (Vite) Admin Web UI for configuring agents, KB, personas, metrics, and audits.
+- **Caddy (reverse proxy):** TLS-capable gateway fronting the API and Portal on port 80/443.
+- **Secrets Agent:** Envelope-encrypted vault for credentials (AES-GCM, audited reads).
 - **Storage:** Postgres (with pgvector) for metadata/state, MinIO (S3) for artifacts.
-- **Demo Agent (demo-agent):** A tiny HTTP service simulating an external agent capable of responding to dispatched tasks.
+- **Micro-agents:** DNS, PBX, Email, Monitoring, Storage, Carrier, Server, Notifications, Automation.
+- **Demo Agent (demo-agent):** A tiny HTTP service simulating an external agent.
 
 ## Quickstart
 
-### 1. Start Stack
-Start the ecosystem locally using docker-compose:
+### 1. Configure Environment
+Copy the example env file and set required values (especially `NEXUS_MASTER_KEY`):
 ```bash
 cp .env.example .env
+# Edit .env â€” generate a master key:
+# python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
+### 2. Start Stack
+```bash
 docker compose up --build -d
 ```
 
-### 2. Access the Nexus Portal
-The administration panel is automatically built and served via Nginx when running the stack.
-- **URL**: [http://localhost:3000](http://localhost:3000)
-- **Login Credentials**: `admin@local.host` | `admin` (after bootstrapping below)
-
 ### 3. Run Migrations
-Run Alembic migrations to construct the database schema:
 ```bash
 docker compose exec nexus-api alembic upgrade head
 ```
 
-### 4. Setup Initial Data (Bootstrap)
-We can use a simple python script to bootstrap an admin user.
+### 4. Bootstrap Admin User
 ```bash
 docker compose exec nexus-api python -m scripts.bootstrap
 ```
-*(You will find the generated API key and User credentials in the command output)*
+*(Generated API key and user credentials are printed to stdout)*
+
+### 5. Access the Nexus Portal
+Caddy reverse-proxies both the Portal and API on a single origin:
+- **URL**: [http://localhost](http://localhost) (via Caddy, port 80)
+- **Direct Portal**: [http://localhost:3000](http://localhost:3000) (bypasses Caddy)
+- **Direct API**: [http://localhost:8000](http://localhost:8000)
+- **Login**: `admin@nexus.local` / `admin`
 
 ## Pilot Docs in the Portal
 
@@ -777,3 +786,67 @@ This demonstrates the Carrier Agent importing telecom inventory (DIDs, Trunks, C
    # Verify Snapshot log was collected
    curl -s -X GET "http://localhost:8000/carrier/snapshots?carrier_target_id=$TARGET_ID" -H "Authorization: Bearer $TOKEN" | jq .
    ```
+
+## KNOWN WORKING STATE
+
+> **Checkpoint:** 2026-03-24 - Commit `aea7c06` - Migration head: `029_service_permission_rules`
+
+### Services (20 containers)
+
+| Service | Container | Port | Health |
+|---------|-----------|------|--------|
+| **nexus-api** | nexus-api | 8000 | healthy |
+| **nexus-portal** | nexus-portal | 3000->80 | up |
+| **caddy** | nexus-caddy | 80, 443 | up |
+| **nexus-worker** | nexus-worker | -- | up |
+| **postgres** | nexus-postgres | 5432 | healthy |
+| **redis** | nexus-redis | 6379 | healthy |
+| **minio** | nexus-minio | 9000, 9001 | healthy |
+| **secrets-agent** | secrets-agent | 8007 | healthy |
+| **agent-registry** | agent-registry | 8012 | healthy |
+| **monitoring-agent** | monitoring-agent | 8004 | healthy |
+| **storage-agent** | storage-agent | 8005 | healthy |
+| **dns-agent** | dns-agent | 8006 | healthy |
+| **notifications-agent** | notifications-agent | 8008 | healthy |
+| **carrier-agent** | carrier-agent | 8009 | up |
+| **server-agent** | server-agent | 8010 | healthy |
+| **pbx-agent** | pbx-agent | 8011 | healthy |
+| **automation-agent** | automation-agent | 8013 | healthy |
+| **email-agent** | email-agent | 8014 | healthy |
+| **prometheus** | nexus-prometheus | 9090 | healthy |
+| **grafana** | nexus-grafana | 3001 | healthy |
+| **demo-agent** | demo-agent | 8001 | up |
+
+### Required Environment Variables
+
+See `.env.example` for the full list. Critical variables:
+- `NEXUS_MASTER_KEY` -- AES-GCM vault encryption key (base64, 32 bytes). **Required.**
+- `DATABASE_URL` -- AsyncPG connection string for Postgres.
+- `REDIS_URL` -- Redis connection for RQ worker.
+- `SECRET_KEY` -- JWT signing key.
+
+### Database
+
+- **Engine:** pgvector/pgvector:pg16
+- **Migration head:** `029_service_permission_rules`
+- **Key tables:** `users`, `agents`, `tasks`, `personas`, `persona_versions`, `entities`, `entity_events`, `secrets`, `audit_events`, `kb_sources`, `kb_documents`, `kb_chunks`, `service_integrations`, `service_permission_rules`, `service_usage_log`
+
+### Smoke Test Results
+
+```
+GET http://localhost:8000/healthz        -> 200
+GET http://localhost:8007/healthz        -> 200 (secrets-agent)
+GET http://localhost:8012/healthz        -> 200 (agent-registry)
+GET http://localhost                     -> 200 (portal via Caddy)
+POST http://localhost:8000/auth/login    -> 200 (JWT issued)
+GET http://localhost:8000/portal/secrets -> 200 (secrets list)
+```
+
+### CI Checks
+
+```
+ruff check .           -> All checks passed
+ruff format --check .  -> 358 files already formatted
+npm run lint           -> 0 errors, 0 warnings
+npm run build          -> built successfully
+```
