@@ -13,6 +13,7 @@ from apps.nexus_api.dependencies import (
     create_access_token,
     create_refresh_token,
     get_current_user,
+    get_effective_permissions,
     get_password_hash,
     verify_password,
 )
@@ -79,7 +80,8 @@ async def login_for_access_token(
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role, "mp": get_effective_permissions(user)},
+        expires_delta=access_token_expires,
     )
     refresh_token = create_refresh_token(data={"sub": user.email})
 
@@ -137,7 +139,7 @@ async def refresh_access_token(
     ):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    access_token = create_access_token(data={"sub": user.email, "role": user.role})
+    access_token = create_access_token(data={"sub": user.email, "role": user.role, "mp": get_effective_permissions(user)})
     new_refresh_token = create_refresh_token(data={"sub": user.email})
 
     user.refresh_token_hash = get_password_hash(new_refresh_token)

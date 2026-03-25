@@ -9,7 +9,14 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole, get_password_hash
+from apps.nexus_api.dependencies import (
+    RequireRole,
+    get_password_hash,
+    ALL_MODULES,
+    ACCESS_LEVELS,
+    ROLE_PERMISSION_DEFAULTS,
+    get_effective_permissions,
+)
 from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
@@ -28,6 +35,7 @@ class UserOut(BaseModel):
     email: str
     role: str
     is_active: bool
+    module_permissions: dict[str, str] | None = None
     created_at: str
 
     model_config = {"from_attributes": True}
@@ -39,6 +47,7 @@ class UserOut(BaseModel):
             email=user.email,
             role=user.role,
             is_active=user.is_active,
+            module_permissions=get_effective_permissions(user),
             created_at=user.created_at.isoformat() if user.created_at else "",
         )
 
@@ -220,3 +229,74 @@ async def reset_password(
     )
 
     return {"status": "password_reset", "user_id": user_id}
+
+
+# ── Module Permissions ────────────────────────────────────
+
+
+class ModulePermissionsUpdate(BaseModel):
+    module_permissions: dict[str, str]
+
+
+@router.get("/modules", response_model=dict)
+async def list_modules(
+    admin: User = Depends(require_admin),
+) -> Any:
+    """Return the canonical list of modules, access levels, and role presets."""
+    return {
+        "modules": ALL_MODULES,
+        "access_levels": list(ACCESS_LEVELS.keys()),
+        "role_defaults": ROLE_PERMISSION_DEFAULTS,
+    }
+
+
+@router.patch("/{user_id}/permissions", response_model=UserOut)
+async def update_user_permissions(
+    user_id: int,
+    body: ModulePermissionsUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> Any:
+    """Update a user's module-level permissions."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Validate all keys are known modules and values are valid levels
+    for module, level in body.module_permissions.items():
+        if module not in ALL_MODULES:
+            raise HTTPException(status_code=422, detail=f"Unknown module: {module}")
+        if level not in ACCESS_LEVELS:
+            raise HTTPException(status_code=422, detail=f"Invalid level: {level}")
+
+    user.module_permissions = body.module_permissions
+    log_audit_event(
+        db,
+        "user_permissions_update",
+        "user",
+        admin,
+        str(user_id),
+        {"module_permissions": body.module_permissions},
+    )
+    await db.commit()
+    await db.refresh(user)
+
+    send_security_alert(
+        "user_permissions_update",
+        admin.email,
+        f"Permissions updated for: {user.email}",
+    )
+
+    from apps.nexus_api.notify import notify_action
+
+    await notify_action(
+        action="user.permissions_updated",
+        subject="\U0001f512 Permissions Updated",
+        body=f"{user.email} permissions changed by {admin.email}",
+        event_type="nexus.user.permissions_updated",
+        severity="warn",
+        payload={"user_id": user_id},
+    )
+
+    return UserOut.from_user(user)

@@ -13,7 +13,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
@@ -52,7 +52,7 @@ class IpAllowlistOut(BaseModel):
 @router.get("/", response_model=list[IpAllowlistOut])
 async def list_ip_allowlist(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin"])),
+    current_user: User = Depends(RequireModuleAccess("ip_allowlist", "manage")),
 ) -> Any:
     res = await db.execute(select(IpAllowlistEntry).order_by(IpAllowlistEntry.created_at.desc()))
     return res.scalars().all()
@@ -62,7 +62,7 @@ async def list_ip_allowlist(
 async def create_ip_allowlist_entry(
     body: IpAllowlistCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin"])),
+    current_user: User = Depends(RequireModuleAccess("ip_allowlist", "manage")),
 ) -> Any:
     entry = IpAllowlistEntry(cidr=body.cidr, label=body.label)
     db.add(entry)
@@ -88,7 +88,7 @@ async def create_ip_allowlist_entry(
 async def toggle_ip_entry(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin"])),
+    current_user: User = Depends(RequireModuleAccess("ip_allowlist", "manage")),
 ) -> Any:
     res = await db.execute(select(IpAllowlistEntry).where(IpAllowlistEntry.id == entry_id))
     entry = res.scalars().first()
@@ -116,7 +116,7 @@ async def toggle_ip_entry(
 async def delete_ip_allowlist_entry(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin"])),
+    current_user: User = Depends(RequireModuleAccess("ip_allowlist", "manage")),
 ) -> Any:
     res = await db.execute(select(IpAllowlistEntry).where(IpAllowlistEntry.id == entry_id))
     entry = res.scalars().first()

@@ -31,10 +31,10 @@ import {
     CloudDownloadOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore, hasModuleAccess } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import { getAntTheme, getTokens } from '../theme';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import NexusBrain from '../components/NexusBrain';
 
 const { Header, Content, Sider, Footer } = Layout;
@@ -57,101 +57,127 @@ export default function AdminLayout() {
         navigate('/login');
     };
 
-    const navItems = [
-        {
-            key: '/',
-            icon: <DashboardOutlined />,
-            label: 'Dashboard',
-        },
-        {
-            key: 'orchestration',
-            icon: <ApiOutlined />,
-            label: 'Orchestration',
-            children: [
-                { key: '/agents', label: 'Agents', icon: <RobotOutlined /> },
-                { key: '/routes', label: 'Task Routes', icon: <BarsOutlined /> },
-                { key: '/tasks', label: 'Tasks & Artifacts', icon: <ProfileOutlined /> },
-            ],
-        },
-        {
-            key: 'personas',
-            icon: <UserOutlined />,
-            label: 'Personas',
-            children: [
-                { key: '/personas', label: 'Persona Registry', icon: <IdcardOutlined /> },
-                { key: '/personas/defaults', label: 'Defaults & Overrides', icon: <ControlOutlined /> },
-            ],
-        },
-        {
-            key: 'kb',
-            icon: <DatabaseOutlined />,
-            label: 'Knowledge Base',
-            children: [
-                { key: '/kb/sources', label: 'Sources', icon: <FileTextOutlined /> },
-                { key: '/kb/documents', label: 'Documents', icon: <FileTextOutlined /> },
-                { key: '/kb/search', label: 'Search', icon: <SearchOutlined /> },
-                { key: '/kb/ask', label: 'Ask Nexus', icon: <QuestionCircleOutlined /> },
-            ],
-        },
-        {
-            key: 'sor',
-            icon: <CloudServerOutlined />,
-            label: 'System of Record',
-            children: [
-                { key: '/entities', label: 'Entities', icon: <AppstoreOutlined /> },
-                { key: '/secrets', label: 'Secrets / Credentials', icon: <KeyOutlined /> },
-                { key: '/audits', label: 'Audit Trail', icon: <SafetyOutlined /> },
-            ],
-        },
-        {
-            key: 'integrations',
-            icon: <SettingOutlined />,
-            label: 'Integrations',
-            children: [
-                { key: '/integrations/pbx', label: 'PBX Fleet Management', icon: <PhoneOutlined /> },
-                { key: '/integrations/monitoring', label: 'Monitoring Ingests', icon: <LineChartOutlined /> },
-                { key: '/integrations/storage', label: 'Storage Jobs', icon: <HddOutlined /> },
-                { key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> },
-                { key: '/integrations/email', label: 'Email Administration', icon: <MailOutlined /> },
-                { key: '/integrations/dns', label: 'DNS Management', icon: <GlobalOutlined /> },
-                { key: '/integrations/services', label: 'Service Integrations', icon: <ApiOutlined /> },
-            ],
-        },
-        {
-            key: 'infrastructure',
-            icon: <CloudServerOutlined />,
-            label: 'Infrastructure',
-            children: [
-                { key: '/infrastructure/servers', label: 'Servers', icon: <CloudServerOutlined /> },
-            ],
-        },
-        {
-            key: 'monitoring',
-            icon: <AlertOutlined />,
-            label: 'Monitoring',
-            children: [
-                { key: '/monitoring/dashboard', label: 'Dashboard', icon: <LineChartOutlined /> },
-            ],
-        },
-        {
-            key: '/docs',
-            icon: <ReadOutlined />,
-            label: 'Pilot Docs',
-        },
-        // Settings — admin only
-        ...(user?.role === 'admin' ? [{
-            key: 'settings',
-            icon: <SettingOutlined />,
-            label: 'Settings',
-            children: [
-                { key: '/settings/users', label: 'User Management', icon: <TeamOutlined /> },
-                { key: '/settings/api-keys', label: 'API Keys', icon: <KeyOutlined /> },
-                { key: '/settings/ip-allowlist', label: 'IP Allowlist', icon: <GlobalOutlined /> },
-                { key: '/settings/audit-log', label: 'Audit Log', icon: <SafetyOutlined /> },
-                { key: '/settings/backup', label: 'Backup & Restore', icon: <CloudDownloadOutlined /> },
-            ],
-        }] : []),
-    ];
+    /** Helper: only include item if user has at least 'read' on the module */
+    const can = (module: string) => hasModuleAccess(user, module);
+
+    const navItems = useMemo(() => {
+        const items: any[] = [
+            { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+        ];
+
+        if (can('orchestration')) {
+            items.push({
+                key: 'orchestration',
+                icon: <ApiOutlined />,
+                label: 'Orchestration',
+                children: [
+                    { key: '/agents', label: 'Agents', icon: <RobotOutlined /> },
+                    { key: '/routes', label: 'Task Routes', icon: <BarsOutlined /> },
+                    { key: '/tasks', label: 'Tasks & Artifacts', icon: <ProfileOutlined /> },
+                ],
+            });
+        }
+
+        if (can('personas')) {
+            items.push({
+                key: 'personas',
+                icon: <UserOutlined />,
+                label: 'Personas',
+                children: [
+                    { key: '/personas', label: 'Persona Registry', icon: <IdcardOutlined /> },
+                    { key: '/personas/defaults', label: 'Defaults & Overrides', icon: <ControlOutlined /> },
+                ],
+            });
+        }
+
+        if (can('knowledge_base')) {
+            items.push({
+                key: 'kb',
+                icon: <DatabaseOutlined />,
+                label: 'Knowledge Base',
+                children: [
+                    { key: '/kb/sources', label: 'Sources', icon: <FileTextOutlined /> },
+                    { key: '/kb/documents', label: 'Documents', icon: <FileTextOutlined /> },
+                    { key: '/kb/search', label: 'Search', icon: <SearchOutlined /> },
+                    { key: '/kb/ask', label: 'Ask Nexus', icon: <QuestionCircleOutlined /> },
+                ],
+            });
+        }
+
+        // System of Record sub-items (entities, secrets, audit are separate modules)
+        const sorChildren: any[] = [];
+        if (can('entities')) sorChildren.push({ key: '/entities', label: 'Entities', icon: <AppstoreOutlined /> });
+        if (can('secrets')) sorChildren.push({ key: '/secrets', label: 'Secrets / Credentials', icon: <KeyOutlined /> });
+        if (can('audit')) sorChildren.push({ key: '/audits', label: 'Audit Trail', icon: <SafetyOutlined /> });
+        if (sorChildren.length > 0) {
+            items.push({
+                key: 'sor',
+                icon: <CloudServerOutlined />,
+                label: 'System of Record',
+                children: sorChildren,
+            });
+        }
+
+        // Integrations sub-items
+        const intChildren: any[] = [];
+        if (can('pbx')) intChildren.push({ key: '/integrations/pbx', label: 'PBX Fleet Management', icon: <PhoneOutlined /> });
+        if (can('monitoring')) intChildren.push({ key: '/integrations/monitoring', label: 'Monitoring Ingests', icon: <LineChartOutlined /> });
+        if (can('storage')) intChildren.push({ key: '/integrations/storage', label: 'Storage Jobs', icon: <HddOutlined /> });
+        if (can('carrier')) intChildren.push({ key: '/integrations/carrier', label: 'Carrier Inventory', icon: <PhoneOutlined /> });
+        if (can('email')) intChildren.push({ key: '/integrations/email', label: 'Email Administration', icon: <MailOutlined /> });
+        if (can('dns')) intChildren.push({ key: '/integrations/dns', label: 'DNS Management', icon: <GlobalOutlined /> });
+        if (can('integrations')) intChildren.push({ key: '/integrations/services', label: 'Service Integrations', icon: <ApiOutlined /> });
+        if (intChildren.length > 0) {
+            items.push({
+                key: 'integrations',
+                icon: <SettingOutlined />,
+                label: 'Integrations',
+                children: intChildren,
+            });
+        }
+
+        if (can('servers')) {
+            items.push({
+                key: 'infrastructure',
+                icon: <CloudServerOutlined />,
+                label: 'Infrastructure',
+                children: [
+                    { key: '/infrastructure/servers', label: 'Servers', icon: <CloudServerOutlined /> },
+                ],
+            });
+        }
+
+        if (can('monitoring')) {
+            items.push({
+                key: 'monitoring',
+                icon: <AlertOutlined />,
+                label: 'Monitoring',
+                children: [
+                    { key: '/monitoring/dashboard', label: 'Dashboard', icon: <LineChartOutlined /> },
+                ],
+            });
+        }
+
+        items.push({ key: '/docs', icon: <ReadOutlined />, label: 'Pilot Docs' });
+
+        // Settings — only show items the user has access to
+        const settingsChildren: any[] = [];
+        if (can('users')) settingsChildren.push({ key: '/settings/users', label: 'User Management', icon: <TeamOutlined /> });
+        if (can('api_keys')) settingsChildren.push({ key: '/settings/api-keys', label: 'API Keys', icon: <KeyOutlined /> });
+        if (can('ip_allowlist')) settingsChildren.push({ key: '/settings/ip-allowlist', label: 'IP Allowlist', icon: <GlobalOutlined /> });
+        if (can('audit')) settingsChildren.push({ key: '/settings/audit-log', label: 'Audit Log', icon: <SafetyOutlined /> });
+        if (can('backup')) settingsChildren.push({ key: '/settings/backup', label: 'Backup & Restore', icon: <CloudDownloadOutlined /> });
+        if (settingsChildren.length > 0) {
+            items.push({
+                key: 'settings',
+                icon: <SettingOutlined />,
+                label: 'Settings',
+                children: settingsChildren,
+            });
+        }
+
+        return items;
+    }, [user]);
 
     return (
         <ConfigProvider theme={getAntTheme(mode)}>

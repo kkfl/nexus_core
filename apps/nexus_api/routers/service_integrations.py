@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.db import get_db
 from packages.shared.models.core import User
 from packages.shared.service_integration_models import (
@@ -182,7 +182,7 @@ async def _to_response(db: AsyncSession, svc: ServiceIntegration) -> ServiceResp
 @router.get("")
 async def list_services(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("integrations", "manage")),
 ) -> list[dict[str, Any]]:
     """List all registered service integrations with usage stats."""
     result = await db.execute(select(ServiceIntegration).order_by(ServiceIntegration.name))
@@ -236,7 +236,7 @@ async def create_service(
 async def get_service(
     service_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("integrations", "manage")),
 ) -> dict[str, Any]:
     """Get service details by ID or service_id."""
     result = await db.execute(
@@ -335,7 +335,7 @@ async def get_usage(
     service_id: str,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("integrations", "manage")),
 ) -> dict[str, Any]:
     """Get usage stats and recent request log for a service."""
     # Resolve to canonical service_id
@@ -416,7 +416,7 @@ async def _resolve_service(db: AsyncSession, service_id: str) -> ServiceIntegrat
 async def list_rules(
     service_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("integrations", "manage")),
 ) -> list[dict[str, Any]]:
     """List all permission rules for a service."""
     svc = await _resolve_service(db, service_id)

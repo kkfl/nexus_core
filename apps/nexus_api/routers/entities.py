@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
 from packages.shared.models import Entity, EntityEvent, IdempotencyKey
@@ -80,7 +80,7 @@ async def upsert_entity(
     req: UpsertEntityRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "manage")),
 ) -> Any:
     # 1. Idempotency Check
     req_dict = req.model_dump()
@@ -181,7 +181,7 @@ async def list_entities(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "read")),
 ) -> Any:
     stmt = select(Entity)
     if kind:
@@ -198,7 +198,7 @@ async def list_entities(
 async def get_entity(
     entity_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "read")),
 ) -> Any:
     res = await db.execute(select(Entity).where(Entity.id == entity_id))
     ent = res.scalars().first()
@@ -213,7 +213,7 @@ async def patch_entity(
     req: PatchEntityRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "manage")),
 ) -> Any:
     req_dict = req.model_dump()
     stored_response = await check_idempotency(db, req.idempotency_key, "entity_write", req_dict)
@@ -299,7 +299,7 @@ async def list_entity_events(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "read")),
 ) -> Any:
     stmt = (
         select(EntityEvent)
@@ -316,7 +316,7 @@ async def list_entity_events(
 async def get_idempotency_key(
     key: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("entities", "manage")),
 ) -> Any:
     res = await db.execute(select(IdempotencyKey).where(IdempotencyKey.key == key))
     idem = res.scalars().first()

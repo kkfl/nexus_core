@@ -3,11 +3,11 @@ import { apiClient } from '../api/client';
 import { useState } from 'react';
 import {
     Table, Button, Tag, Space, Modal, Form, Input, Select, Switch, message, Typography,
-    Tooltip, Row, Col, Statistic, Badge,
+    Tooltip, Row, Col, Statistic, Badge, Drawer, Divider,
 } from 'antd';
 import {
     UserAddOutlined, EditOutlined, KeyOutlined, TeamOutlined,
-    CrownOutlined, SafetyCertificateOutlined, EyeOutlined,
+    CrownOutlined, SafetyCertificateOutlined, EyeOutlined, LockOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer, cardStyle, tableStyleOverrides } from '../theme';
@@ -20,8 +20,52 @@ interface UserRecord {
     email: string;
     role: string;
     is_active: boolean;
+    module_permissions: Record<string, string> | null;
     created_at: string;
 }
+
+const MODULE_LABELS: Record<string, string> = {
+    dashboard: 'Dashboard',
+    orchestration: 'Orchestration',
+    personas: 'Personas',
+    knowledge_base: 'Knowledge Base',
+    entities: 'System of Record',
+    secrets: 'Secrets & Credentials',
+    audit: 'Audit Trail',
+    pbx: 'PBX Fleet Management',
+    monitoring: 'Monitoring',
+    storage: 'Storage Jobs',
+    carrier: 'Carrier Inventory',
+    email: 'Email Admin',
+    dns: 'DNS Management',
+    servers: 'Servers',
+    integrations: 'Service Integrations',
+    users: 'User Management',
+    api_keys: 'API Keys',
+    ip_allowlist: 'IP Allowlist',
+    backup: 'Backup & Restore',
+};
+
+const ALL_MODULES = Object.keys(MODULE_LABELS);
+
+const ACCESS_OPTIONS = [
+    { value: 'none', label: '⛔ None' },
+    { value: 'read', label: '👁 Read' },
+    { value: 'manage', label: '✏️ Manage' },
+];
+
+const ROLE_PRESETS: Record<string, Record<string, string>> = {
+    admin: Object.fromEntries(ALL_MODULES.map(m => [m, m === 'audit' ? 'read' : 'manage'])),
+    operator: {
+        dashboard: 'read', orchestration: 'manage', personas: 'manage', knowledge_base: 'manage',
+        entities: 'read', secrets: 'read', audit: 'read', pbx: 'manage', monitoring: 'manage',
+        storage: 'manage', carrier: 'manage', email: 'manage', dns: 'manage', servers: 'manage',
+        integrations: 'read', users: 'none', api_keys: 'none', ip_allowlist: 'none', backup: 'none',
+    },
+    reader: Object.fromEntries(ALL_MODULES.map(m =>
+        [m, ['secrets', 'integrations', 'users', 'api_keys', 'ip_allowlist', 'backup'].includes(m) ? 'none' : 'read']
+    )),
+};
 
 const roleColors: Record<string, string> = {
     admin: '#f5222d',
@@ -40,6 +84,8 @@ export default function Users() {
     const [createOpen, setCreateOpen] = useState(false);
     const [editUser, setEditUser] = useState<UserRecord | null>(null);
     const [resetUser, setResetUser] = useState<UserRecord | null>(null);
+    const [permsUser, setPermsUser] = useState<UserRecord | null>(null);
+    const [permsState, setPermsState] = useState<Record<string, string>>({});
     const [createForm] = Form.useForm();
     const [editForm] = Form.useForm();
     const [resetForm] = Form.useForm();
@@ -83,6 +129,17 @@ export default function Users() {
             message.success('Password reset');
             setResetUser(null);
             resetForm.resetFields();
+        },
+        onError: (err: any) => message.error(err.response?.data?.detail || 'Failed'),
+    });
+
+    const permsMutation = useMutation({
+        mutationFn: ({ id, module_permissions }: { id: number; module_permissions: Record<string, string> }) =>
+            apiClient.patch(`/users/${id}/permissions`, { module_permissions }),
+        onSuccess: () => {
+            message.success('Permissions updated — user must re-login for changes to take effect');
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+            setPermsUser(null);
         },
         onError: (err: any) => message.error(err.response?.data?.detail || 'Failed'),
     });
@@ -159,6 +216,17 @@ export default function Users() {
                             size="small"
                             icon={<KeyOutlined />}
                             onClick={() => setResetUser(record)}
+                        />
+                    </Tooltip>
+                    <Tooltip title="Permissions">
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<LockOutlined />}
+                            onClick={() => {
+                                setPermsUser(record);
+                                setPermsState(record.module_permissions ?? ROLE_PRESETS[record.role] ?? ROLE_PRESETS.reader);
+                            }}
                         />
                     </Tooltip>
                 </Space>
@@ -290,6 +358,58 @@ export default function Users() {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            {/* Permissions Drawer */}
+            <Drawer
+                title={<Space><LockOutlined /> Module Permissions — {permsUser?.email}</Space>}
+                open={!!permsUser}
+                onClose={() => setPermsUser(null)}
+                width={520}
+                footer={
+                    <div style={{ textAlign: 'right' }}>
+                        <Button onClick={() => setPermsUser(null)} style={{ marginRight: 8 }}>Cancel</Button>
+                        <Button
+                            type="primary"
+                            loading={permsMutation.isPending}
+                            onClick={() => permsUser && permsMutation.mutate({ id: permsUser.id, module_permissions: permsState })}
+                        >Save Permissions</Button>
+                    </div>
+                }
+            >
+                {permsUser?.role === 'admin' && (
+                    <div style={{ padding: '8px 12px', marginBottom: 16, background: 'rgba(245,34,45,0.08)', borderRadius: 8, border: '1px solid rgba(245,34,45,0.2)' }}>
+                        <Text style={{ color: '#f5222d', fontSize: 12 }}>
+                            <CrownOutlined /> Admin users always have full access regardless of these settings.
+                        </Text>
+                    </div>
+                )}
+
+                <Space style={{ marginBottom: 16 }}>
+                    <Text strong style={{ color: t.muted, fontSize: 11 }}>PRESETS:</Text>
+                    <Button size="small" onClick={() => setPermsState({ ...ROLE_PRESETS.admin })}>All Manage</Button>
+                    <Button size="small" onClick={() => setPermsState({ ...ROLE_PRESETS.operator })}>Operator</Button>
+                    <Button size="small" onClick={() => setPermsState({ ...ROLE_PRESETS.reader })}>Reader</Button>
+                    <Button size="small" danger onClick={() => setPermsState(Object.fromEntries(ALL_MODULES.map(m => [m, 'none'])))}>None</Button>
+                </Space>
+
+                <Divider style={{ margin: '8px 0 16px' }} />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '8px 12px', alignItems: 'center' }}>
+                    {ALL_MODULES.map(mod => (
+                        <>
+                            <Text key={`label-${mod}`} style={{ color: t.text, fontSize: 13 }}>{MODULE_LABELS[mod]}</Text>
+                            <Select
+                                key={`select-${mod}`}
+                                size="small"
+                                value={permsState[mod] ?? 'none'}
+                                onChange={(val) => setPermsState(prev => ({ ...prev, [mod]: val }))}
+                                options={ACCESS_OPTIONS}
+                                style={{ width: '100%' }}
+                            />
+                        </>
+                    ))}
+                </div>
+            </Drawer>
         </div>
     );
 }

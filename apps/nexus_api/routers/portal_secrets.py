@@ -6,7 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
-from apps.nexus_api.dependencies import RequireRole, verify_password
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole, verify_password
 from packages.shared.client.agent_registry import get_registry_client
 from packages.shared.models.core import User
 
@@ -133,7 +133,7 @@ async def list_portal_secrets(
     env: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(RequireRole(["admin", "operator", "BreakGlass"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "read")),
 ) -> Any:
     """List secrets metadata via secrets_agent proxy."""
     params = {"tenant_id": tenant_id, "env": env, "skip": skip, "limit": limit}
@@ -148,7 +148,7 @@ async def list_portal_secrets(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_portal_secret(
     payload: PortalSecretCreate,
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "manage")),
 ) -> Any:
     """Create secret in secrets_agent."""
     return await proxy_request("POST", "/v1/secrets", json_data=payload.model_dump())
@@ -164,7 +164,7 @@ async def list_portal_secret_audit(
     result: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(RequireRole(["admin", "BreakGlass"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "read")),
 ) -> Any:
     """Query secret audit logs via secrets_agent proxy."""
     params = {
@@ -188,7 +188,7 @@ async def get_portal_secret(
     tenant_id: str | None = Query(None),
     env: str | None = Query(None),
     reason: str | None = Query(None),
-    current_user: User = Depends(RequireRole(["admin", "operator", "BreakGlass"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "read")),
 ) -> Any:
     """Get secret metadata by UUID or by alias (with tenant_id + env)."""
     # Try UUID lookup first
@@ -219,7 +219,7 @@ async def get_portal_secret(
 async def update_portal_secret(
     secret_id: str,
     payload: PortalSecretUpdate,
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "manage")),
 ) -> Any:
     """Update secret metadata."""
     return await proxy_request("PATCH", f"/v1/secrets/{secret_id}", json_data=payload.model_dump())
@@ -229,7 +229,7 @@ async def update_portal_secret(
 async def rotate_portal_secret(
     secret_id: str,
     payload: PortalSecretRotate,
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("secrets", "manage")),
 ) -> Any:
     """Rotate secret value."""
     return await proxy_request(

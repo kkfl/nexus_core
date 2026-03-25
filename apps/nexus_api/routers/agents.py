@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from apps.nexus_api.dependencies import (
-    RequireRole,
+    RequireModuleAccess, RequireRole,
     get_current_agent_by_key,
 )
 from packages.shared.audit import log_audit_event
@@ -30,7 +30,7 @@ router = APIRouter()
 async def create_agent(
     agent_in: AgentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("orchestration", "manage")),
 ) -> Any:
     db_agent = Agent(
         name=agent_in.name,
@@ -74,7 +74,7 @@ async def read_agents(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("orchestration", "read")),
 ) -> Any:
     result = await db.execute(select(Agent).offset(skip).limit(limit))
     return result.scalars().all()
@@ -84,7 +84,7 @@ async def read_agents(
 async def read_agent(
     agent_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("orchestration", "read")),
 ) -> Any:
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalars().first()
@@ -98,7 +98,7 @@ async def update_agent(
     agent_id: int,
     agent_in: AgentUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("orchestration", "manage")),
 ) -> Any:
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalars().first()
@@ -119,7 +119,7 @@ async def update_agent(
 async def ping_agent(
     agent_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("orchestration", "manage")),
 ) -> Any:
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalars().first()

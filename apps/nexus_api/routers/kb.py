@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole, get_current_identity
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole, get_current_identity
 from packages.shared.db import get_db
 from packages.shared.models import (
     Agent,
@@ -46,7 +46,7 @@ router = APIRouter()
 async def create_source(
     source_in: KbSourceCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     db_source = KbSource(name=source_in.name, kind=source_in.kind, config=source_in.config)
     db.add(db_source)
@@ -70,7 +70,7 @@ async def read_sources(
 async def create_document_text(
     doc_in: KbDocumentTextCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     # Verify source
     res = await db.execute(select(KbSource).where(KbSource.id == doc_in.source_id))
@@ -118,7 +118,7 @@ async def upload_document(
     title: str = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     res = await db.execute(select(KbSource).where(KbSource.id == source_id))
     if not res.scalars().first():
@@ -171,7 +171,7 @@ async def upload_document(
 async def ingest_from_url(
     req: KbUrlIngestRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     """Fetch a URL, store raw content, and enqueue for embedding."""
     res = await db.execute(select(KbSource).where(KbSource.id == req.source_id))
@@ -197,7 +197,7 @@ async def ingest_from_url(
 async def ingest_from_email(
     req: KbEmailIngestRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     """Ingest email body text as a KB document."""
     res = await db.execute(select(KbSource).where(KbSource.id == req.source_id))
@@ -247,7 +247,7 @@ async def ingest_from_email(
 async def reingest_document(
     id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     """Re-run the ingestion pipeline for an existing document."""
     res = await db.execute(select(KbDocument).where(KbDocument.id == id))
@@ -305,7 +305,7 @@ async def read_document(
 async def delete_document(
     id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "manage")),
 ) -> Any:
     res = await db.execute(select(KbDocument).where(KbDocument.id == id))
     doc = res.scalars().first()
@@ -608,7 +608,7 @@ async def _check_rate_limit(user_id: int) -> bool:
 async def ask_nexus(
     req: AskNexusRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "read")),
 ) -> Any:
     """Ask a question and get a citation-ready response from the knowledge base."""
     from packages.shared.events import emit_event
@@ -827,7 +827,7 @@ async def ask_nexus(
 async def submit_ask_feedback(
     req: AskFeedbackRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: User = Depends(RequireModuleAccess("knowledge_base", "read")),
 ) -> dict:
     """Submit feedback on an Ask Nexus response."""
     from packages.shared.events import emit_event

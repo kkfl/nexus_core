@@ -24,6 +24,7 @@ class User(Base):
     refresh_token_hash: Mapped[str | None]
     role: Mapped[str] = mapped_column(default="reader")
     is_active: Mapped[bool] = mapped_column(default=True)
+    module_permissions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
 

@@ -125,3 +125,99 @@ class RequireRole:
         if current_user.role not in self.allowed_roles:
             raise HTTPException(status_code=403, detail="Not enough permissions")
         return current_user
+
+
+# ---------------------------------------------------------------------------
+# Module-level permission system
+# ---------------------------------------------------------------------------
+
+ALL_MODULES = [
+    "dashboard",
+    "orchestration",
+    "personas",
+    "knowledge_base",
+    "entities",
+    "secrets",
+    "audit",
+    "pbx",
+    "monitoring",
+    "storage",
+    "carrier",
+    "email",
+    "dns",
+    "servers",
+    "integrations",
+    "users",
+    "api_keys",
+    "ip_allowlist",
+    "backup",
+]
+
+ACCESS_LEVELS = {"none": 0, "read": 1, "manage": 2}
+
+ROLE_PERMISSION_DEFAULTS: dict[str, dict[str, str]] = {
+    "admin": {m: "manage" for m in ALL_MODULES} | {"audit": "read"},
+    "operator": {
+        "dashboard": "read",
+        "orchestration": "manage",
+        "personas": "manage",
+        "knowledge_base": "manage",
+        "entities": "read",
+        "secrets": "read",
+        "audit": "read",
+        "pbx": "manage",
+        "monitoring": "manage",
+        "storage": "manage",
+        "carrier": "manage",
+        "email": "manage",
+        "dns": "manage",
+        "servers": "manage",
+        "integrations": "read",
+        "users": "none",
+        "api_keys": "none",
+        "ip_allowlist": "none",
+        "backup": "none",
+    },
+    "reader": {m: "read" for m in ALL_MODULES}
+    | {"secrets": "none", "integrations": "none", "users": "none", "api_keys": "none", "ip_allowlist": "none", "backup": "none"},
+}
+
+
+def get_effective_permissions(user: User) -> dict[str, str]:
+    """Return the effective module permission map for a user."""
+    if user.role == "admin":
+        return ROLE_PERMISSION_DEFAULTS["admin"]
+    if user.module_permissions:
+        return user.module_permissions
+    return ROLE_PERMISSION_DEFAULTS.get(user.role, ROLE_PERMISSION_DEFAULTS["reader"])
+
+
+class RequireModuleAccess:
+    """Dependency that checks per-module access level.
+
+    Usage: Depends(RequireModuleAccess("secrets", "read"))
+    """
+
+    def __init__(self, module: str, min_level: str = "read"):
+        self.module = module
+        self.min_level = min_level
+
+    async def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+            )
+        # Admin always has full access
+        if current_user.role == "admin":
+            return current_user
+
+        perms = get_effective_permissions(current_user)
+        user_level = perms.get(self.module, "none")
+        if ACCESS_LEVELS.get(user_level, 0) < ACCESS_LEVELS.get(self.min_level, 0):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No {self.min_level} access to {self.module}",
+            )
+        return current_user
+

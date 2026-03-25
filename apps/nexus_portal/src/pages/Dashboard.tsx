@@ -10,6 +10,7 @@ import {
     PhoneOutlined, CloudServerOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
+import { useAuthStore, hasModuleAccess } from '../stores/authStore';
 import { getTokens, cardStyle, tableStyleOverrides, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
@@ -29,6 +30,7 @@ interface DashboardSummary {
 export default function Dashboard() {
     const navigate = useNavigate();
     const { mode } = useThemeStore();
+    const { user } = useAuthStore();
     const t = getTokens(mode);
 
     const { data, isLoading, isError } = useQuery<DashboardSummary>({
@@ -118,6 +120,7 @@ export default function Dashboard() {
             subColor: metrics.agents.active > 0 ? t.green : t.muted,
             subIcon: metrics.agents.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/agents'),
+            module: 'orchestration',
         },
         {
             label: 'MANAGED SERVERS', icon: <DatabaseOutlined />, glow: '#f59e0b',
@@ -125,6 +128,7 @@ export default function Dashboard() {
             subColor: metrics.servers.active > 0 ? t.green : t.muted,
             subIcon: metrics.servers.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/infrastructure/servers'),
+            module: 'servers',
         },
         {
             label: 'PBX FLEET', icon: <PhoneOutlined />, glow: t.cyan,
@@ -132,6 +136,7 @@ export default function Dashboard() {
             subColor: metrics.pbx.active > 0 ? t.green : t.muted,
             subIcon: metrics.pbx.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/integrations/pbx'),
+            module: 'pbx',
         },
         {
             label: 'STORAGE TARGETS', icon: <CloudServerOutlined />, glow: t.green,
@@ -139,6 +144,7 @@ export default function Dashboard() {
             subColor: metrics.storage.active > 0 ? t.green : t.muted,
             subIcon: metrics.storage.active > 0 ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
             clickable: true, onClick: () => navigate('/integrations/storage'),
+            module: 'storage',
         },
         {
             label: 'MAILBOXES', icon: <MailOutlined />, glow: t.purple,
@@ -146,8 +152,9 @@ export default function Dashboard() {
             subColor: metrics.mail.inbound_unread > 0 ? t.orange : t.muted,
             subIcon: metrics.mail.inbound_unread > 0 ? <WarningOutlined /> : <CheckCircleOutlined />,
             clickable: false,
+            module: 'email',
         },
-    ];
+    ].filter(card => hasModuleAccess(user, (card as any).module ?? 'dashboard'));
 
     return (
         <div style={pageContainer(t)}>

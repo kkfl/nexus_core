@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.db import get_db
 from packages.shared.models import PersonaDefault
 from packages.shared.schemas.core import (
@@ -20,7 +20,7 @@ router = APIRouter()
 async def create_persona_default(
     default_in: PersonaDefaultCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "manage")),
 ) -> Any:
     db_default = PersonaDefault(
         scope_type=default_in.scope_type,
@@ -39,7 +39,7 @@ async def read_persona_defaults(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "read")),
 ) -> Any:
     res = await db.execute(select(PersonaDefault).offset(skip).limit(limit))
     return res.scalars().all()
@@ -50,7 +50,7 @@ async def update_persona_default(
     default_id: int,
     default_in: PersonaDefaultUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "manage")),
 ) -> Any:
     res = await db.execute(select(PersonaDefault).where(PersonaDefault.id == default_id))
     default = res.scalars().first()

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.db import get_db
 from packages.shared.models import Persona, PersonaVersion
 from packages.shared.schemas.core import (
@@ -21,7 +21,7 @@ router = APIRouter()
 async def create_persona(
     persona_in: PersonaCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "manage")),
 ) -> Any:
     db_persona = Persona(
         name=persona_in.name, description=persona_in.description, is_active=persona_in.is_active
@@ -37,7 +37,7 @@ async def read_personas(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "read")),
 ) -> Any:
     res = await db.execute(select(Persona).offset(skip).limit(limit))
     return res.scalars().all()
@@ -47,7 +47,7 @@ async def read_personas(
 async def read_persona(
     persona_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "read")),
 ) -> Any:
     res = await db.execute(select(Persona).where(Persona.id == persona_id))
     persona = res.scalars().first()
@@ -61,7 +61,7 @@ async def create_persona_version(
     persona_id: int,
     version_in: PersonaVersionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "manage")),
 ) -> Any:
     res = await db.execute(select(Persona).where(Persona.id == persona_id))
     if not res.scalars().first():
@@ -84,7 +84,7 @@ async def create_persona_version(
 async def read_persona_versions(
     persona_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("personas", "read")),
 ) -> Any:
     res = await db.execute(select(PersonaVersion).where(PersonaVersion.persona_id == persona_id))
     return res.scalars().all()

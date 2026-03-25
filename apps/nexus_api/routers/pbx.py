@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
 from packages.shared.models import PbxSnapshot, PbxTarget, Secret, Task, TaskRun
@@ -71,7 +71,7 @@ class PbxSnapshotOut(BaseModel):
 async def create_pbx_target(
     req: PbxTargetCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "manage")),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
 
@@ -113,7 +113,7 @@ async def create_pbx_target(
 @router.get("/targets", response_model=list[PbxTargetOut])
 async def list_pbx_targets(
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "read")),
 ) -> Any:
     # agents cannot call this per requirement mapped to "reader", "operator", "admin"
     res = await db.execute(select(PbxTarget))
@@ -124,7 +124,7 @@ async def list_pbx_targets(
 async def get_pbx_target(
     target_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "read")),
 ) -> Any:
     res = await db.execute(select(PbxTarget).where(PbxTarget.id == target_id))
     target = res.scalars().first()
@@ -138,7 +138,7 @@ async def update_pbx_target(
     target_id: str,
     req: PbxTargetUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "manage")),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
 
@@ -170,7 +170,7 @@ async def update_pbx_target(
 async def test_pbx_ami(
     target_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "manage")),
 ) -> Any:
     # 1. Enqueue a task for "pbx.status" against this target
     res = await db.execute(select(PbxTarget).where(PbxTarget.id == target_id))
@@ -211,7 +211,7 @@ async def list_pbx_snapshots(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "read")),
 ) -> Any:
     stmt = select(PbxSnapshot)
     if pbx_target_id:
@@ -225,7 +225,7 @@ async def list_pbx_snapshots(
 async def get_pbx_snapshot(
     snapshot_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("pbx", "read")),
 ) -> Any:
     res = await db.execute(select(PbxSnapshot).where(PbxSnapshot.id == snapshot_id))
     snap = res.scalars().first()

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
 from packages.shared.models import MonitoringIngest, MonitoringSource, Secret
@@ -62,7 +62,7 @@ class MonitoringIngestOut(BaseModel):
 async def create_monitoring_source(
     req: MonitoringSourceCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("monitoring", "manage")),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
 
@@ -115,7 +115,7 @@ async def list_monitoring_sources(
 async def get_monitoring_source(
     source_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("monitoring", "read")),
 ) -> Any:
     res = await db.execute(select(MonitoringSource).where(MonitoringSource.id == source_id))
     source = res.scalars().first()
@@ -129,7 +129,7 @@ async def update_monitoring_source(
     source_id: str,
     req: MonitoringSourceUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator"])),
+    current_user: Any = Depends(RequireModuleAccess("monitoring", "manage")),
 ) -> Any:
     from packages.shared.secrets import encrypt_secret
 
@@ -175,7 +175,7 @@ async def list_monitoring_ingests(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("monitoring", "read")),
 ) -> Any:
     stmt = select(MonitoringIngest)
     if monitoring_source_id:
@@ -189,7 +189,7 @@ async def list_monitoring_ingests(
 async def get_monitoring_ingest(
     ingest_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(RequireRole(["admin", "operator", "reader"])),
+    current_user: Any = Depends(RequireModuleAccess("monitoring", "read")),
 ) -> Any:
     res = await db.execute(select(MonitoringIngest).where(MonitoringIngest.id == ingest_id))
     ing = res.scalars().first()
