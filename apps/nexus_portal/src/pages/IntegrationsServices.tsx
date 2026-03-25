@@ -1,13 +1,13 @@
 import { Table, Button, Modal, Form, Input, InputNumber, Typography, Space, Tag, Card, message, Tooltip, Row, Col, Select, Drawer, Switch, Badge, Alert, Popconfirm, Divider } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     PlusOutlined, ReloadOutlined, ApiOutlined,
     DeleteOutlined, EditOutlined, KeyOutlined, CopyOutlined,
     CheckCircleOutlined, ClockCircleOutlined,
     SafetyCertificateOutlined, ThunderboltOutlined, EyeOutlined,
-    StopOutlined,
+    StopOutlined, LockOutlined, UnlockOutlined,
 } from '@ant-design/icons';
 import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer } from '../theme';
@@ -110,6 +110,31 @@ export default function IntegrationsServices() {
     const [editingRule, setEditingRule] = useState<PermissionRule | null>(null);
     const [ruleForm] = Form.useForm();
     const [selectedResourceType, setSelectedResourceType] = useState<string>('secrets');
+    const [revealOpen, setRevealOpen] = useState(false);
+    const [revealForm] = Form.useForm();
+    const [revealedKey, setRevealedKey] = useState<string | null>(null);
+    const [revealCountdown, setRevealCountdown] = useState(0);
+    const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Auto-hide revealed key after countdown
+    const startCountdown = (seconds: number) => {
+        setRevealCountdown(seconds);
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        countdownRef.current = setInterval(() => {
+            setRevealCountdown(prev => {
+                if (prev <= 1) {
+                    if (countdownRef.current) clearInterval(countdownRef.current);
+                    setRevealedKey(null);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    useEffect(() => {
+        return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+    }, []);
 
     // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -208,6 +233,19 @@ export default function IntegrationsServices() {
             message.success('Rule deleted');
             refetchRules();
         },
+    });
+
+    const revealMutation = useMutation({
+        mutationFn: async (values: { password: string; reason: string }) =>
+            (await apiClient.post(`/portal/service-integrations/${detailService!.service_id}/reveal-key`, values)).data,
+        onSuccess: (data) => {
+            setRevealedKey(data.api_key);
+            setRevealOpen(false);
+            revealForm.resetFields();
+            startCountdown(120);
+            message.success('Key revealed — auto-hides in 120s');
+        },
+        onError: (err: any) => message.error(err.response?.data?.detail || 'Reveal failed'),
     });
 
     const toggleRuleMutation = useMutation({
@@ -538,7 +576,7 @@ export default function IntegrationsServices() {
             <Drawer
                 title={detailService?.name || 'Service Details'}
                 open={!!detailService}
-                onClose={() => { setDetailService(null); setRuleFormOpen(false); setEditingRule(null); }}
+                onClose={() => { setDetailService(null); setRuleFormOpen(false); setEditingRule(null); setRevealedKey(null); setRevealOpen(false); if (countdownRef.current) clearInterval(countdownRef.current); }}
                 width={560}
             >
                 {detailService && (
@@ -547,7 +585,26 @@ export default function IntegrationsServices() {
                         <Card size="small" style={{ background: t.cardBg, border: `1px solid ${t.border}` }}>
                             <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                 <div><Text type="secondary">Service ID:</Text> <Text code>{detailService.service_id}</Text></div>
-                                <div><Text type="secondary">API Key:</Text> <Text code>{detailService.api_key_prefix}…</Text></div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Text type="secondary">API Key:</Text> <Text code>{detailService.api_key_prefix}…</Text>
+                                    <Tooltip title="Break-glass: reveal full key">
+                                        <Button size="small" type="text" icon={<UnlockOutlined />}
+                                            onClick={() => { setRevealedKey(null); setRevealOpen(true); }} />
+                                    </Tooltip>
+                                </div>
+                                {revealedKey && (
+                                    <div style={{ marginTop: 8, padding: 8, background: '#1a1a2e', borderRadius: 6, border: '1px solid #ff6b35' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                            <Text style={{ color: '#ff6b35', fontSize: 11, fontWeight: 600 }}>
+                                                <LockOutlined /> REVEALED — auto-hides in {revealCountdown}s
+                                            </Text>
+                                            <Button size="small" type="text" icon={<CopyOutlined />}
+                                                onClick={() => { navigator.clipboard.writeText(revealedKey); message.success('Copied'); }} />
+                                        </div>
+                                        <Input.TextArea value={revealedKey} readOnly rows={2}
+                                            style={{ fontFamily: 'monospace', fontSize: 12, background: '#0d0d1a', border: 'none', color: '#00ff88' }} />
+                                    </div>
+                                )}
                                 <div><Text type="secondary">Status:</Text> {detailService.is_active ? <Tag color="green">Active</Tag> : <Tag color="red">Disabled</Tag>}</div>
                                 <div><Text type="secondary">Connection:</Text> {isOnline(detailService.last_seen_at) ? <Tag color="green">Online</Tag> : <Tag color="default">Offline</Tag>}</div>
                                 <div><Text type="secondary">Last Seen:</Text> <Text>{formatTimeAgo(detailService.last_seen_at)}</Text></div>
@@ -677,6 +734,34 @@ export default function IntegrationsServices() {
                     </Space>
                 )}
             </Drawer>
+
+            {/* ── Break-Glass Reveal Modal ────────────────────────────────── */}
+            <Modal
+                title={<><LockOutlined style={{ color: '#ff6b35', marginRight: 8 }} />Break-Glass: Reveal API Key</>}
+                open={revealOpen}
+                onCancel={() => { setRevealOpen(false); revealForm.resetFields(); }}
+                onOk={() => revealForm.validateFields().then(v => revealMutation.mutate(v))}
+                okText="Reveal Key"
+                okButtonProps={{ danger: true }}
+                confirmLoading={revealMutation.isPending}
+                width={460}
+            >
+                <Alert
+                    message="This action is logged and auditable."
+                    description="You must provide your password and a reason. The key will auto-hide after 120 seconds."
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                />
+                <Form form={revealForm} layout="vertical">
+                    <Form.Item name="password" label="Your Password" rules={[{ required: true, message: 'Password required' }]}>
+                        <Input.Password prefix={<LockOutlined />} placeholder="Re-enter your password" />
+                    </Form.Item>
+                    <Form.Item name="reason" label="Reason" rules={[{ required: true, min: 3, message: 'Provide a reason (min 3 chars)' }]}>
+                        <Input.TextArea rows={2} placeholder="e.g. Migrating to new VibePrompter instance" />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 }

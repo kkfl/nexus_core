@@ -7,7 +7,7 @@ Kept in a separate module from core.py to avoid pulling in pgvector
 
 import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, LargeBinary, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -24,6 +24,7 @@ class ServiceIntegration(Base):
     service_id: Mapped[str] = mapped_column(unique=True, index=True)
     api_key_hash: Mapped[str]  # SHA-256 of the API key
     api_key_prefix: Mapped[str]  # First 12 chars for display
+    api_key_enc: Mapped[bytes | None] = mapped_column(type_=LargeBinary)  # AES-GCM encrypted
     description: Mapped[str | None] = mapped_column(type_=Text)
     permissions: Mapped[list[str]] = mapped_column(type_=JSON, default=list)
     alias_pattern: Mapped[str] = mapped_column(default="*")

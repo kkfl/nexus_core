@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,9 +18,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole, verify_password
+from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db
 from packages.shared.models.core import User
+from packages.shared.secrets import decrypt_secret, encrypt_secret
 from packages.shared.service_integration_models import (
     ServiceIntegration,
     ServicePermissionRule,
@@ -135,20 +137,16 @@ def _fmt_dt(dt: datetime | None) -> str | None:
 
 async def _get_usage_counts(db: AsyncSession, service_id: str) -> tuple[int, int]:
     """Return (requests_24h, requests_30d) for a service."""
-    now = datetime.now(UTC)
-    day_ago = now - timedelta(days=1)
-    month_ago = now - timedelta(days=30)
-
     r24 = await db.execute(
         select(func.count(ServiceUsageLog.id)).where(
             ServiceUsageLog.service_id == service_id,
-            ServiceUsageLog.ts >= day_ago,
+            ServiceUsageLog.ts >= func.now() - timedelta(days=1),
         )
     )
     r30 = await db.execute(
         select(func.count(ServiceUsageLog.id)).where(
             ServiceUsageLog.service_id == service_id,
-            ServiceUsageLog.ts >= month_ago,
+            ServiceUsageLog.ts >= func.now() - timedelta(days=30),
         )
     )
     return r24.scalar() or 0, r30.scalar() or 0
@@ -208,6 +206,7 @@ async def create_service(
         )
 
     plaintext_key, key_hash, prefix = _generate_api_key()
+    encrypted_key = encrypt_secret(plaintext_key)
 
     svc = ServiceIntegration(
         id=str(uuid.uuid4()),
@@ -215,6 +214,7 @@ async def create_service(
         service_id=payload.service_id,
         api_key_hash=key_hash,
         api_key_prefix=prefix,
+        api_key_enc=encrypted_key,
         description=payload.description,
         permissions=payload.permissions,
         alias_pattern=payload.alias_pattern,
@@ -271,7 +271,6 @@ async def update_service(
     if update_data:
         for key, value in update_data.items():
             setattr(svc, key, value)
-        svc.updated_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(svc)
 
@@ -319,7 +318,7 @@ async def regenerate_key(
     plaintext_key, key_hash, prefix = _generate_api_key()
     svc.api_key_hash = key_hash
     svc.api_key_prefix = prefix
-    svc.updated_at = datetime.now(UTC)
+    svc.api_key_enc = encrypt_secret(plaintext_key)
     await db.commit()
     await db.refresh(svc)
 
@@ -328,6 +327,62 @@ async def regenerate_key(
         **resp.model_dump(),
         api_key=plaintext_key,
     ).model_dump()
+
+
+class RevealKeyRequest(BaseModel):
+    """Payload for break-glass API key reveal."""
+
+    password: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+@router.post("/{service_id}/reveal-key")
+async def reveal_key(
+    service_id: str,
+    payload: RevealKeyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(RequireRole(["admin"])),
+) -> dict[str, Any]:
+    """Break-glass: reveal the full API key (requires password + reason)."""
+    # 1. Verify admin password
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password",
+        )
+
+    # 2. Find the service
+    result = await db.execute(
+        select(ServiceIntegration).where(
+            (ServiceIntegration.id == service_id) | (ServiceIntegration.service_id == service_id)
+        )
+    )
+    svc = result.scalars().first()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found.")
+
+    # 3. Ensure encrypted key exists (legacy keys won't have it)
+    if not svc.api_key_enc:
+        raise HTTPException(
+            status_code=404,
+            detail="Encrypted key not available. Regenerate the key to enable reveal.",
+        )
+
+    # 4. Decrypt
+    plaintext_key = decrypt_secret(svc.api_key_enc)
+
+    # 5. Audit trail
+    log_audit_event(
+        db,
+        "service_key_revealed",
+        "service_integration",
+        current_user,
+        None,
+        {"reason": payload.reason, "service_id": svc.service_id, "service_name": svc.name},
+    )
+    await db.commit()
+
+    return {"api_key": plaintext_key, "service_id": svc.service_id}
 
 
 @router.get("/{service_id}/usage")
@@ -349,7 +404,6 @@ async def get_usage(
         raise HTTPException(status_code=404, detail="Service not found.")
 
     sid = svc.service_id
-    now = datetime.now(UTC)
 
     # Count requests in different time windows
     counts = {}
@@ -361,7 +415,7 @@ async def get_usage(
         r = await db.execute(
             select(func.count(ServiceUsageLog.id)).where(
                 ServiceUsageLog.service_id == sid,
-                ServiceUsageLog.ts >= now - delta,
+                ServiceUsageLog.ts >= func.now() - delta,
             )
         )
         counts[f"requests_{label}"] = r.scalar() or 0
