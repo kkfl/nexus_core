@@ -179,7 +179,14 @@ ROLE_PERMISSION_DEFAULTS: dict[str, dict[str, str]] = {
         "backup": "none",
     },
     "reader": {m: "read" for m in ALL_MODULES}
-    | {"secrets": "none", "integrations": "none", "users": "none", "api_keys": "none", "ip_allowlist": "none", "backup": "none"},
+    | {
+        "secrets": "none",
+        "integrations": "none",
+        "users": "none",
+        "api_keys": "none",
+        "ip_allowlist": "none",
+        "backup": "none",
+    },
 }
 
 
@@ -220,4 +227,3 @@ class RequireModuleAccess:
                 detail=f"No {self.min_level} access to {self.module}",
             )
         return current_user
-

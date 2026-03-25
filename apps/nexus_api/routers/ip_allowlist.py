@@ -13,7 +13,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole
+from apps.nexus_api.dependencies import RequireModuleAccess
 from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.audit import log_audit_event
 from packages.shared.db import get_db

@@ -102,4 +102,3 @@ async def read_audit_events(
         return filtered
 
     return events
-

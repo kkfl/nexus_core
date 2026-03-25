@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from apps.nexus_api.dependencies import (
-    RequireModuleAccess, RequireRole,
+    RequireModuleAccess,
     get_current_agent_by_key,
 )
 from packages.shared.audit import log_audit_event

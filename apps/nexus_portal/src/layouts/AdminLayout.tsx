@@ -57,10 +57,8 @@ export default function AdminLayout() {
         navigate('/login');
     };
 
-    /** Helper: only include item if user has at least 'read' on the module */
-    const can = (module: string) => hasModuleAccess(user, module);
-
     const navItems = useMemo(() => {
+        const can = (module: string) => hasModuleAccess(user, module);
         const items: any[] = [
             { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
         ];

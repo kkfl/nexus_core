@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.nexus_api.dependencies import RequireModuleAccess, RequireRole, get_current_identity
+from apps.nexus_api.dependencies import RequireModuleAccess, get_current_identity
 from packages.shared.db import get_db
 from packages.shared.models import (
     Agent,

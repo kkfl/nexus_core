@@ -139,7 +139,9 @@ async def refresh_access_token(
     ):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    access_token = create_access_token(data={"sub": user.email, "role": user.role, "mp": get_effective_permissions(user)})
+    access_token = create_access_token(
+        data={"sub": user.email, "role": user.role, "mp": get_effective_permissions(user)}
+    )
     new_refresh_token = create_refresh_token(data={"sub": user.email})
 
     user.refresh_token_hash = get_password_hash(new_refresh_token)

@@ -10,12 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from apps.nexus_api.dependencies import (
-    RequireRole,
-    get_password_hash,
-    ALL_MODULES,
     ACCESS_LEVELS,
+    ALL_MODULES,
     ROLE_PERMISSION_DEFAULTS,
+    RequireRole,
     get_effective_permissions,
+    get_password_hash,
 )
 from apps.nexus_api.security_alerts import send_security_alert
 from packages.shared.audit import log_audit_event

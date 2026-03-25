@@ -4,8 +4,8 @@ Revision ID: 030_user_module_permissions
 Revises: 029_service_permission_rules
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "030_user_module_permissions"
 down_revision = "029_service_permission_rules"
