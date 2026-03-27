@@ -47,6 +47,30 @@ const queryClient = new QueryClient({
   },
 });
 
+import React from 'react';
+
+class GlobalErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, errorStr: string }> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false, errorStr: '' };
+    }
+    static getDerivedStateFromError(error: any) {
+        return { hasError: true, errorStr: error?.stack || error?.message || String(error) };
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{ padding: 40, color: 'white', background: '#990000', height: '100vh', width: '100vw', zIndex: 999999, position: 'fixed', top: 0, left: 0 }}>
+                    <h1 style={{color: 'white'}}>FATAL REACT CRASH</h1>
+                    <p style={{fontSize: 18}}>Please copy and paste this exact error to the AI so I can fix it instantly:</p>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#ffcccc', background: '#330000', padding: 20, borderRadius: 8 }}>{this.state.errorStr}</pre>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const { accessToken, user } = useAuthStore();
   const location = useLocation();
@@ -65,88 +89,90 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode,
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/reset-password/:token" element={<ResetPassword />} />
+      <GlobalErrorBoundary>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-          <Route path="/" element={
-            <ProtectedRoute>
-              <AdminLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Dashboard />} />
-
-            {/* Orchestration */}
-            <Route path="agents" element={<Agents />} />
-            <Route path="routes" element={<TaskRoutes />} />
-            <Route path="tasks" element={<Tasks />} />
-
-            {/* Personas */}
-            <Route path="personas" element={<Personas />} />
-            <Route path="personas/defaults" element={<PersonaDefaults />} />
-
-            {/* KB */}
-            <Route path="kb/sources" element={<KbSources />} />
-            <Route path="kb/documents" element={<KbDocuments />} />
-            <Route path="kb/search" element={<KbSearch />} />
-            <Route path="kb/ask" element={<AskNexus />} />
-
-            {/* SoR */}
-            <Route path="entities" element={<Entities />} />
-            <Route path="secrets" element={<Secrets />} />
-            <Route path="audits" element={<Audits />} />
-
-            {/* Integrations */}
-            <Route path="integrations/pbx" element={<IntegrationsPbx />} />
-            <Route path="integrations/monitoring" element={<IntegrationsMonitoring />} />
-            <Route path="integrations/storage" element={<IntegrationsStorage />} />
-            <Route path="integrations/carrier" element={<IntegrationsCarrier />} />
-            <Route path="integrations/email" element={<IntegrationsEmail />} />
-            <Route path="integrations/email/mailbox/:email" element={<MailboxInbox />} />
-            <Route path="integrations/dns" element={<IntegrationsDns />} />
-            <Route path="integrations/services" element={<IntegrationsServices />} />
-
-            {/* Infrastructure */}
-            <Route path="infrastructure/servers" element={<InfrastructureServers />} />
-
-            {/* Monitoring */}
-            <Route path="monitoring/dashboard" element={<MonitoringDashboard />} />
-
-            {/* Docs */}
-            <Route path="docs" element={<Docs />} />
-
-            {/* Settings (admin only) */}
-            <Route path="settings/users" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <Users />
+            <Route path="/" element={
+              <ProtectedRoute>
+                <AdminLayout />
               </ProtectedRoute>
-            } />
-            <Route path="settings/api-keys" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <ApiKeys />
-              </ProtectedRoute>
-            } />
-            <Route path="settings/audit-log" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AuditLog />
-              </ProtectedRoute>
-            } />
-            <Route path="settings/ip-allowlist" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <IpAllowlist />
-              </ProtectedRoute>
-            } />
-            <Route path="settings/backup" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <BackupRestore />
-              </ProtectedRoute>
-            } />
-          </Route>
+            }>
+              <Route index element={<Dashboard />} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+              {/* Orchestration */}
+              <Route path="agents" element={<Agents />} />
+              <Route path="routes" element={<TaskRoutes />} />
+              <Route path="tasks" element={<Tasks />} />
+
+              {/* Personas */}
+              <Route path="personas" element={<Personas />} />
+              <Route path="personas/defaults" element={<PersonaDefaults />} />
+
+              {/* KB */}
+              <Route path="kb/sources" element={<KbSources />} />
+              <Route path="kb/documents" element={<KbDocuments />} />
+              <Route path="kb/search" element={<KbSearch />} />
+              <Route path="kb/ask" element={<AskNexus />} />
+
+              {/* SoR */}
+              <Route path="entities" element={<Entities />} />
+              <Route path="secrets" element={<Secrets />} />
+              <Route path="audits" element={<Audits />} />
+
+              {/* Integrations */}
+              <Route path="integrations/pbx" element={<IntegrationsPbx />} />
+              <Route path="integrations/monitoring" element={<IntegrationsMonitoring />} />
+              <Route path="integrations/storage" element={<IntegrationsStorage />} />
+              <Route path="integrations/carrier" element={<IntegrationsCarrier />} />
+              <Route path="integrations/email" element={<IntegrationsEmail />} />
+              <Route path="integrations/email/mailbox/:email" element={<MailboxInbox />} />
+              <Route path="integrations/dns" element={<IntegrationsDns />} />
+              <Route path="integrations/services" element={<IntegrationsServices />} />
+
+              {/* Infrastructure */}
+              <Route path="infrastructure/servers" element={<InfrastructureServers />} />
+
+              {/* Monitoring */}
+              <Route path="monitoring/dashboard" element={<MonitoringDashboard />} />
+
+              {/* Docs */}
+              <Route path="docs" element={<Docs />} />
+
+              {/* Settings (admin only) */}
+              <Route path="settings/users" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <Users />
+                </ProtectedRoute>
+              } />
+              <Route path="settings/api-keys" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <ApiKeys />
+                </ProtectedRoute>
+              } />
+              <Route path="settings/audit-log" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AuditLog />
+                </ProtectedRoute>
+              } />
+              <Route path="settings/ip-allowlist" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <IpAllowlist />
+                </ProtectedRoute>
+              } />
+              <Route path="settings/backup" element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <BackupRestore />
+                </ProtectedRoute>
+              } />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </GlobalErrorBoundary>
     </QueryClientProvider>
   );
 }

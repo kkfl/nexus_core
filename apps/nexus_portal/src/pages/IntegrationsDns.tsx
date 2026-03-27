@@ -38,7 +38,7 @@ export default function IntegrationsDns() {
         queryKey: ['dns-zones'],
         queryFn: async () => {
             const r = await dnsClient.get('/dns/v1/zones');
-            return r.data;
+            return Array.isArray(r.data) ? r.data : [];
         },
     });
 
@@ -46,7 +46,7 @@ export default function IntegrationsDns() {
         queryKey: ['dns-jobs'],
         queryFn: async () => {
             const r = await dnsClient.get('/dns/v1/jobs', { params: { limit: 50 } });
-            return r.data;
+            return Array.isArray(r.data) ? r.data : [];
         },
     });
 
@@ -55,7 +55,7 @@ export default function IntegrationsDns() {
         queryFn: async () => {
             if (!selectedZone) return [];
             const r = await dnsClient.get(`/dns/v1/zones/${selectedZone.id}/records`);
-            return r.data;
+            return Array.isArray(r.data) ? r.data : [];
         },
         enabled: !!selectedZone,
     });
@@ -148,7 +148,7 @@ export default function IntegrationsDns() {
             const r = await dnsClient.get('/dns/v1/zones/discover', {
                 params: { provider: discoverProvider, tenant_id: 'nexus', env: 'prod' },
             });
-            return r.data;
+            return Array.isArray(r.data) ? r.data : [];
         },
         enabled: discoverOpen,
     });

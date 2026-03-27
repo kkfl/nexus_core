@@ -2,7 +2,7 @@ import { Table, Button, Modal, Form, Input, Typography, Space, Tag, Card, messag
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emailClient } from '../api/emailClient';
 import { apiClient } from '../api/client';
-import { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     MailOutlined, PlusOutlined, LockOutlined, StopOutlined, LinkOutlined,
@@ -13,6 +13,28 @@ import { useThemeStore } from '../stores/themeStore';
 import { getTokens, pageContainer } from '../theme';
 
 const { Title, Text } = Typography;
+
+// Temporary Error Boundary for debugging
+class EmailErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, errorStr: string }> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false, errorStr: '' };
+    }
+    static getDerivedStateFromError(error: any) {
+        return { hasError: true, errorStr: error?.stack || error?.message || String(error) };
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{ padding: 40, color: 'white', background: '#990000', zIndex: 999999, position: 'relative' }}>
+                    <h2 style={{color: 'white'}}>EMAIL COMPONENT FATAL CRASH</h2>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#ffcccc' }}>{this.state.errorStr}</pre>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 interface Mailbox {
     email: string;
@@ -99,7 +121,7 @@ interface SentStatsResponse {
     };
 }
 
-export default function IntegrationsEmail() {
+function IntegrationsEmailInner() {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const { mode } = useThemeStore();
@@ -199,7 +221,7 @@ export default function IntegrationsEmail() {
     }, [sentStats]);
 
     const mergedMailboxes: MailboxWithStats[] = useMemo(() => {
-        if (!mailboxes) return [];
+        if (!Array.isArray(mailboxes)) return [];
         return mailboxes.map(m => {
             const s = statsMap[m.email];
             const sent = sentMap[m.email];
@@ -1098,5 +1120,13 @@ export default function IntegrationsEmail() {
                 </Form>
             </Modal>
         </div>
+    );
+}
+
+export default function IntegrationsEmail() {
+    return (
+        <EmailErrorBoundary>
+            <IntegrationsEmailInner />
+        </EmailErrorBoundary>
     );
 }

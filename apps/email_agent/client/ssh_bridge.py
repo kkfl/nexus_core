@@ -21,10 +21,14 @@ logger = structlog.get_logger(__name__)
 
 def _build_ssh_client(host, port, username, pem):
     """Build paramiko SSH client (synchronous, runs in thread)."""
-    pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(pem))
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(host, port=port, username=username, pkey=pkey, timeout=10)
+    if "BEGIN OPENSSH PRIVATE KEY" in pem or "BEGIN RSA PRIVATE KEY" in pem or "BEGIN PRIVATE KEY" in pem:
+        pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(pem))
+        ssh.connect(host, port=port, username=username, pkey=pkey, timeout=10)
+    else:
+        # Fallback to using the secret as a password
+        ssh.connect(host, port=port, username=username, password=pem, timeout=10)
     return ssh
 
 

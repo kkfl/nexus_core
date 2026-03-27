@@ -96,31 +96,46 @@ export default function MonitoringDashboard() {
     // ── Queries ──
     const { data: overview, isLoading: overviewLoading, refetch: refetchOverview } = useQuery({
         queryKey: ['nagios-overview'],
-        queryFn: () => api.get('/overview').then(r => r.data),
+        queryFn: () => api.get('/overview').then(r => {
+            if (typeof r.data === 'string' || !r.data.hosts) throw new Error('Invalid overview format');
+            return r.data;
+        }),
         refetchInterval: 60_000,
     });
 
     const { data: allProblems = [], isLoading: problemsLoading, refetch: refetchProblems } = useQuery({
         queryKey: ['nagios-problems'],
-        queryFn: () => api.get('/problems').then(r => r.data),
+        queryFn: () => api.get('/problems').then(r => {
+            if (!Array.isArray(r.data)) throw new Error('Invalid problems format');
+            return r.data;
+        }),
         refetchInterval: 60_000,
     });
 
     const { data: allHosts = [], isLoading: hostsLoading, refetch: refetchHosts } = useQuery({
         queryKey: ['nagios-hosts'],
-        queryFn: () => api.get('/hosts').then(r => r.data),
+        queryFn: () => api.get('/hosts').then(r => {
+            if (!Array.isArray(r.data)) throw new Error('Invalid hosts format');
+            return r.data;
+        }),
         refetchInterval: 60_000,
     });
 
     const { data: allServices = [], isLoading: servicesLoading, refetch: refetchServices } = useQuery({
         queryKey: ['nagios-all-services'],
-        queryFn: () => api.get('/services').then(r => r.data),
+        queryFn: () => api.get('/services').then(r => {
+            if (!Array.isArray(r.data)) throw new Error('Invalid services format');
+            return r.data;
+        }),
         refetchInterval: 60_000,
     });
 
     const { data: hostServices = [], isLoading: hostServicesLoading } = useQuery({
         queryKey: ['nagios-host-services', selectedHost],
-        queryFn: () => api.get(`/hosts/${selectedHost}/services`).then(r => r.data),
+        queryFn: () => api.get(`/hosts/${selectedHost}/services`).then(r => {
+            if (!Array.isArray(r.data)) throw new Error('Invalid host services format');
+            return r.data;
+        }),
         enabled: !!selectedHost,
     });
 

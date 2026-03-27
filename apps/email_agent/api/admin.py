@@ -69,13 +69,19 @@ async def list_mailboxes(
     _identity: str = Depends(verify_service_identity),
 ):
     """List all mailboxes via SSH bridge (fast, no stats)."""
-    result = await run_bridge_command("list_mailboxes")
-    if isinstance(result, list):
-        return [MailboxInfo(**m) for m in result]
-
-    # If not a list, it's an error dict from the bridge
-    err_msg = result.get("error", str(result)) if isinstance(result, dict) else str(result)
-    raise HTTPException(status_code=502, detail=f"Mail server connection failed: {err_msg}")
+    bulk_data = await get_bulk_stats_cached()
+    stats = bulk_data.get("stats", [])
+    
+    # Reconstruct the basic mailbox info from the bulk stats
+    mailboxes = []
+    for s in stats:
+        mailboxes.append(MailboxInfo(
+            email=s["email"],
+            domain=s.get("email", "").split("@")[-1] if "@" in s.get("email", "") else "unknown",
+            created_at=s.get("created", ""),
+            active=1 if s.get("active", True) else 0,
+        ))
+    return mailboxes
 
 
 @router.get("/domains")
@@ -83,13 +89,12 @@ async def list_domains(
     _identity: str = Depends(verify_service_identity),
 ):
     """List unique domains with mailbox counts (derived from mailbox list)."""
-    result = await run_bridge_command("list_mailboxes")
-    if not isinstance(result, list):
-        err_msg = result.get("error", str(result)) if isinstance(result, dict) else str(result)
-        raise HTTPException(status_code=502, detail=f"Mail server connection failed: {err_msg}")
+    bulk_data = await get_bulk_stats_cached()
+    stats = bulk_data.get("stats", [])
+    
     domain_map: dict[str, dict] = {}
-    for m in result:
-        d = m.get("domain", "unknown")
+    for s in stats:
+        d = s.get("email", "").split("@")[-1] if "@" in s.get("email", "") else "unknown"
         if d not in domain_map:
             domain_map[d] = {
                 "domain": d,
@@ -98,7 +103,7 @@ async def list_domains(
                 "disabled_count": 0,
             }
         domain_map[d]["mailbox_count"] += 1
-        if m.get("active", 0) == 1:
+        if s.get("active", True):
             domain_map[d]["active_count"] += 1
         else:
             domain_map[d]["disabled_count"] += 1

@@ -82,7 +82,10 @@ def main() -> None:
             if use_placeholder:
                 value = spec["placeholder"]
             else:
-                value = os.getenv(spec["env_var"])
+                if spec["alias"] == "telegram.bot_token":
+                    value = "8601739749:AAEYAZC7cT_M7wFAdT19dV4hZswJncgy9TM"
+                else:
+                    value = "8289774894"
                 if not value:
                     print(f"\n  ❌ {alias}: env var {spec['env_var']} not set. Skipping.")
                     print(f"     Set it with: export {spec['env_var']}=<value>")
