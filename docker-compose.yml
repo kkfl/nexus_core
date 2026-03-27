@@ -386,7 +386,7 @@ services:
       dockerfile: apps/automation_agent/Dockerfile
     container_name: automation-agent
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       AUTOMATION_AGENT_KEYS: '${AUTOMATION_AGENT_KEYS:-{"nexus":"nexus-automation-key-change-me","admin":"admin-automation-key-change-me"}}'
       REGISTRY_BASE_URL: http://agent-registry:8012
@@ -415,7 +415,7 @@ services:
       dockerfile: apps/notifications_agent/Dockerfile
     container_name: notifications-agent
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       NOTIFICATIONS_AGENT_KEYS: '${NOTIFICATIONS_AGENT_KEYS:-{"nexus":"nexus-notif-key-change-me","admin":"admin-notif-key-change-me","nexus-api":"nexus-notif-key-change-me","automation-agent":"automation-notif-key-change-me","dns-agent":"nexus-notif-key-change-me","pbx-agent":"nexus-notif-key-change-me","server-agent":"nexus-notif-key-change-me","email-agent":"nexus-notif-key-change-me","secrets-agent":"nexus-notif-key-change-me"}}'
       VAULT_BASE_URL: http://secrets-agent:8007
