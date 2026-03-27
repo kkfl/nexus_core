@@ -126,6 +126,7 @@ services:
     container_name: agent-registry
     env_file: .env
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       - 'AGENT_REGISTRY_KEYS={"nexus": "nexus-registry-key", "admin": "admin-registry-key", "automation-agent": "nexus-registry-key", "monitoring-agent": "nexus-registry-key", "secrets-agent": "nexus-registry-key", "carrier-agent":"nexus-registry-key", "pbx-agent":"nexus-registry-key", "storage-agent":"nexus-registry-key", "email-agent":"nexus-registry-key"}'
       - CORS_ORIGINS=http://localhost:8001,http://localhost
@@ -158,6 +159,7 @@ services:
     container_name: dns-agent
     env_file: .env
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       # DNS_AGENT_KEYS: JSON map of service_id -> api_key for callers allowed to use dns-agent
       # Example: DNS_AGENT_KEYS={"nexus":"nexus-dns-key","admin":"admin-dns-key"}
@@ -240,6 +242,7 @@ services:
       dockerfile: apps/pbx_agent/Dockerfile
     container_name: pbx-agent
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - PORT=8011
       - SERVICE_NAME=pbx-agent
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
@@ -270,6 +273,7 @@ services:
       dockerfile: apps/monitoring_agent/Dockerfile
     container_name: monitoring-agent
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - PORT=8004
       - SERVICE_NAME=monitoring-agent
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
@@ -299,6 +303,7 @@ services:
       dockerfile: apps/storage_agent/Dockerfile
     container_name: storage-agent
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - PORT=8005
       - SERVICE_NAME=storage-agent
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
@@ -331,6 +336,7 @@ services:
     container_name: carrier-agent
     env_file: .env
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - CARRIER_MOCK=true
       - NEXUS_BASE_URL=http://nexus-api:8000
       - NEXUS_AGENT_KEY=internal-carrier-key-demo
@@ -351,6 +357,7 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
+      - REDIS_URL=redis://redis:6379/0
       - VAULT_MASTER_KEY=${NEXUS_MASTER_KEY}
       # VAULT_AGENT_KEYS: JSON map of service_id -> api_key. Configure in .env.
       # Example: VAULT_AGENT_KEYS={"nexus":"nexus-internal-key","pbx-agent":"pbx-key"}
@@ -379,6 +386,7 @@ services:
       dockerfile: apps/automation_agent/Dockerfile
     container_name: automation-agent
     environment:
+      - REDIS_URL=redis://redis:6379/0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       AUTOMATION_AGENT_KEYS: '${AUTOMATION_AGENT_KEYS:-{"nexus":"nexus-automation-key-change-me","admin":"admin-automation-key-change-me"}}'
       REGISTRY_BASE_URL: http://agent-registry:8012
@@ -407,6 +415,7 @@ services:
       dockerfile: apps/notifications_agent/Dockerfile
     container_name: notifications-agent
     environment:
+      - REDIS_URL=redis://redis:6379/0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_pass}@postgres:5432/${POSTGRES_DB:-nexus_core}
       NOTIFICATIONS_AGENT_KEYS: '${NOTIFICATIONS_AGENT_KEYS:-{"nexus":"nexus-notif-key-change-me","admin":"admin-notif-key-change-me","nexus-api":"nexus-notif-key-change-me","automation-agent":"automation-notif-key-change-me","dns-agent":"nexus-notif-key-change-me","pbx-agent":"nexus-notif-key-change-me","server-agent":"nexus-notif-key-change-me","email-agent":"nexus-notif-key-change-me","secrets-agent":"nexus-notif-key-change-me"}}'
       VAULT_BASE_URL: http://secrets-agent:8007
