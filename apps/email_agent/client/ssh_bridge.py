@@ -23,7 +23,11 @@ def _build_ssh_client(host, port, username, pem):
     """Build paramiko SSH client (synchronous, runs in thread)."""
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    if "BEGIN OPENSSH PRIVATE KEY" in pem or "BEGIN RSA PRIVATE KEY" in pem or "BEGIN PRIVATE KEY" in pem:
+    if (
+        "BEGIN OPENSSH PRIVATE KEY" in pem
+        or "BEGIN RSA PRIVATE KEY" in pem
+        or "BEGIN PRIVATE KEY" in pem
+    ):
         pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(pem))
         ssh.connect(host, port=port, username=username, pkey=pkey, timeout=10)
     else:

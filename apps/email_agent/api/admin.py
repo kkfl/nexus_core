@@ -71,16 +71,20 @@ async def list_mailboxes(
     """List all mailboxes via SSH bridge (fast, no stats)."""
     bulk_data = await get_bulk_stats_cached()
     stats = bulk_data.get("stats", [])
-    
+
     # Reconstruct the basic mailbox info from the bulk stats
     mailboxes = []
     for s in stats:
-        mailboxes.append(MailboxInfo(
-            email=s["email"],
-            domain=s.get("email", "").split("@")[-1] if "@" in s.get("email", "") else "unknown",
-            created_at=s.get("created", ""),
-            active=1 if s.get("active", True) else 0,
-        ))
+        mailboxes.append(
+            MailboxInfo(
+                email=s["email"],
+                domain=s.get("email", "").split("@")[-1]
+                if "@" in s.get("email", "")
+                else "unknown",
+                created_at=s.get("created", ""),
+                active=1 if s.get("active", True) else 0,
+            )
+        )
     return mailboxes
 
 
@@ -91,7 +95,7 @@ async def list_domains(
     """List unique domains with mailbox counts (derived from mailbox list)."""
     bulk_data = await get_bulk_stats_cached()
     stats = bulk_data.get("stats", [])
-    
+
     domain_map: dict[str, dict] = {}
     for s in stats:
         d = s.get("email", "").split("@")[-1] if "@" in s.get("email", "") else "unknown"
